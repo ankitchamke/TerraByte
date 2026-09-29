@@ -1,10 +1,10 @@
 # TerraByte — Project State
 
 ## Current Phase
-- **Phase 2 — Supabase Foundation, Database Schema & Seed Data** (Completed)
+- **PHASE 2 — COMPLETE** (Supabase Foundation, Relational Schema, Storage & Verified Seed Data)
 
 ## Current Goal
-Establish the real Supabase database foundation, PostgreSQL relational schema, Row Level Security (RLS) policies, storage buckets, idempotent demo seed data, and TypeScript database types underneath the existing normalized React SPA application, while strictly preserving the existing UI and demo workflows until Phase 3.
+Supabase cloud project connected, PostgreSQL relational migrations deployed, Row Level Security (RLS) active on all 10 tables, public storage buckets verified, deterministic demo seed data deployed remotely, and TypeScript database types configured. The existing React SPA and tb-store/localStorage workflow are strictly preserved and ready for Phase 3 UI integration.
 
 ---
 
@@ -796,17 +796,19 @@ The following UX and workflow decisions are catalogued for alignment:
   - Removed all proprietary `@lovable.dev` dependencies, configuration files, and tagger scripts.
   - Normalized build toolchain to standard React SPA + Vite + Tailwind CSS + TanStack Router.
   - Verified and preserved 11 client-side routes and interactive demo workflow.
-- **Phase 2 — Supabase Foundation, Database Schema & Seed Data**:
-  - Installed `@supabase/supabase-js` (`^2.117.2`).
-  - Created `.env.example` with Supabase environment variables.
-  - Implemented safe Supabase client in `src/lib/supabase.ts` with offline fallback to prevent boot crashes.
-  - Initialized Supabase CLI configuration (`supabase/config.toml`).
-  - Authored core PostgreSQL schema migration (`supabase/migrations/20260930000001_initial_schema.sql`) defining 5 enums, 10 relational tables, 17 indexes, and comprehensive Row Level Security (RLS) policies.
-  - Authored storage migration (`supabase/migrations/20260930000002_storage_setup.sql`) configuring `equipment-media` and `repair-media` buckets with RLS.
-  - Authored deterministic, idempotent seed data script (`supabase/seed.sql`) reflecting all demo farmers, technicians, equipment, active repairs, quotes, timeline events, and service history.
-  - Created comprehensive TypeScript database definitions in `src/types/database.ts` strongly typed with `Database` interface.
-  - Cleaned up application branding: created custom TerraByte tractor SVG favicon (`public/favicon.svg`) and updated `index.html`.
-  - Validated type safety (`tsc --noEmit`), code style (`npm run lint`), production build (`npm run build`), and preview route accessibility across all 11 routes (100% HTTP 200).
+- **Phase 2 — Supabase Foundation, Database Schema & Seed Data (COMPLETE)**:
+  - **Remote Cloud Link**: Connected local project to remote Supabase project `TerraByte` (`hwdrypkvszwrcraujctw`) in South Asia (Mumbai) via authenticated Supabase CLI.
+  - **Relational Schema Migrations Deployed**: Applied migrations `20260930000001_initial_schema.sql`, `20260930000002_storage_setup.sql`, `20260930000003_grant_permissions.sql`, `20260930000004_storage_policies.sql`, and `20260930000005_verify_rls_helper.sql`. All 10 relational tables verified active remotely.
+  - **Row Level Security (RLS) Verified**: Enabled and active on all 10 application tables with 2–4 enforced policies per table (scoped by farmer ownership, technician assignment, admin oversight, and demo public read).
+  - **Storage Buckets Deployed & Verified**: Configured and verified public buckets `equipment-media` (5 MB limit) and `repair-media` (10 MB limit) with storage RLS policies.
+  - **Seed Data Deployed & Verified**: Idempotently loaded deterministic demo dataset into remote PostgreSQL tables: 3 demo farmers (`f1`–`f3`), 5 demo technicians (`t1`–`t5`), 1 demo admin, 5 equipment assets, 3 active repairs (`TB-8841`, `TB-8902`, `TB-8898`), 2 quotes with line items, 3 permanent service history records (`S-1`–`S-3`), 10 timeline audit events, notes, and notifications.
+  - **Environment & Git Security**: Credentials secured in `.env.local` (verified untracked and gitignored); `.env.example` verified clean with generic placeholders only; zero secrets in Git history.
+  - **Typed Supabase Client**: Implemented `src/lib/supabase.ts` with TypeScript `Database` interface and offline fallback; verified remote communication with Supabase API.
+  - **Branding Alignment**: Updated `public/favicon.svg` with the exact Lucide Tractor vector mark used in the application header and login screen; cleaned up `index.html`.
+  - **Code Quality & Build Verification**: TypeScript (`tsc --noEmit`), lint (`npm run lint`), and production build (`npm run build`) all pass with 0 errors. All 11 application routes verified returning HTTP 200.
+  - **Phase 3 Boundary Maintained**: Existing frontend UI strictly preserved using `tb-store.ts` and `localStorage` mock data; zero UI screens migrated prematurely.
+
+
 
 ---
 

@@ -1,10 +1,10 @@
 # TerraByte — Project State
 
 ## Current Phase
-- **Phase 1 — Wireframing & UX Specification** (Completed)
+- **Phase 2 — Supabase Foundation, Database Schema & Seed Data** (Completed)
 
 ## Current Goal
-Establish a clear, implementation-ready UX blueprint and information architecture for TerraByte's core repair coordination workflow before any production code or database infrastructure is built.
+Establish the real Supabase database foundation, PostgreSQL relational schema, Row Level Security (RLS) policies, storage buckets, idempotent demo seed data, and TypeScript database types underneath the existing normalized React SPA application, while strictly preserving the existing UI and demo workflows until Phase 3.
 
 ---
 
@@ -713,8 +713,54 @@ The lifecycle model is purposefully lean, deterministic, and mapped to clear far
 
 ---
 
+## Phase 2 — Supabase Foundation & Relational Schema
+
+### Database Infrastructure
+TerraByte uses a Supabase-managed PostgreSQL relational database designed for downtime reduction, transparent quotation, and permanent equipment service history tracking.
+
+#### Relational Tables
+1. **`profiles`**: User identities across all three roles (`farmer`, `technician`, `admin`). Includes `auth_user_id` (nullable foreign key to `auth.users(id)` for seamless Supabase Auth integration), contact details, village location, and a unique `demo_code` (`'f1'`, `'t1'`, `'admin'`) for deterministic demo seeding and route resolution.
+2. **`technician_profiles`**: Operational and matching attributes for field technicians. Tracks `workshop_name`, brand specializations (`brands TEXT[]`), skill capabilities (`skills TEXT[]`), verification status (`is_verified`), distance (`distance_km`), response ETA (`eta_minutes`), live availability (`is_available`), rating, and completed job counts.
+3. **`equipment`**: Agricultural machinery owned by farmers (`Tractor`, `Harvester`, `Power Tiller`, `Pump`, `Sprayer`). Tracks `make`, `model`, `year`, `serial_number`, `operating_hours`, `status` (`Operational`, `In Repair`, `Needs Attention`), and `demo_code`.
+4. **`repair_requests`**: Central repair job entity coordinating the breakdown lifecycle. Tracks human-readable `job_number` (`TB-8841`), assigned equipment, farmer, assigned technician, lifecycle `status` (`REQUESTED`, `ACCEPTED`, `QUOTE_PENDING`, `QUOTE_REVISED`, `IN_PROGRESS`, `WAITING_FOR_PARTS`, `COMPLETED`, `CANCELLED`), intake symptoms, description, media photos, location, assistive assessment (`assessment JSONB`), parts blocker hold details (`parts_hold JSONB`), and completion verification (`completion_details JSONB`).
+5. **`quotes`**: Itemized price quotes created by technicians. Tracks labour amount, tax percent, estimated completion date, warranty terms, quote version number, and approval status (`PENDING`, `APPROVED`, `REVISED`, `REJECTED`).
+6. **`quote_items`**: Line items for replacement spare parts and supplies associated with a quote (`part_name`, `part_spec`, `quantity`, `unit_price`, `part_source`).
+7. **`service_history`**: Immutable service records permanently bound to equipment assets (`equipment_id`). Records service date, operating hours, service type, issue description, parts replaced, labour cost, total cost, servicing technician/workshop, maintenance advice, downtime hours saved, and invoice reference.
+8. **`repair_timeline`**: Chronological audit trail of lifecycle status transitions, notes, and the actor role (`created_by_role`).
+9. **`repair_notes`**: Internal and collaborative notes between technicians, dispatchers, and farmers during repair execution.
+10. **`notifications`**: Targeted user alerts regarding quote arrivals, parts holds, technician acceptance, and repair completions.
+
+#### Storage Buckets
+- **`equipment-media`**: Public bucket for equipment fleet photos and registration documentation.
+- **`repair-media`**: Public bucket for breakdown symptom images, diagnostic captures, parts delivery proof, and completed repair verification photos.
+
+#### Row Level Security (RLS)
+- RLS is enabled on all tables.
+- Standard PostgreSQL helper functions (`current_profile_id()`, `current_user_role()`, `is_admin()`, `is_technician()`, `is_farmer()`) evaluate session role and ownership.
+- Farmers can view and manage their own equipment, repair requests, and quotes.
+- Technicians can view assigned jobs, update quote proposals, and record repair progress notes.
+- Service Centre Admins have global visibility and management permissions.
+- Public read fallbacks permit seamless demo/unauthenticated mode operation during Phase 2.
+
+#### Seed Data (`supabase/seed.sql`)
+- Fully idempotent (`ON CONFLICT DO UPDATE`) seed script populating:
+  - 3 Demo Farmers: Ramesh Patel (`f1`), Vikram Deshmukh (`f2`), Ankit Chamke (`f3`).
+  - 5 Demo Technicians: Suresh Kumar (`t1`), Rajesh Shinde (`t2`), Amit Verma (`t3`), Kiran More (`t4`), Ganesh Patil (`t5`).
+  - 1 Demo Admin: Service Centre Dispatcher (`admin`).
+  - 5 Demo Equipment Assets: Mahindra 575 DI (`e1`), John Deere 5050D (`e2`), Swaraj 855 FE (`e3`), Sonalika DI 745 III (`e4`), Kubota MU4501 (`e5`).
+  - 3 Active Demo Repair Jobs: `TB-8841` (Mahindra 575 DI, `WAITING_FOR_PARTS`), `TB-8902` (John Deere 5050D, `QUOTE_PENDING`), `TB-8898` (Swaraj 855 FE, `REQUESTED`).
+  - Complete quote line items, parts holds, timeline audit events, notifications, and permanent service history records (`S-1`, `S-2`, `S-3`).
+  - *All simulated seed entities are explicitly tagged with `DEMO DATA` markers.*
+
+#### Frontend State & Storage Notice
+- **Phase 2 Status**: The Supabase client foundation (`src/lib/supabase.ts`) and TypeScript database types (`src/types/database.ts`) are established.
+- **Local Storage Preservation**: `src/lib/tb-store.ts` remains active in this phase to guarantee zero disruption to existing interactive UI screens and demo flows.
+- **Phase 3 Preview**: Migration from `tb-store.ts` to live Supabase queries and mutations will occur in Phase 3.
+
+---
+
 ## Constraints
-- **Zero Production Implementation in Phase 1**: No React components, Supabase configs, or Gemini API keys.
+- **Phase Boundary Discipline**: Phase 2 establishes the database foundation, schema, migrations, seed data, and TypeScript types. Existing UI components are NOT connected to Supabase in this phase (strictly deferred to Phase 3).
 - **Low Bandwidth Field Operation**: UX must support intermittent connectivity gracefully (optimistic UI and fallback phone numbers).
 - **No Fabricated Real-World Validation**: All technician names, parts lists, and metrics are simulated `DEMO DATA` for prototyping and design validation only.
 
@@ -722,7 +768,7 @@ The lifecycle model is purposefully lean, deterministic, and mapped to clear far
 
 ## Open Decisions
 
-The following UX and workflow decisions are catalogued for alignment before Phase 2 implementation:
+The following UX and workflow decisions are catalogued for alignment:
 
 1. **Farmer Authentication Method**:
    - *Option A*: Phone Number + SMS OTP (Most realistic for Indian rural farmers, requires SMS gateway like Twilio/Msg91).
@@ -738,30 +784,48 @@ The following UX and workflow decisions are catalogued for alignment before Phas
 ---
 
 ## Completed Work
-- Inspected the repository (clean state with initial `.gitignore`, `LICENSE`, `README.md`).
-- Established `PROJECT_STATE.md` as the unified source of truth and Phase 1 documentation hub.
-- Synthesized the end-to-end information architecture for Farmer, Technician, and Admin roles.
-- Streamlined the screen inventory into 4 Farmer screens, 2 Technician workspaces, and 1 Admin console.
-- Formulated the complete downtime-reduction repair status lifecycle.
-- Created lightweight ASCII structural wireframes for all primary user screens.
-- Defined responsive breakpoints, error/empty/loading states, and visual design principles.
-- Documented open UX questions for future technical phases.
+- **Phase 1 — Wireframing & UX Specification**:
+  - Inspected the repository (clean state with initial `.gitignore`, `LICENSE`, `README.md`).
+  - Established `PROJECT_STATE.md` as the unified source of truth and Phase 1 documentation hub.
+  - Synthesized the end-to-end information architecture for Farmer, Technician, and Admin roles.
+  - Streamlined the screen inventory into 4 Farmer screens, 2 Technician workspaces, and 1 Admin console.
+  - Formulated the complete downtime-reduction repair status lifecycle.
+  - Created lightweight ASCII structural wireframes for all primary user screens.
+  - Defined responsive breakpoints, error/empty/loading states, and visual design principles.
+- **Phase 1.5 — Lovable UI Migration & Normalization**:
+  - Removed all proprietary `@lovable.dev` dependencies, configuration files, and tagger scripts.
+  - Normalized build toolchain to standard React SPA + Vite + Tailwind CSS + TanStack Router.
+  - Verified and preserved 11 client-side routes and interactive demo workflow.
+- **Phase 2 — Supabase Foundation, Database Schema & Seed Data**:
+  - Installed `@supabase/supabase-js` (`^2.117.2`).
+  - Created `.env.example` with Supabase environment variables.
+  - Implemented safe Supabase client in `src/lib/supabase.ts` with offline fallback to prevent boot crashes.
+  - Initialized Supabase CLI configuration (`supabase/config.toml`).
+  - Authored core PostgreSQL schema migration (`supabase/migrations/20260930000001_initial_schema.sql`) defining 5 enums, 10 relational tables, 17 indexes, and comprehensive Row Level Security (RLS) policies.
+  - Authored storage migration (`supabase/migrations/20260930000002_storage_setup.sql`) configuring `equipment-media` and `repair-media` buckets with RLS.
+  - Authored deterministic, idempotent seed data script (`supabase/seed.sql`) reflecting all demo farmers, technicians, equipment, active repairs, quotes, timeline events, and service history.
+  - Created comprehensive TypeScript database definitions in `src/types/database.ts` strongly typed with `Database` interface.
+  - Cleaned up application branding: created custom TerraByte tractor SVG favicon (`public/favicon.svg`) and updated `index.html`.
+  - Validated type safety (`tsc --noEmit`), code style (`npm run lint`), production build (`npm run build`), and preview route accessibility across all 11 routes (100% HTTP 200).
 
 ---
 
 ## Known Issues
-- None (Phase 1 UX specification completed according to project constraints).
+- None. Build, lint, and type checking pass cleanly with zero errors.
 
 ---
 
 ## Next Phase
-- **Phase 2 — Project Setup, Database Schema & Supabase Configuration**:
-  - Initialize Vite + React + Tailwind CSS frontend environment.
-  - Setup Supabase project and define PostgreSQL relational schema (`profiles`, `equipment`, `repair_requests`, `quotes`, `service_history`).
-  - Configure Supabase Storage buckets for breakdown media.
-  - Implement role-based row-level security (RLS) policies.
+- **Phase 3 — Connect Existing UI to Supabase / Replace localStorage**:
+  - Wire existing React Query hooks and UI stores to fetch and mutate data via the Supabase client.
+  - Implement transparent fallback mechanism so demo mode continues to function offline or when Supabase credentials are not supplied.
+  - Connect photo upload inputs to `equipment-media` and `repair-media` Supabase Storage buckets.
+  - Maintain the existing visual design and user experience without regressions.
 
 ---
 
 ## Decisions Log
 - **2026-09-26**: Phase 1 initiated and completed. Locked single-file documentation rule (`PROJECT_STATE.md`). Formatted UX architecture around downtime reduction. Replaced internal term "Triage" with farmer-friendly "Initial Assessment". Combined quote and live repair tracking into a single unified Hub to prevent mobile screen fragmentation.
+- **2026-09-29**: Phase 1.5 completed. Completely removed Lovable build dependencies, restored standard React SPA architecture with Vite, verified demo functionality intact.
+- **2026-09-30**: Phase 2 completed. Established PostgreSQL schema matching the 10 domain entities of TerraByte. Built idempotent seed data with explicit `DEMO DATA` markers. Configured storage buckets for equipment and repair media. Preserved existing UI and `tb-store.ts` until Phase 3.
+

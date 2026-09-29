@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <rect width="32" height="32" rx="7" fill="#166534"/>
+  <!-- Front Wheel -->
+  <circle cx="9" cy="22" r="3.5" fill="#f8fafc" stroke="#166534" stroke-width="1"/>
+  <circle cx="9" cy="22" r="1.5" fill="#166534"/>
+  <!-- Big Rear Wheel -->
+  <circle cx="23" cy="20" r="5.5" fill="#f8fafc" stroke="#166534" stroke-width="1"/>
+  <circle cx="23" cy="20" r="2.5" fill="#166534"/>
+  <!-- Tractor Body / Hood -->
+  <path d="M6 16 h8 v3 h-8 z" fill="#f59e0b"/>
+  <!-- Exhaust Pipe -->
+  <path d="M8 12 v4" stroke="#f8fafc" stroke-width="1.5" stroke-linecap="round"/>
+  <!-- Cabin Frame & Roof -->
+  <path d="M14 16 v-6 h7 v6" fill="none" stroke="#f8fafc" stroke-width="1.5" stroke-linejoin="round"/>
+  <path d="M13 10 h9" stroke="#f8fafc" stroke-width="2" stroke-linecap="round"/>
+  <!-- Steering Column -->
+  <path d="M16 14 l2 -2" stroke="#f8fafc" stroke-width="1.2" stroke-linecap="round"/>
+</svg>

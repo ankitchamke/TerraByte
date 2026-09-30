@@ -20,28 +20,29 @@ Visitor lands on /login
     │      └── B. Email + Password
     │
     ▼
-Clerk verifies identity & establishes secure session
+Clerk verifies identity & issues Supabase JWT session token
     │
     ├── [New User: Farmer Signup]
-    │      └── Automatic profile creation in Supabase:
-    │             profiles.auth_user_id = clerk_user_id
+    │      └── Automatic profile creation in Supabase via authenticated JWT:
+    │             profiles.clerk_user_id = clerk_user_id
     │             profiles.role = 'farmer'
     │             ──► Redirect to Farmer Workspace (/farmer)
     │
     ├── [New User: Technician Registration]
     │      └── Submits workshop name, brands, experience:
     │             profiles.role = 'technician'
-    │             technician_profiles.status = 'PENDING'
+    │             technician_profiles.is_verified = false (status: PENDING)
     │             ──► Redirect to /technician/pending
     │             (Access to /technician Dashboard strictly BLOCKED until approved)
     │
     └── [Existing User: Sign In]
-           └── Query Supabase profiles by clerk_user_id:
+           └── Supabase client sends Clerk JWT (Authorization: Bearer <token>):
+                  RLS authenticates subject server-side & resolves profile:
                   │
                   ├── role === 'farmer'     ──► Redirect to /farmer
                   ├── role === 'technician' ──► Check technician approval:
-                  │       ├── status === 'APPROVED' ──► Redirect to /technician
-                  │       └── status === 'PENDING'  ──► Redirect to /technician/pending
+                  │       ├── is_verified === true   ──► Redirect to /technician
+                  │       └── is_verified === false  ──► Redirect to /technician/pending
                   └── role === 'admin'      ──► Redirect to /admin
                           (Admin accounts manually provisioned by system administrator)
 

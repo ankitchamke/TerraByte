@@ -42,197 +42,110 @@
 
 ---
 
-## Phase 3 — Authentication + Real Supabase Data Integration
-**Status**: **NEXT (TO BE EXECUTED ONE STAGE AT A TIME)**
+## Phase 3 — Clerk Authentication & Identity
+**Status**: **NEXT (ON BRANCH `phase-3-clerk-setup`)**
 
 ### Phase 3 Overview
-Phase 3 replaces the mock `localStorage` store ([`tb-store.ts`](file:///d:/Projects/TerraByte/src/lib/tb-store.ts)) and demo role selector with real Clerk Authentication for identity management, Supabase PostgreSQL for authorization/business data, automatic role resolution, live database queries/mutations, and regional demo data aligned with Nagpur, Maharashtra.
+Phase 3 establishes real user identity using Clerk (Email + Password and Google OAuth), strictly separating identity from Supabase role-based authorization, adding a dedicated `clerk_user_id` mapping column to `profiles`, enforcing role provisioning rules, and eliminating the mock demo role selector.
 
-**Authentication & Role Provisioning Architecture**:
-- **Identity Provider**: Clerk handles authentication (user identity, credentials, Google OAuth, session management).
-- **Authorization & Data**: Supabase PostgreSQL stores user profiles (`profiles.auth_user_id = clerk_user_id`), roles, fleet records, and business workflows.
-- **Login Options**: Email + Password and Google OAuth. Phone SMS OTP is completely removed (avoids SMS provider dependency).
-- **Farmer Role**: Public registration automatically assigns `role = 'farmer'`. Immediately enters `/farmer` workspace.
-- **Technician Role**: Public registration via "Register as Technician" registers an account with status `PENDING`. Hard-gated to `/technician/pending` screen until manually approved by an administrator in Supabase.
-- **Service Centre / Admin Role**: No public registration allowed. Admin accounts are provisioned strictly by existing administrators. Users cannot self-select Admin.
+### Architecture & Identity Model
+- **Identity Provider (Clerk)**: Handles user identity, credentials, Google OAuth, session tokens, and security events.
+- **Authorization & Data (Supabase)**: Stores user profiles, roles, fleet records, and business workflows.
+- **Dedicated Identity Field**: Preserves internal `profiles.id` (UUID) as the primary key for all relations across the database, and adds `profiles.clerk_user_id TEXT UNIQUE` (`20260930000006_add_clerk_identity.sql`).
+- **No Phone Auth**: Phone SMS OTP is completely removed (avoids SMS provider dependency).
+- **Role Provisioning Rules**:
+  - **Farmer**: Public registration automatically assigns `role = 'farmer'`. Immediately enters `/farmer` workspace.
+  - **Technician**: Public registration via "Register as Technician" registers an account with status `PENDING` (`is_verified = false`). Hard-gated to `/technician/pending` screen until manually approved by an administrator in Supabase.
+  - **Service Centre / Admin**: No public registration allowed. Admin accounts are provisioned strictly by existing administrators. Users cannot self-select Admin.
 
----
+### Deliverables & Tasks
+1. **Schema & RLS Helper Migration**:
+   - Add `clerk_user_id TEXT UNIQUE` with index to `public.profiles` (`20260930000006_add_clerk_identity.sql`); leave `profiles.id` and `auth_user_id` intact.
+   - Update RLS helper functions `current_clerk_id()`, `current_profile_id()`, and `current_user_role()` to resolve the authenticated Clerk subject (`auth.jwt() ->> 'sub'`) to internal `profiles.id` (UUID), preserving server-side RLS enforcement across all 10 tables.
+   - Update `profiles` update/insert policies to check `clerk_user_id = public.current_clerk_id()`.
+2. **Clerk React SDK & Supabase JWT Setup**: Wrap application root in `<ClerkProvider>` using `VITE_CLERK_PUBLISHABLE_KEY`; configure Clerk Supabase JWT template (`template: 'supabase'`); configure typed Supabase client to pass authenticated Clerk JWT (`Authorization: Bearer <clerk_token>`) on all requests.
+3. **Authentication Flows**: Implement Email + Password and Google OAuth sign-in and sign-up flows.
+4. **Profile Synchronization & Routing**: On sign-in/sign-up, resolve `profiles.clerk_user_id = user.id`. Auto-provision Farmer profiles, flag new Technicians as pending (`is_verified = false`), and route to designated workspace (`/farmer`, `/technician`, `/technician/pending`, `/admin`).
+5. **Route Protection & Guards**: Protect `/farmer/*`, `/technician/*`, `/admin/*` from unauthenticated or cross-role access.
+6. **Auth UI Normalization**: Remove pre-auth role selector tabs and demo persona buttons on `/login`. Implement clean login/register forms with Google OAuth and collapsible demo credentials helper card.
+7. **Nagpur Seed User Accounts**: Configure seed test accounts in Clerk linked to Nagpur demo profiles.
 
-### Stage 3A — Clerk SDK Integration & Authentication Setup
-- **Objective**: Implement user identity management using Clerk React SDK (`@clerk/clerk-react`).
-- **Dependencies**: Completed Phase 2 Supabase foundation; Clerk project environment keys (`VITE_CLERK_PUBLISHABLE_KEY`).
-- **Tasks**:
-  1. Wrap application root in `<ClerkProvider>` with publishable key from environment variables.
-  2. Configure Email + Password and Google OAuth authentication providers.
-  3. Implement secure sign-out mechanism in top navbar that clears Clerk session and local query cache.
-  4. Implement persistent session listener and auth status hooks (`useUser`, `useAuth`).
-  5. Add route guard protecting `/farmer/*`, `/technician/*`, and `/admin/*` routes from unauthenticated access.
-- **Deliverable**: Working login, signup, Google OAuth, logout, and protected route redirection via Clerk.
-- **Verification**: Valid email/password or Google OAuth logs in; invalid credentials show clear error; logged-out users cannot access protected routes.
-- **Out of Scope**: Phone SMS OTP gateways (eliminated); email magic links / OTP (Email+Password and Google OAuth only).
-
----
-
-### Stage 3B — Profile Provisioning & Automatic Role Resolution
-- **Objective**: Automatically synchronize Clerk user identity with Supabase `profiles` and route users to their designated workspace based on `profiles.role` and approval status.
-- **Dependencies**: Stage 3A.
-- **Tasks**:
-  1. On authentication, check Supabase `profiles` for matching `auth_user_id = user.id`. If absent, provision profile row:
-     - Default public signup $\rightarrow$ `role = 'farmer'`.
-     - Technician signup flow $\rightarrow$ `role = 'technician'`, create `technician_profiles` with `status = 'PENDING'`.
-  2. Implement role-based navigation and gatekeeper:
-     - `farmer` $\rightarrow$ `/farmer`
-     - `technician` (approved) $\rightarrow$ `/technician`
-     - `technician` (pending) $\rightarrow$ `/technician/pending` (informational review banner; dashboard blocked)
-     - `admin` $\rightarrow$ `/admin`
-  3. Prevent cross-role access (e.g., farmer manually navigating to `/admin` is redirected back to `/farmer`).
-  4. Ensure Admin accounts cannot be self-provisioned through public flows.
-- **Deliverable**: Automatic, secure role-based navigation and technician verification gate without client-side role picking.
-- **Verification**: Logging in as farmer lands on `/farmer`; new technician lands on `/technician/pending`; approved technician lands on `/technician`; cross-role navigation blocked.
+- **Deliverable**: Functional, secure authentication and role gatekeeping with zero mock persona switching.
+- **Verification**: Farmer sign-in lands on `/farmer`; new technician lands on `/technician/pending`; approved technician lands on `/technician`; unauthenticated and cross-role requests are blocked.
 
 ---
 
-### Stage 3C — Remove Demo Role Selector & Polish Auth UI
-- **Objective**: Completely eliminate the mock demo role selector and client-side impersonation in favor of a clean Clerk-integrated login/register UI.
-- **Dependencies**: Stages 3A & 3B.
-- **Tasks**:
-  1. Remove the pre-auth role tabs (`Farmer`, `Technician`, `Service Centre`) on `/login`.
-  2. Remove visible demo persona buttons (`Balasaheb Patil`, `Ramesh Kumar`, etc.) from the login interface.
-  3. Remove client-side role switching actions (`actions.login(role, who)`).
-  4. Build unified login screen with Email/Password inputs, Google OAuth one-click button, and "Register as Farmer" / "Register as Technician" links.
-  5. Provide pre-seeded demo account credentials in a collapsible, clean helper card on the login screen for testing convenience (e.g. `farmer@terrabyte.demo` / `password123`).
-- **Deliverable**: Standard, professional authentication form with zero pre-auth personification.
-- **Verification**: No persona names visible before authentication; login requires actual credentials or Google OAuth.
-
----
-
-### Stage 3D — Nagpur Demo Data & User Provisioning
-- **Objective**: Migrate seed data geography from Nashik to Nagpur, Maharashtra (Vidarbha agrarian belt) and configure corresponding test profiles.
-- **Dependencies**: Stage 3C.
-- **Tasks**:
-  1. Update `supabase/seed.sql` with authentic Nagpur locations (Saoner, Kalmeshwar, Katol, Umred, Hingna, Nagpur MIDC).
-  2. Provision 3 seed user accounts in Clerk and link to Supabase profiles:
-     - Farmer: `farmer.nagpur@terrabyte.demo`
-     - Approved Technician: `tech.nagpur@terrabyte.demo`
-     - Service Centre / Admin: `admin.nagpur@terrabyte.demo`
-     - Pending Technician: `tech.pending@terrabyte.demo` (for testing pending gate)
-  3. Ensure all seed records are explicitly labeled with `DEMO DATA` tags.
-  4. Ensure internal consistency across machinery types (Mahindra, John Deere, Swaraj), crop contexts (cotton, soybean, orange orchards), and realistic replacement parts.
-- **Deliverable**: Fresh, idempotent seed migration reflecting Nagpur region.
-- **Verification**: Database contains Nagpur-based records with correct foreign-key relationships.
-
----
-
-### Stage 3E — Farmer Workspace Supabase Integration
-- **Objective**: Connect Farmer screens to live Supabase queries and mutations.
-- **Dependencies**: Stages 3B & 3D.
-- **Tasks**:
-  1. Wire `/farmer` (Home) to fetch active repairs and registered equipment from `repair_requests` and `equipment`.
-  2. Wire `/farmer/equipment` to fetch machinery fleet and historical logs from `service_history`.
-  3. Wire `/farmer/report-breakdown` to insert new rows into `repair_requests` with symptoms, photos, and location.
-  4. Wire `/farmer/repair/:id` to fetch live status, quote details (`quotes`, `quote_items`), timeline, and handle `[Approve Quote]` mutation.
-  5. Connect photo uploads to `equipment-media` and `repair-media` storage buckets.
-- **Deliverable**: Fully functioning Farmer journey persisting to remote Supabase.
-- **Verification**: Submitting a breakdown creates a database row; approving a quote updates `quotes.status` to `APPROVED` and `repair_requests.status` to `IN_PROGRESS`.
-
----
-
-### Stage 3F — Technician Workspace Supabase Integration
-- **Objective**: Connect Technician screens to live Supabase data.
-- **Dependencies**: Stages 3B & 3E.
-- **Tasks**:
-  1. Wire `/technician` (Dashboard) to fetch incoming `REQUESTED` jobs and assigned active jobs.
-  2. Wire `[Accept Job]` action to update `technician_id` and transition status to `ACCEPTED`.
-  3. Wire `/technician/job/:id` to formulate quotes: inserting into `quotes` and `quote_items`.
-  4. Wire status toggle actions (`IN_PROGRESS`, `WAITING_FOR_PARTS` with notes/ETA, `COMPLETED`).
-  5. Wire completion action to create an immutable `service_history` record bound to the equipment.
-- **Deliverable**: Fully functioning Technician workspace with live quoting and status updates.
-- **Verification**: Created quote appears immediately on farmer's screen; marking parts delay shows blocker banner on farmer view; completing job writes to service history.
-
----
-
-### Stage 3G — Service Centre / Admin Supabase Integration
-- **Objective**: Connect Admin console to live operational data.
-- **Dependencies**: Stages 3E & 3F.
-- **Tasks**:
-  1. Wire `/admin` to query all regional `repair_requests` and calculate real-time downtime metrics.
-  2. Implement unassigned request alert badge (> 30 mins).
-  3. Implement manual technician reassignment mutation updating `repair_requests.technician_id`.
-  4. Connect parts blocker oversight filter.
-- **Deliverable**: Live dispatch and oversight console for service centre coordinators.
-- **Verification**: Reassigning a technician updates the job and alerts the new technician in their feed.
-
----
-
-### Stage 3H — Retire localStorage Dependency
-- **Objective**: Safely decommission mock store mutations in `src/lib/tb-store.ts`.
-- **Dependencies**: Stages 3E, 3F, 3G.
-- **Tasks**:
-  1. Replace `tb-store.ts` mutations with React Query hooks calling Supabase client.
-  2. Maintain a graceful read fallback for offline demo caching if connection is interrupted.
-  3. Clean up obsolete mock state code.
-- **Deliverable**: Application operates 100% on Supabase without relying on `localStorage` as primary storage.
-- **Verification**: Browser localStorage can be cleared completely without breaking application data.
-
----
-
-### Stage 3I — RLS & Multi-Role Security Verification
-- **Objective**: Rigorously verify Row Level Security across all 3 roles.
-- **Dependencies**: Stages 3A–3H.
-- **Tasks**:
-  1. Test Farmer A attempting to read Farmer B's equipment or repairs $\rightarrow$ returns empty.
-  2. Test Technician attempting to approve a quote $\rightarrow$ rejected by RLS.
-  3. Test unauthenticated user attempting to insert repairs $\rightarrow$ rejected.
-  4. Verify all tests in `TESTING.md` Section 4 pass.
-- **Deliverable**: Verified security sign-off for Phase 3.
-- **Verification**: Zero unauthorized data reads or writes.
-
----
-
-## Phase 4 — Complete Repair Workflow & Edge Cases
+## Phase 4 — Repair Workflow Integrity
 **Status**: **PLANNED**
-- Support quote decline with reason selector and revision path (`QUOTE_REVISED`).
-- Support repair cancellation from `REQUESTED` stage.
-- Implement real-time notifications using Supabase Realtime subscriptions (listen to `quotes`, `repair_requests`).
-- Offline indicator banner with automatic retry when connectivity returns.
+
+### Phase 4 Overview
+Phase 4 connects Farmer, Technician, and Service Centre workspaces to live PostgreSQL tables via Supabase, enforces the end-to-end repair state machine, and safely retires the `localStorage` mock store (`tb-store.ts`).
+
+### Deliverables & Tasks
+1. **Farmer Workspace Integration**: Wire `/farmer`, `/farmer/equipment`, `/farmer/report-breakdown`, and `/farmer/repair/:id` to live Supabase tables (`equipment`, `repair_requests`, `quotes`, `service_history`). Connect media uploads to `equipment-media` and `repair-media` buckets.
+2. **Technician Workspace Integration**: Wire `/technician` and `/technician/job/:id` to live repair orders. Implement job acceptance, itemized quote builder (`quotes`, `quote_items`), status toggling (`IN_PROGRESS`, `WAITING_FOR_PARTS`), and completion handover.
+3. **Parts Blocker Visibility**: When a technician marks a repair `WAITING_FOR_PARTS`, the farmer view dynamically displays an alert banner showing the exact part name and expected arrival ETA.
+4. **Service Centre / Admin Console**: Wire `/admin` to query regional repairs, calculate real-time downtime metrics, flag unaccepted requests (>30 mins), and provide manual technician reassignment.
+5. **Quote Lifecycle & Negotiation**: Implement transparent quote approval, decline with reason checklist, and quote revision tracking (`version = 2`).
+6. **State Machine Hard Gates**: Enforce valid transitions (`REQUESTED` $\rightarrow$ `ACCEPTED` $\rightarrow$ `QUOTE_PENDING` $\rightarrow$ `IN_PROGRESS` $\leftrightarrow$ `WAITING_FOR_PARTS` $\rightarrow$ `COMPLETED`). Block illegal skips.
+7. **Decommission Mock Store**: Safely replace `src/lib/tb-store.ts` mutations with React Query hooks calling Supabase client; maintain graceful read fallback for offline demo execution.
+
+- **Deliverable**: Complete persistent repair workflow operating 100% on live Supabase PostgreSQL.
+- **Verification**: Submitting a breakdown creates a database record; approving a quote authorizes work; technician completion records an immutable entry in machine service history.
 
 ---
 
-## Phase 5 — Gemini Assistive Diagnostic Assessment
+## Phase 5 — AI Triage / Assessment
 **Status**: **PLANNED**
-- Deploy Supabase Edge Function `analyze-breakdown` with Google Gemini 2.0 API integration.
-- Store Gemini API key in Supabase Secrets (`GEMINI_API_KEY`); never expose in client code.
-- Edge Function accepts breakdown symptoms + image base64, returns validated structured JSON:
-  `{ likely_issue, severity, parts_category, safety_advice }`.
-- Client displays assistive assessment with prominent "Assistive AI Hypothesis" badge.
-- Graceful fallback: If Gemini API times out or errors, fallback to rule-based category matching without blocking the farmer.
+
+### Phase 5 Overview
+Phase 5 integrates Google Gemini 2.0 API via a secure Supabase Edge Function to provide assistive diagnostic triage for farmers reporting equipment breakdowns.
+
+### Deliverables & Tasks
+1. **Supabase Edge Function (`analyze-breakdown`)**: Deploy server-side Edge Function proxying requests to Gemini API; store `GEMINI_API_KEY` securely in Supabase Secrets (never expose in client code).
+2. **Structured Diagnostic Schema**: Edge Function accepts breakdown symptoms, description, and image base64, returning validated JSON: `{ likely_issue, severity, parts_category, safety_advice }`.
+3. **Assistive UI Presentation**: Render diagnostic results with prominent "Assistive AI Hypothesis" badge, clearly indicating physical technician inspection is required.
+4. **Resilient Fallback**: If Gemini API times out or errors, fall back gracefully to rule-based keyword matching without blocking the farmer's intake.
+
+- **Deliverable**: Assistive AI intake hypothesis embedded into the breakdown reporting journey.
+- **Verification**: Breakdown intake returns structured diagnostic hypothesis; network inspection reveals zero client-side Gemini key exposure.
 
 ---
 
-## Phase 6 — UX Polish, Reliability & Full Testing
+## Phase 6 — Notifications, Polish & Demo Readiness
 **Status**: **PLANNED**
-- Comprehensive mobile touch target pass (minimum 48px on all inputs/buttons).
-- Full audit of WCAG AA contrast, keyboard navigation, and aria labels.
-- Run complete `TESTING.md` suite across mobile, tablet, and desktop viewports.
-- Deploy production bundle to Vercel with SPA rewrite rules (`vercel.json`).
+
+### Phase 6 Overview
+Phase 6 brings real-time operational feedback, responsive ergonomics, and curated regional demo narratives to ensure flawless presentation.
+
+### Deliverables & Tasks
+1. **Real-time Notifications**: Listen to Supabase Realtime subscriptions on `repair_requests` and `quotes` to update farmer and technician views instantaneously without manual page refreshes.
+2. **Mobile Ergonomics & Accessibility**: Audit and guarantee minimum 48px touch targets, WCAG AA color contrast, keyboard navigation, and responsive layouts across mobile, tablet, and desktop viewports.
+3. **Curated Nagpur Demo Scenarios**: Seed 3 compelling narrative scenarios in the Vidarbha region:
+   - *Harvest Crisis*: Harvester broken down during harvest $\rightarrow$ urgent dispatch $\rightarrow$ matched specialist.
+   - *Transparent Pricing*: Farmer reviews itemized parts/labour quote $\rightarrow$ 1-tap approval $\rightarrow$ work authorized.
+   - *Parts Blocker Visibility*: Technician waiting on hydraulic cylinder $\rightarrow$ farmer sees exact part and arrival time.
+4. **Evaluator Quick-Login**: Collapsible demo credentials drawer for rapid evaluation.
+
+- **Deliverable**: Polished, responsive application primed for live demonstration.
+- **Verification**: Realtime events update in < 1 second across dual browser windows; mobile layouts render without horizontal scroll or clipping.
 
 ---
 
-## Phase 7 — Hackathon Demo Engineering
+## Phase 7 — Testing, Security & Deployment
 **Status**: **PLANNED**
-- Seed 3 high-impact narrative demo scenarios in Nagpur region:
-  1. *Harvest Crisis*: Harvester broken during harvest $\rightarrow$ 1-tap breakdown report $\rightarrow$ AI triage $\rightarrow$ matched specialist.
-  2. *Transparent Pricing*: Farmer reviews itemized quote on tractor $\rightarrow$ approves in 1 tap $\rightarrow$ work authorized.
-  3. *Parts Blocker Visibility*: Technician waiting on hydraulic cylinder $\rightarrow$ farmer sees exact part and arrival time, eliminating panic.
-- Create 1-click Demo Quick-Login helper for hackathon evaluators.
 
----
+### Phase 7 Overview
+Phase 7 validates system security, executes comprehensive end-to-end acceptance testing, and deploys the production build.
 
-## Phase 8 — Final Submission Package
-**Status**: **PLANNED**
-- Clean repository README with product narrative, architecture diagram, and setup instructions.
-- Recorded 3-minute video walkthrough showcasing the complete breakdown-to-repair journey.
-- Verification checklist sign-off.
+### Deliverables & Tasks
+1. **Acceptance Testing Suite**: Execute all test suites defined in `TESTING.md` (Authentication `AUTH-01` to `AUTH-14`, RLS `RLS-01` to `RLS-07`, Farmer `FARM-01` to `FARM-08`, Technician `TECH-01` to `TECH-07`, Admin `ADM-01` to `ADM-04`).
+2. **Row Level Security Audit**: Verify cross-farmer data isolation, unauthorized mutation prevention, and role-based access enforcement.
+3. **Production Deployment**: Build optimized client bundle with Vite; deploy to Vercel with SPA rewrite rules (`vercel.json`); verify environment variable injection.
+4. **Documentation & Video Walkthrough**: Finalize repository README, architecture diagrams, and record a 3-minute video walkthrough showcasing the complete breakdown-to-repair journey.
+
+- **Deliverable**: Fully tested, verified, and deployed TerraByte production system.
+- **Verification**: Zero failed tests in `TESTING.md`; zero security policy leaks; live production URL running with full functionality.
 
 ---
 

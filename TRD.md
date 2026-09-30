@@ -66,6 +66,7 @@ TerraByte strictly separates **Authentication (Identity)** from **Authorization 
   4. **Strict Prohibition**: Users must **never** be able to select or grant themselves the Service Centre/Admin role.
   5. **No Client-Side Impersonation**: No pre-auth role selector tabs or mock persona switches.
 - **Session Persistence & Protected Routes**: Clerk session cookies/tokens persist across page reloads. Unauthenticated requests to `/farmer/*`, `/technician/*`, or `/admin/*` redirect immediately to `/login`.
+- **Server-Side Authorization & RLS Enforcement**: All Supabase requests from authenticated sessions must provide a Clerk Supabase JWT (`Authorization: Bearer <clerk_token>`). PostgREST authenticates the token and evaluates PostgreSQL Row Level Security policies against `auth.jwt() ->> 'sub'`, resolving the authorized internal `profiles.id` (UUID). Client-side filtering is strictly forbidden as an authorization mechanism.
 
 
 ### 4.2 Farmer Requirements
@@ -151,7 +152,7 @@ The database consists of 10 relational tables in PostgreSQL managed by Supabase:
 
 | Table                 | Purpose                                               | Primary Key | Foreign Keys                                                                                                                      |
 | --------------------- | ----------------------------------------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `profiles`            | User accounts across Farmer, Technician, Admin        | `id` (UUID) | `auth_user_id` $\rightarrow$ `auth.users(id)`                                                                                     |
+| `profiles`            | User accounts across Farmer, Technician, Admin        | `id` (UUID) | `clerk_user_id` (TEXT UNIQUE for Clerk identity), `auth_user_id` $\rightarrow$ `auth.users(id)` (UUID, legacy) |
 | `technician_profiles` | Technician capabilities, brands, workshop, ratings    | `id` (UUID) | `profile_id` $\rightarrow$ `profiles.id` (1:1)                                                                                    |
 | `equipment`           | Farmer machinery assets with operating hours & status | `id` (UUID) | `farmer_id` $\rightarrow$ `profiles.id`                                                                                           |
 | `repair_requests`     | Central breakdown lifecycle job entity                | `id` (UUID) | `equipment_id` $\rightarrow$ `equipment.id`, `farmer_id` $\rightarrow$ `profiles.id`, `technician_id` $\rightarrow$ `profiles.id` |

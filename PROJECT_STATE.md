@@ -44,18 +44,24 @@ The UI currently operates safely on the existing interactive baseline (`tb-store
 
 ## 4. Not Yet Implemented
 
-- **Clerk Authentication Setup**: Integration of Clerk React SDK for identity management (Stage 3A).
-- **Login Options**: Email + Password and Google OAuth via Clerk (Stage 3A).
-- **Farmer Public Signup**: Automatic assignment of `farmer` role in Supabase upon registration (Stage 3B).
-- **Technician Registration & Approval Gate**: Public technician application creation with status `PENDING`; access to Technician Dashboard blocked until verified/approved (Stage 3C).
-- **Service Centre / Admin Manual Provisioning**: Admin accounts strictly provisioned by system administrator; zero public signup (Stage 3D).
-- **Nagpur Demo Data Migration**: Transitioning seed data geography from Nashik to Nagpur, Maharashtra (Vidarbha agrarian belt) (Stage 3E).
-- **UI $\rightarrow$ Supabase Integration**: Wiring Farmer, Technician, and Admin views to live Supabase queries and mutations (Stages 3F, 3G, 3H).
-- **Retiring localStorage Dependency**: Replacing `src/lib/tb-store.ts` mock mutations with live React Query hooks (Stage 3I).
-- **Complete Persistent Repair Workflow & Edge Cases**: Live quote decline/revision path, cancellation, realtime notifications (Phase 4).
-- **Gemini Assistive Diagnostic Assessment**: Supabase Edge Function with Google Gemini 2.0 API integration (Phase 5).
-- **Production Deployment**: Vercel deployment with SPA rewrites, performance optimization (Phase 6).
-- **Hackathon Demo Package**: Curated narrative demo walkthrough scenarios and final submission assets (Phases 7 & 8).
+- **Phase 3 (Clerk Authentication & Identity)**:
+  - Integration of Clerk React SDK (`@clerk/clerk-react`) with Email+Password and Google OAuth.
+  - Dedicated schema migration adding `clerk_user_id TEXT UNIQUE` to `public.profiles`.
+  - Automatic role provisioning: Farmer auto-assigned `role = 'farmer'`.
+  - Technician public application with status `PENDING` (`is_verified = false`) gated at `/technician/pending`.
+  - Service Centre / Admin manual provisioning only (users never self-select Admin).
+  - Removal of mock persona selector on `/login` and addition of route guards.
+  - Nagpur test accounts in Clerk linked to demo profiles.
+- **Phase 4 (Repair Workflow Integrity)**:
+  - Wiring Farmer, Technician, and Admin views to live Supabase queries and mutations.
+  - Transparent quoting lifecycle and parts hold blocker visibility (`WAITING_FOR_PARTS`).
+  - Retiring `localStorage` dependency in `src/lib/tb-store.ts`.
+- **Phase 5 (AI Triage / Assessment)**:
+  - Gemini 2.0 API integration via Supabase Edge Function `analyze-breakdown`.
+- **Phase 6 (Notifications, Polish & Demo Readiness)**:
+  - Supabase Realtime subscriptions, mobile touch ergonomics, and Nagpur narrative demo scenarios.
+- **Phase 7 (Testing, Security & Deployment)**:
+  - Full execution of `TESTING.md` matrix, RLS security audit, and Vercel production deployment.
 
 ---
 
@@ -73,21 +79,26 @@ Future AI coding agents and human contributors must **not** silently change or v
    - Login options: **Email + Password** and **Google OAuth**.
    - **Phone login / phone OTP is completely removed** (avoids expensive SMS provider requirements).
    - **Email OTP is postponed** unless required by Clerk's final configuration.
-7. **Role Provisioning & Authorization Architecture**:
+7. **Identity Schema Mapping & Server-Side RLS (Clerk to Supabase)**:
+   - `profiles.id` (UUID) remains the **immutable internal primary key** for all foreign key relationships across the 10 database tables.
+   - Clerk user ID (e.g. `user_2...`) maps to a **dedicated column `profiles.clerk_user_id TEXT UNIQUE`**.
+   - **DO NOT** attempt to insert Clerk string IDs into `profiles.auth_user_id` (which is a PostgreSQL `UUID` with a foreign key to `auth.users(id)`).
+   - **Strict Server-Side Authorization**: All Supabase client requests from authenticated sessions must provide the Clerk Supabase JWT (`Authorization: Bearer <clerk_token>`). Supabase RLS functions (`current_clerk_id()`, `current_profile_id()`, `current_user_role()`) authenticate the subject server-side via `auth.jwt() ->> 'sub'` mapped to `profiles.clerk_user_id`. **Client-side filtering is strictly forbidden as an authorization mechanism**.
+8. **Role Provisioning & Authorization Architecture**:
    - **Authentication and authorization remain strictly separate**: Clerk handles identity; TerraByte/Supabase handles roles and permissions.
    - **Farmer**: Public signup $\rightarrow$ automatically assigned `farmer` role.
-   - **Technician**: Public "Register as Technician" $\rightarrow$ authenticated user creates technician application $\rightarrow$ status `PENDING` $\rightarrow$ **no Technician Dashboard access until approved**.
+   - **Technician**: Public "Register as Technician" $\rightarrow$ authenticated user creates technician application $\rightarrow$ status `PENDING` (`is_verified = false`) $\rightarrow$ **no Technician Dashboard access until approved**.
    - **Service Centre / Admin**: **No public registration**. Account is manually provisioned by the administrator.
    - **Users must never select Service Centre/Admin themselves**.
    - No pre-auth role selector tabs; no client-side impersonation.
-8. **Supabase Backend Foundation**: Supabase is the single backend for PostgreSQL database, business data, object storage, and edge functions.
-9. **Assistive AI Role**: AI serves strictly as an assistive intake diagnostic tool; it is never the entire product and never pretends to be an infallible mechanic.
-10. **Demo Data Transparency**: All simulated seed data must be explicitly labeled with `DEMO DATA` markers. Never claim unverified field validation or real-world customer traction.
-11. **Target Demo Geography**: Demo data will be set in Nagpur, Maharashtra (Vidarbha agrarian region).
-12. **RLS Enforcement**: Least-privilege data access must be enforced by PostgreSQL Row Level Security on every table.
-13. **Phased Discipline**: Build ONE phase at a time. Never start future phases automatically.
-14. **Dedicated Branch for Phase 3**: Phase 3 development takes place on branch `phase-3-clerk-setup`.
-15. **Documentation Architecture**: The five authoritative documentation files are:
+9. **Supabase Backend Foundation**: Supabase is the single backend for PostgreSQL database, business data, object storage, and edge functions.
+10. **Assistive AI Role**: AI serves strictly as an assistive intake diagnostic tool; it is never the entire product and never pretends to be an infallible mechanic.
+11. **Demo Data Transparency**: All simulated seed data must be explicitly labeled with `DEMO DATA` markers. Never claim unverified field validation or real-world customer traction.
+12. **Target Demo Geography**: Demo data will be set in Nagpur, Maharashtra (Vidarbha agrarian region).
+13. **RLS Enforcement**: Least-privilege data access must be enforced by PostgreSQL Row Level Security on every table.
+14. **Phased Discipline**: Build ONE phase at a time. The roadmap is structured into 5 cohesive upcoming milestones (Phases 3 to 7).
+15. **Dedicated Branch for Phase 3**: Phase 3 development takes place on branch `phase-3-clerk-setup`.
+16. **Documentation Architecture**: The five authoritative documentation files are:
     - `PROJECT_STATE.md` (Current state & memory)
     - `TRD.md` (Technical requirements & architecture)
     - `APP_FLOW.md` (User journeys & screen flows)
@@ -100,9 +111,8 @@ Future AI coding agents and human contributors must **not** silently change or v
 
 The following technical and product decisions remain genuinely unresolved and are slated for alignment during Phase 3 and Phase 4:
 
-1. **Clerk to Supabase Token Exchange**:
-   - When calling Supabase from the frontend, should the application use Clerk's Supabase JWT integration (Clerk third-party auth template), or map Clerk's user ID directly into `profiles.auth_user_id` using standard Supabase client queries?
-   - *Current Recommendation*: Direct user ID mapping (`profiles.auth_user_id = clerkUser.id`) using public anon client with row-level ownership checks, minimizing token exchange overhead for hackathon MVP.
+1. **Clerk to Supabase Token Exchange & RLS Enforcement**:
+   - **RESOLVED**: Application uses Clerk's native Supabase JWT integration (`template: 'supabase'`) to pass authenticated JWTs directly to Supabase client (`Authorization: Bearer <clerk_token>`). Server-side RLS helper functions (`current_clerk_id()`, `current_profile_id()`, `current_user_role()`) extract `auth.jwt() ->> 'sub'` and resolve the authorized internal `profiles.id` (UUID), guaranteeing full server-side RLS security across all queries and mutations without relying on insecure client-side filtering.
 2. **Quote Decline & Negotiation UX**:
    - When a farmer declines a quote, should the system provide a structured counter-offer slider, or strictly offer a 1-tap **[Call Technician to Discuss]** button paired with a quick rejection reason checklist?
    - *Current Recommendation*: 1-tap phone call + simple rejection reason chips to prevent complex multi-turn negotiation UI on mobile.
@@ -117,7 +127,7 @@ The following technical and product decisions remain genuinely unresolved and ar
 - [`PROJECT_STATE.md`](file:///d:/Projects/TerraByte/PROJECT_STATE.md): Current implementation state, verified milestones, locked decisions, open decisions, and active agent memory.
 - [`TRD.md`](file:///d:/Projects/TerraByte/TRD.md): Technical Requirements Document — architecture, Clerk identity, functional specifications, data models, security rules, and definition of done.
 - [`APP_FLOW.md`](file:///d:/Projects/TerraByte/APP_FLOW.md): Application Flow Document — entry points, Clerk authentication flow, pending technician gate, farmer/technician/admin journeys, state machine, and ASCII wireframes.
-- [`IMPLEMENTATION_PLAN.md`](file:///d:/Projects/TerraByte/IMPLEMENTATION_PLAN.md): Implementation Plan — completed phases, granular Phase 3 stages (3A–3I for Clerk & Supabase), planned future phases, and out-of-scope boundaries.
+- [`IMPLEMENTATION_PLAN.md`](file:///d:/Projects/TerraByte/IMPLEMENTATION_PLAN.md): Implementation Plan — completed phases, consolidated Phase 3 to Phase 7 milestones, and out-of-scope boundaries.
 - [`TESTING.md`](file:///d:/Projects/TerraByte/TESTING.md): Testing Guide — critical user journeys, Clerk auth test cases, pending technician gate tests, RLS test matrix, responsive checks, accessibility, security, and release blockers.
 
 ---
@@ -129,3 +139,4 @@ The following technical and product decisions remain genuinely unresolved and ar
 - **2026-09-30 (Morning)**: **Phase 2 Complete**. Connected remote Supabase project `hwdrypkvszwrcraujctw` (Mumbai); applied 5 migrations defining 10 tables, triggers, indexes, and RLS; configured `equipment-media` and `repair-media` storage buckets; loaded deterministic demo seed data; aligned tractor SVG favicon; verified build and preview across all 11 routes.
 - **2026-09-30 (Afternoon)**: **Documentation System Reorganization**. Reorganized project documentation into the four-document system (`TRD.md`, `APP_FLOW.md`, `IMPLEMENTATION_PLAN.md`, `TESTING.md`) with `PROJECT_STATE.md` as current state memory.
 - **2026-09-30 (Evening)**: **Authentication Architecture Pivot to Clerk**. Reverted experimental Supabase OTP code to clean Phase 2 baseline. Updated authentication architecture to Clerk (Email + Password and Google OAuth). Decoupled Clerk identity from Supabase authorization/roles. Established Farmer auto-role assignment, Technician `PENDING` approval gate, and Admin manual provisioning.
+- **2026-09-30 (Night)**: **Architecture Verification & Schema Audit**. Inspected PostgreSQL schema; discovered `profiles.auth_user_id` is a `UUID REFERENCES auth.users(id)` and cannot store Clerk string IDs. Formulated clean minimal solution: dedicated `profiles.clerk_user_id TEXT UNIQUE` field, preserving internal `profiles.id` (UUID). Consolidated roadmap from micro-stages into 5 cohesive milestones (Phases 3 to 7).

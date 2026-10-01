@@ -1,223 +1,64 @@
-# TerraByte — Testing Guide (TESTING)
+# TerraByte — Testing Guide & Verification Matrix
 
-## 1. Testing Goal
+## 1. Testing Philosophy & Scope
 
-Prove that TerraByte coordinates the complete agricultural equipment repair journey reliably, securely, and intuitively across Farmers, Field Technicians, and Service Centre Dispatchers, while preventing unauthorized access and failing safely under adverse field conditions.
-
----
-
-## 2. Critical User Journey (CUJ)
-
-The core release gate of TerraByte:
-```
-1. Farmer logs in with credentials
-2. Selects registered tractor & reports breakdown with symptoms + photo
-3. Views assistive diagnostic hypothesis & selects qualified technician
-4. Technician receives notification, accepts job, and reviews intake details
-5. Technician inspects & sends itemized quote (parts + labour + completion ETA)
-6. Farmer reviews transparent cost breakdown and authorizes repair
-7. Technician updates progress (or marks waiting for parts with blocker visibility)
-8. Technician completes repair & confirms handover
-9. System compiles verified record permanently bound to machine service history
-```
-**Release Rule**: TerraByte must NOT ship if any step in this critical journey fails.
+This document specifies the verification criteria and test matrix for TerraByte.
+- **Phase 2 Baseline Tests**: Behavioral tests verifying the real Supabase Auth, PostgreSQL triggers, Row Level Security (RLS) identity protection, role routing, technician approval workflow, and demo login.
+- **Planned Domain Tests**: End-to-end business journey tests scheduled across subsequent phases (Phases 3–8) as live domain tables are built.
 
 ---
 
-## 3. Authentication & Role Provisioning Tests
+## 2. Phase 2 Supabase Authentication & Identity Test Matrix
 
-| Test Case | Steps | Expected Result | Status |
-|---|---|---|---|
-| **AUTH-01: Valid Email/Password Sign In** | Input valid email & password for seeded farmer $\rightarrow$ Submit | Authenticates with Clerk, resolves `role = 'farmer'`, redirects to `/farmer`. | Planned (Phase 3) |
-| **AUTH-02: Google OAuth Sign In** | Click [Continue with Google] $\rightarrow$ complete OAuth prompt | Authenticates with Clerk, resolves Supabase profile, redirects to workspace. | Planned (Phase 3) |
-| **AUTH-03: Invalid Password** | Input registered email with incorrect password $\rightarrow$ Submit | Rejects login, displays "Incorrect email or password", keeps email in field. | Planned (Phase 3) |
-| **AUTH-04: Non-Existent User** | Input unregistered email $\rightarrow$ Submit | Rejects login with generic error; does not expose system internals. | Planned (Phase 3) |
-| **AUTH-05: Farmer Public Registration** | Complete standard signup form with email/password $\rightarrow$ Submit | Clerk user created, auto-provisions `role = 'farmer'` in Supabase `profiles`, lands on `/farmer`. | Planned (Phase 3) |
-| **AUTH-06: Technician Registration (Pending Gate)** | Click "Register as Technician" $\rightarrow$ complete registration | Clerk user created, provisions `role = 'technician'` with status `PENDING`, redirects to `/technician/pending`. | Planned (Phase 3) |
-| **AUTH-07: Technician Pending Gate Hard Block** | Logged-in pending technician manually navigates to `/technician` | Intercepted by approval gate and redirected back to `/technician/pending`. | Planned (Phase 3) |
-| **AUTH-08: Approved Technician Sign In** | Administrator marks status `APPROVED` $\rightarrow$ Technician logs in | Resolves approval status and redirects to `/technician` dashboard. | Planned (Phase 3) |
-| **AUTH-09: Admin Manual Provisioning Only** | Inspect registration options on `/login` | Zero public registration path for Admin. Admin accounts are manually provisioned by administrators. | Planned (Phase 3) |
-| **AUTH-10: Cross-Role Protection** | Log in as Farmer $\rightarrow$ Manually navigate to `/admin` or `/technician` | Intercepted by role guard and redirected back to `/farmer`. | Planned (Phase 3) |
-| **AUTH-11: Sign Out** | Tap user profile $\rightarrow$ [Sign Out] | Clerk session revoked, local cache cleared, navigates to `/login`. | Planned (Phase 3) |
-| **AUTH-12: Session Persistence** | Log in $\rightarrow$ Refresh page or open in new tab | Session automatically restored via Clerk; user remains on active workspace. | Planned (Phase 3) |
-| **AUTH-13: Protected Route Interception** | Log out $\rightarrow$ Manually navigate to `/farmer/equipment` | Immediately intercepted and redirected to `/login`. | Planned (Phase 3) |
-| **AUTH-14: No Phone OTP / SMS Gateways** | Inspect login and registration screens | Zero phone number input or SMS OTP trigger; authentication is strictly Email/Password and Google OAuth. | Planned (Phase 3) |
-
----
-
-## 4. Authorization & Row Level Security (RLS) Tests
-
-| Test Case | Actor | Action | Expected Result | Status |
-|---|---|---|---|---|
-| **RLS-01: Cross-Farmer Machine** | Farmer A | Attempt to query `equipment` belonging to Farmer B | Query returns 0 rows; data strictly isolated. | Planned (Phase 3) |
-| **RLS-02: Cross-Farmer Repair** | Farmer A | Attempt to query `repair_requests` of Farmer B | Query returns 0 rows. | Planned (Phase 3) |
-| **RLS-03: Technician Quote Auth** | Technician | Insert quote for an assigned repair request | Allowed by RLS policy. | Planned (Phase 3) |
-| **RLS-04: Farmer Quote Approve** | Farmer | Update `quotes.status` to `APPROVED` for own repair | Allowed by RLS policy. | Planned (Phase 3) |
-| **RLS-05: Illegal Quote Approve**| Technician | Attempt to update `quotes.status = 'APPROVED'` | Rejected by RLS policy with permission denied. | Planned (Phase 3) |
-| **RLS-06: Admin Oversight** | Admin | Query all `repair_requests` and `quotes` across cluster | Allowed; admin possesses cluster visibility. | Planned (Phase 3) |
-| **RLS-07: Anon Mutation** | Unauthenticated | Attempt `INSERT INTO repair_requests` via Supabase client | Rejected with `401 / permission denied`. | Planned (Phase 3) |
+| Test ID | Test Scenario | Setup | Action | Expected Result | Actual Result | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :---: |
+| **AUTH-01** | Farmer signup | Unregistered farmer email & strong password | Call `supabase.auth.signUp()` with metadata `{ role: 'farmer', full_name, village, phone }` | New user created in `auth.users`; trigger `handle_new_user()` provisions `public.profiles` with `role = 'farmer'`, `is_verified = true`, `id = auth.users.id` | User ID created in `auth.users`; `profiles` record created with `role: 'farmer'`, `is_verified: true`, and matching ID | **PASS** |
+| **AUTH-02** | Technician signup | Unregistered tech email & strong password | Call `supabase.auth.signUp()` with metadata `{ role: 'technician', full_name, workshop, village, phone }` | New user in `auth.users`; trigger provisions `profiles` with `role = 'technician'`, `is_verified = false`, and inserts row into `public.technician_profiles` | User ID created; `profiles` record created with `role: 'technician'`, `is_verified: false`; `technician_profiles` created with workshop name | **PASS** |
+| **AUTH-03** | Farmer login | Seeded or registered farmer account | Call `supabase.auth.signInWithPassword()` with farmer credentials | Returns valid authenticated session with JWT access token; profile loads; `homeFor(profile)` routes to `/farmer` | HTTP 200 OK; access token returned; session established; routes to `/farmer` | **PASS** |
+| **AUTH-04** | Technician login | Seeded or registered technician account | Call `supabase.auth.signInWithPassword()` with tech credentials | Returns valid session; if `is_verified = true` routes to `/technician`, else to `/technician/pending` | HTTP 200 OK; access token returned; verified tech routes to `/technician`; unverified tech routes to `/technician/pending` | **PASS** |
+| **AUTH-05** | Service Centre login | Provisioned Service Centre account (`admin@terrabyte.com`) | Call `supabase.auth.signInWithPassword()` with admin credentials | Returns valid session; profile resolves `role = 'service_centre'`; routes to `/admin` | HTTP 200 OK; access token returned; profile has `role: 'service_centre'`; routes to `/admin` | **PASS** |
+| **AUTH-06** | Logout | Authenticated session active in browser | Click [Sign out] button or invoke `signOut()` from `src/lib/auth.ts` | Calls `supabase.auth.signOut()`; local auth store clears; user is redirected to `/login` | Session revoked in Supabase client; state reset to null; navigates to `/login` | **PASS** |
+| **AUTH-07** | Session restoration | User authenticated in browser tab | Reload browser page or open new tab at protected route | `onAuthStateChange` & `getSession()` restore token; profile reloaded from database; user remains on workspace | Session restored immediately from storage; profile loaded; zero redirect to `/login` | **PASS** |
+| **AUTH-08** | Invalid credentials | Any email with incorrect password | Call `signInWithPassword()` with invalid password | HTTP 400 error returned by Supabase; no session created; inline error displayed | HTTP 400 Bad Request; error message "Invalid login credentials"; no session created | **PASS** |
+| **AUTH-09** | Duplicate email | Email already registered in `auth.users` | Attempt `signUp()` with same email address | Registration blocked; returns HTTP 422 or empty identities list; no duplicate profile row | HTTP 422 Unprocessable Entity; duplicate user creation blocked; database table unmodified | **PASS** |
+| **AUTH-10** | Missing profile error | User exists in `auth.users` but no profile row in `public.profiles` | Authenticate user lacking profile row | `loadProfile()` sets `profileError`; `/login` displays explicit configuration error; **no fallback to farmer** | `profileError` set: *"We couldn't find an account profile for this login..."*; `/login` displays error card with Sign out button | **PASS** |
+| **AUTH-11** | Farmer role protection | Signed in as Farmer | Directly enter URL `/admin` or `/technician` | `RoleGuard` detects profile role mismatch; redirects back to `homeFor(profile)` (`/farmer`) | Redirected to `/farmer`; protected admin and technician dashboards completely inaccessible | **PASS** |
+| **AUTH-12** | Technician role protection | Signed in as Technician | Directly enter URL `/admin` or `/farmer` | `RoleGuard` detects role mismatch; redirects back to `homeFor(profile)` (`/technician`) | Redirected to `/technician`; farmer and admin routes inaccessible | **PASS** |
+| **AUTH-13** | Service Centre role protection | Signed in as Service Centre | Directly enter URL `/farmer` or `/technician` | `RoleGuard` detects role mismatch; redirects back to `homeFor(profile)` (`/admin`) | Redirected to `/admin`; role boundaries strictly enforced | **PASS** |
+| **AUTH-14** | Technician pending gate | Newly registered technician (`is_verified = false`) | Attempt navigation to `/technician` workbench | `RoleGuard` detects `!profile.is_verified`; blocks workbench access and displays `/technician/pending` | Workbench locked; renders pending approval screen with "Check approval status" and "Sign out" | **PASS** |
+| **AUTH-15** | Technician approval workflow | Service Centre admin and unverified technician | Admin visits `/admin/technicians` $\rightarrow$ clicks [Approve technician] $\rightarrow$ tech refreshes `/technician/pending` | `profiles.is_verified` updated to `true` in Supabase; tech clicks [Check approval status] and is unblocked | Admin PATCH updates `is_verified: true` (HTTP 200); technician profile reflects `is_verified: true`; routes to `/technician` | **PASS** |
+| **AUTH-16** | Role tampering prevention | Authenticated Farmer tries client-side role elevation | Issue direct PATCH to `public.profiles` setting `role = 'service_centre'` | PostgreSQL trigger `guard_profile_privileges` raises exception; transaction aborted | HTTP 400; message: *"Only the service centre can change role or verification status"*; role unchanged | **PASS** |
+| **AUTH-17** | Verification tampering prevention | Authenticated Technician tries self-approval | Issue direct PATCH to `public.profiles` setting `is_verified = true` | PostgreSQL trigger `guard_profile_privileges` raises exception; transaction aborted | HTTP 400; message: *"Only the service centre can change role or verification status"*; verification unchanged | **PASS** |
+| **AUTH-18** | Cross-user profile access | Authenticated Farmer queries other users' profiles | Send SELECT query to `public.profiles` filtering for another user's UUID | PostgreSQL RLS policy `profiles_select_own` filters out other users; returns 0 rows | Empty array `[]` returned (0 rows); unauthorized user profiles completely hidden | **PASS** |
+| **AUTH-19** | Direct URL protection | Logged-out visitor with no session | Enter `/farmer`, `/technician`, `/technician/pending`, or `/admin` | `RoleGuard` detects `userId === null`; redirects immediately to `/login` | Instant redirect to `/login`; zero flash of protected content | **PASS** |
+| **AUTH-20** | Quick Demo Login | Visitor on `/login` screen | Click [Farmer], [Technician], or [Service Centre] demo buttons | Autofills real credentials into email/password fields and invokes real `signInWithPassword()`; zero bypass | Form autofilled; real Supabase Auth executed; token received; user routed to appropriate portal | **PASS** |
 
 ---
 
-## 5. Farmer Flow Tests
+## 3. Planned Domain Verification Tests (Phases 3–8)
 
-| Test Case | Screen | Action | Expected Result | Status |
-|---|---|---|---|---|
-| **FARM-01: View Fleet** | `/farmer/equipment` | Open fleet screen | Displays all machines owned by farmer with operating hours and status. | Verified (Mock) |
-| **FARM-02: Add Machine** | `/farmer/equipment` | Open modal $\rightarrow$ fill Make, Model, Serial No. $\rightarrow$ Save | Asset added to fleet; immediately selectable in breakdown intake. | Verified (Mock) |
-| **FARM-03: Add Machine Valid**| `/farmer/equipment` | Leave Make/Model blank $\rightarrow$ Save | Form highlights missing fields; does not submit. | Verified (Mock) |
-| **FARM-04: Report Breakdown** | `/farmer/report-breakdown` | Select machine $\rightarrow$ pick symptoms $\rightarrow$ input description $\rightarrow$ Submit | Advances to Step 2 with assistive diagnostic summary and matching techs. | Verified (Mock) |
-| **FARM-05: Dispatch Tech** | `/farmer/report-breakdown` | Select recommended technician $\rightarrow$ [Request Repair] | Creates repair order (`REQUESTED`); navigates to `/farmer/repair/:id`. | Verified (Mock) |
-| **FARM-06: Approve Quote** | `/farmer/repair/:id` | Review quote card $\rightarrow$ Tap [Approve & Authorize] | Status transitions to `IN_PROGRESS`; authorizes technician work. | Verified (Mock) |
-| **FARM-07: Blocker Banner** | `/farmer/repair/:id` | Technician marks job `WAITING_FOR_PARTS` | Farmer view updates with amber banner showing part name and ETA. | Verified (Mock) |
-| **FARM-08: Handover Sign-Off** | `/farmer/repair/:id` | Technician completes $\rightarrow$ Farmer taps [Confirm & Save] | Job closes; permanently recorded in machine's service history. | Verified (Mock) |
+The following domain tests are scheduled as the relational schema and storage are connected in subsequent phases:
 
----
-
-## 6. Technician Flow Tests
-
-| Test Case | Screen | Action | Expected Result | Status |
-|---|---|---|---|---|
-| **TECH-01: View Feed** | `/technician` | Open technician dashboard | Displays incoming `REQUESTED` jobs filtered by operating radius. | Verified (Mock) |
-| **TECH-02: Accept Job** | `/technician` | Tap [Accept Dispatch] on new lead | Status updates to `ACCEPTED`; job moves to active spotlight card. | Verified (Mock) |
-| **TECH-03: Create Quote** | `/technician/job/:id` | Add parts rows + labour fee + completion ETA $\rightarrow$ Send | Status updates to `QUOTE_PENDING`; farmer notified. | Verified (Mock) |
-| **TECH-04: Quote Total Calc**| `/technician/job/:id` | Add Part A (Qty 2 @ 500) + Labour (750) | Total dynamically calculates to Rs 1,750. | Verified (Mock) |
-| **TECH-05: Mark Parts Delay**| `/technician/job/:id` | Toggle `WAITING_FOR_PARTS` $\rightarrow$ input part name + ETA | Status updates to `WAITING_FOR_PARTS`; records audit timeline event. | Verified (Mock) |
-| **TECH-06: Resume Repair** | `/technician/job/:id` | Toggle back to `IN_PROGRESS` | Status updates to `IN_PROGRESS`; parts hold resolved. | Verified (Mock) |
-| **TECH-07: Complete Repair** | `/technician/job/:id` | Conduct test run $\rightarrow$ input advice $\rightarrow$ [Mark Completed] | Status updates to `COMPLETED`; writes to `service_history`. | Verified (Mock) |
+| Test ID | Domain Feature | Phase | Planned Test Scenario |
+| :--- | :--- | :---: | :--- |
+| **E2E-01** | Farmer Fleet Management | Phase 3 | Insert new tractor into Supabase `equipment` table; verify display across farmer views. |
+| **E2E-02** | Breakdown Ticket Submission | Phase 3 | Submit breakdown report with photo upload to Supabase Storage; verify row in `repairs`. |
+| **E2E-03** | Quote Formulation | Phase 4 | Technician drafts quote; inserts into `quotes` and `quote_parts` tables. |
+| **E2E-04** | Farmer Quote Approval | Phase 4 | Farmer approves quote; updates `repairs.status = 'IN_PROGRESS'`. |
+| **E2E-05** | Parts Hold & Resumption | Phase 4 | Tech sets `WAITING_FOR_PARTS`; records delay reason; resumes to `IN_PROGRESS` on delivery. |
+| **E2E-06** | Load Testing & Closure | Phase 4 | Tech records field test; signs off repair as `COMPLETED`. |
+| **E2E-07** | Permanent Service History | Phase 4 | Completed repair auto-commits immutable maintenance entry into `service_records`. |
+| **E2E-08** | Operations Triage & SLA | Phase 5 | Unassigned breakdown (>30 min) flagged in red; admin reassigns ticket to qualified tech. |
+| **E2E-09** | Realtime Sync | Phase 7 | Status updates on technician workbench instantly update farmer screen via Supabase Realtime. |
+| **E2E-10** | Multimodal Gemini AI | Phase 8 | Farmer uploads broken part photo; Gemini API returns suspected failure mode and parts advice. |
 
 ---
 
-## 7. Service Centre / Admin Tests
+## 4. Release Blocker Checklist
 
-| Test Case | Screen | Action | Expected Result | Status |
-|---|---|---|---|---|
-| **ADM-01: Metrics Overview** | `/admin` | Open operations console | Displays live unassigned count, active count, blocked count, downtime avg. | Verified (Mock) |
-| **ADM-02: Stalled Request** | `/admin` | Request unaccepted for > 30 minutes | Row highlighted in amber/red alert styling. | Verified (Mock) |
-| **ADM-03: Reassign Job** | `/admin` | Select stalled job $\rightarrow$ choose new workshop $\rightarrow$ [Reassign] | Job technician updated; original tech removed; new tech alerted. | Verified (Mock) |
-| **ADM-04: Blocker Filter** | `/admin` | Click filter [Waiting for Parts] | Table isolates jobs delayed by parts supply chain. | Verified (Mock) |
-
----
-
-## 8. Repair Workflow & State Transition Tests
-
-```
-State Transition Verification Matrix:
-- REQUESTED       ──► ACCEPTED           [VALID]
-- REQUESTED       ──► CANCELLED          [VALID]
-- ACCEPTED        ──► QUOTE_PENDING      [VALID]
-- QUOTE_PENDING   ──► IN_PROGRESS        [VALID - ONLY WITH FARMER APPROVAL]
-- QUOTE_PENDING   ──► QUOTE_REVISED      [VALID]
-- IN_PROGRESS     ──► WAITING_FOR_PARTS  [VALID]
-- WAITING_FOR_PARTS ──► IN_PROGRESS      [VALID]
-- IN_PROGRESS     ──► COMPLETED          [VALID]
-- REQUESTED       ──► IN_PROGRESS        [INVALID - BLOCKED BY STATE MACHINE]
-- QUOTE_PENDING   ──► COMPLETED          [INVALID - BLOCKED BY STATE MACHINE]
-```
-
----
-
-## 9. Quote Tests
-
-- **Q-01 (Dynamic Parts Rows)**: Technician can add, edit, and delete multiple line items.
-- **Q-02 (Zero Quantity / Negative Price)**: Form rejects non-positive quantities or negative prices.
-- **Q-03 (Revision Versioning)**: Modifying a declined quote increments `version = 2` without destroying original audit log.
-- **Q-04 (Approval Hard Gate)**: Technician cannot mark `IN_PROGRESS` while quote is `QUOTE_PENDING`.
-
----
-
-## 10. Service History Tests
-
-- **SH-01 (Asset Binding)**: Completed service record is permanently bound to `equipment.id`.
-- **SH-02 (Data Completeness)**: Record captures service date, operating hours, replaced parts array, labour cost, total cost, technician name, workshop name, and maintenance advice.
-- **SH-03 (Immutability)**: Historical service records cannot be edited or deleted by farmers or technicians.
-
----
-
-## 11. Assistive AI Diagnostics Tests (Planned for Phase 5)
-
-- **AI-01 (Structured Response)**: Gemini Edge Function returns valid JSON matching schema (`likely_issue`, `severity`, `parts_category`, `safety_advice`).
-- **AI-02 (Loading Indicator)**: Submitting intake displays an animated pulse indicator ("Analyzing symptoms...").
-- **AI-03 (API Failure Fallback)**: If Gemini API returns 500 or times out, UI gracefully falls back to rule-based category matching without crashing.
-- **AI-04 (Malformed Response)**: If Gemini returns unparseable text, fallback parser extracts keywords safely.
-- **AI-05 (Key Security)**: Client network tab inspects zero calls to `generativelanguage.googleapis.com`; all traffic proxies through Supabase Edge Function.
-
----
-
-## 12. Error Handling & Reliability Tests
-
-- **ERR-01 (Network Failure)**: Disconnecting internet triggers an offline banner with direct phone dialer buttons.
-- **ERR-02 (Double Submission)**: Tapping `[Approve Quote]` or `[Submit Request]` multiple times rapidly triggers button disabling; only one mutation fires.
-- **ERR-03 (Page Refresh)**: Refreshing active repair view maintains current state from database.
-- **ERR-04 (Empty State)**: Clean empty state displayed when zero equipment or zero repairs exist.
-
----
-
-## 13. Responsive Testing Matrix
-
-Test across standard viewports:
-- **Small Mobile (320px – 375px)**: iPhone SE / Android compact.
-- **Large Mobile (390px – 430px)**: iPhone 14/15 / Pixel 7.
-- **Tablet (768px – 1024px)**: iPad Mini / Air.
-- **Desktop (1280px+)**: Laptop / External display.
-
-**Verification Checklist**:
-- [ ] No horizontal scroll or viewport overflow on any screen.
-- [ ] Primary CTAs (`[Report Breakdown]`, `[Approve Quote]`) are pinned or thumb-reachable with minimum 48px height.
-- [ ] Form inputs maintain readable 16px font to prevent mobile Safari auto-zoom.
-- [ ] Modals and drawers fit comfortably within mobile viewports with visible close buttons.
-
----
-
-## 14. Accessibility Checks
-
-- [ ] All icon-only buttons (notifications, back, call) have explicit `aria-label` attributes.
-- [ ] Form fields are linked to visible `<label>` tags with matching `htmlFor` / `id`.
-- [ ] Interactive elements are reachable and operable via keyboard `Tab` and `Enter` / `Space`.
-- [ ] Focus states have high-contrast visible rings (`focus-visible:ring-2`).
-- [ ] Color is never the sole indicator of state (status badges use text labels alongside color).
-
----
-
-## 15. Security & Privacy Checks
-
-- [ ] `.env.local` is listed in `.gitignore` and confirmed untracked by `git ls-files`.
-- [ ] `.env.example` contains only generic placeholder values.
-- [ ] Zero Supabase service-role keys, database passwords, or CLI tokens present in `src/`.
-- [ ] Browser console logs zero sensitive credentials during login or API operations.
-- [ ] PostgreSQL RLS verified active on all 10 application tables.
-
----
-
-## 16. Release Blockers
-
-The following defects constitute immediate release blockers:
-1. **Authentication Failure**: Users cannot log in or are redirected incorrectly.
-2. **Data Leakage**: A farmer can view another farmer's private equipment or repairs.
-3. **RLS Bypass**: Any client can execute unauthorized database updates.
-4. **Broken Workflow**: A repair cannot advance from `REQUESTED` to `COMPLETED`.
-5. **Quote Gate Failure**: Work can proceed without farmer quote approval.
-6. **Mobile Unusability**: Critical buttons are cut off or unclickable on mobile viewports.
-7. **Secret Exposure**: Any API key, service-role secret, or token is committed to Git.
-8. **Build / Type Failure**: `tsc --noEmit` or `vite build` produces errors.
-
----
-
-## 17. Standard Test Failure Report Format
-
-When a test fails, document it using this format:
-
-```markdown
-### Defect Report: [TEST-ID] — [Brief Title]
-- **Test Case**: [e.g., AUTH-02 / FARM-06]
-- **Expected Result**: [What should have happened]
-- **Actual Result**: [What actually happened]
-- **Environment**: [e.g., Chrome 124 / iOS Safari 17 / Windows Desktop]
-- **Reproduction Steps**:
-  1. Navigate to ...
-  2. Input ...
-  3. Tap ...
-- **Log / Error Trace**: [Copy of error string or screenshot link]
-- **Severity**: [Critical / High / Medium / Low]
-- **Status**: [Open / Investigating / Fixed / Verified]
-```
+No phase promotion or production deployment may occur if:
+1. Unauthenticated users can view or interact with `/farmer/*`, `/technician/*`, or `/admin/*`.
+2. Unverified technicians can access the technician job workbench before administrator approval.
+3. Non-admin users can elevate their role to `service_centre` or set `is_verified = true`.
+4. Any client request can read or modify another user's private profile.
+5. TypeScript errors (`tsc --noEmit`) or Vite build failures exist.

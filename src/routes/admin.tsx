@@ -5,9 +5,7 @@ export const Route = createFileRoute("/admin")({
   ssr: false,
   component: () => (
     <RoleGuard role="admin">
-      <Shell role="admin" wide>
-        <Outlet />
-      </Shell>
+      <Shell role="admin" wide><Outlet /></Shell>
     </RoleGuard>
   ),
 });

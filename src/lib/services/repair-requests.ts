@@ -310,3 +310,635 @@ export async function cancelRepairRequest(id: string): Promise<RepairRequestRow>
 
   return updated;
 }
+
+// ============================================================================
+// PHASE 3.5 — CANONICAL REPAIR STATE MACHINE & PARTS HOLD
+// ============================================================================
+
+export const LEGAL_REPAIR_TRANSITIONS: Record<RepairStatus, readonly RepairStatus[]> = {
+  REQUESTED: ["ACCEPTED", "CANCELLED"],
+  ACCEPTED: ["QUOTE_PENDING", "CANCELLED"],
+  QUOTE_PENDING: ["QUOTE_REVISED", "IN_PROGRESS"],
+  QUOTE_REVISED: ["QUOTE_PENDING"],
+  IN_PROGRESS: ["WAITING_FOR_PARTS", "COMPLETED"],
+  WAITING_FOR_PARTS: ["IN_PROGRESS"],
+  COMPLETED: [],
+  CANCELLED: [],
+};
+
+export function isLegalRepairTransition(currentStatus: RepairStatus, targetStatus: RepairStatus): boolean {
+  return LEGAL_REPAIR_TRANSITIONS[currentStatus]?.includes(targetStatus) ?? false;
+}
+
+export interface WaitForPartsInput {
+  part: string;
+  reason: string;
+  eta: string;
+  revisedCompletion?: string;
+  note?: string;
+}
+
+export interface UpdatePartsEtaInput {
+  eta: string;
+  revisedCompletion?: string;
+  note?: string;
+}
+
+export interface CompleteRepairInput {
+  notes: string;
+  photo?: string;
+  tested?: boolean;
+}
+
+/**
+ * Checks if a technician has been verified by the Service Centre.
+ */
+async function verifyTechnicianIsVerified(profileId: string): Promise<boolean> {
+  const { data: tech } = await supabase
+    .from("technician_profiles")
+    .select("is_verified")
+    .eq("profile_id", profileId)
+    .maybeSingle();
+
+  return Boolean(tech?.is_verified);
+}
+
+/**
+ * Accepts a repair request by the assigned, verified technician.
+ * Transitions status: REQUESTED -> ACCEPTED.
+ */
+export async function acceptRepairRequest(repairRequestId: string): Promise<RepairRequestRow> {
+  if (!repairRequestId) throw new Error("Repair request ID is required.");
+  const profile = await getAuthenticatedProfile();
+
+  if (profile.role !== "technician" && profile.role !== "admin") {
+    throw new Error("Unauthorized: Only technicians can accept repair jobs.");
+  }
+
+  const isVerified = await verifyTechnicianIsVerified(profile.id);
+  if (!isVerified && profile.role !== "admin") {
+    throw new Error("Unauthorized: Unverified technicians cannot accept repair jobs.");
+  }
+
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairRequestId);
+  const { data: repair, error: repairError } = isUuid
+    ? await supabase.from("repair_requests").select("*").eq("id", repairRequestId).maybeSingle()
+    : await supabase.from("repair_requests").select("*").eq("job_number", repairRequestId).maybeSingle();
+
+  if (repairError || !repair) {
+    throw new Error("Repair request not found or inaccessible.");
+  }
+
+  if (repair.technician_id !== profile.id && profile.role !== "admin") {
+    throw new Error("Unauthorized: You are not the assigned technician for this repair job.");
+  }
+
+  if (repair.status !== "REQUESTED") {
+    throw new Error(`Cannot accept job: Repair ticket is in '${repair.status}' status (must be REQUESTED).`);
+  }
+
+  if (!isLegalRepairTransition(repair.status, "ACCEPTED")) {
+    throw new Error(`Illegal state transition: Cannot transition from '${repair.status}' to 'ACCEPTED'.`);
+  }
+
+  const now = new Date().toISOString();
+  const { data: updated, error: updateError } = await supabase
+    .from("repair_requests")
+    .update({
+      status: "ACCEPTED",
+      status_since: now,
+    })
+    .eq("id", repair.id)
+    .select()
+    .single();
+
+  if (updateError || !updated) {
+    throw new Error(`Failed to accept repair request: ${updateError?.message}`);
+  }
+
+  await supabase.from("repair_timeline").insert({
+    repair_request_id: repair.id,
+    status: "ACCEPTED",
+    note: "Technician accepted job & dispatched for on-site inspection",
+    created_by_role: profile.role,
+    created_by_id: profile.id,
+  });
+
+  return updated;
+}
+
+/**
+ * Declines a repair request by the assigned technician.
+ * Preserves REQUESTED status, records technician in declined_by, and returns ticket to dispatch.
+ */
+export async function declineRepairRequest(repairRequestId: string, reason: string): Promise<RepairRequestRow> {
+  if (!repairRequestId) throw new Error("Repair request ID is required.");
+  const trimmedReason = reason?.trim();
+  if (!trimmedReason) {
+    throw new Error("A reason is required to decline a repair job.");
+  }
+
+  const profile = await getAuthenticatedProfile();
+
+  if (profile.role !== "technician" && profile.role !== "admin") {
+    throw new Error("Unauthorized: Only technicians can decline repair jobs.");
+  }
+
+  const isVerified = await verifyTechnicianIsVerified(profile.id);
+  if (!isVerified && profile.role !== "admin") {
+    throw new Error("Unauthorized: Unverified technicians cannot decline repair jobs.");
+  }
+
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairRequestId);
+  const { data: repair, error: repairError } = isUuid
+    ? await supabase.from("repair_requests").select("*").eq("id", repairRequestId).maybeSingle()
+    : await supabase.from("repair_requests").select("*").eq("job_number", repairRequestId).maybeSingle();
+
+  if (repairError || !repair) {
+    throw new Error("Repair request not found or inaccessible.");
+  }
+
+  if (repair.technician_id !== profile.id && profile.role !== "admin") {
+    throw new Error("Unauthorized: You are not the assigned technician for this repair job.");
+  }
+
+  if (repair.status !== "REQUESTED") {
+    throw new Error(`Cannot decline job: Repair ticket is in '${repair.status}' status (must be REQUESTED).`);
+  }
+
+  const declinedList = Array.isArray(repair.declined_by) ? [...repair.declined_by] : [];
+  if (!declinedList.includes(profile.id)) {
+    declinedList.push(profile.id);
+  }
+
+  const now = new Date().toISOString();
+  const { data: updated, error: updateError } = await supabase
+    .from("repair_requests")
+    .update({
+      technician_id: null,
+      status: "REQUESTED",
+      declined_by: declinedList,
+      status_since: now,
+    })
+    .eq("id", repair.id)
+    .select()
+    .single();
+
+  if (updateError || !updated) {
+    throw new Error(`Failed to decline repair request: ${updateError?.message}`);
+  }
+
+  await supabase.from("repair_timeline").insert({
+    repair_request_id: repair.id,
+    status: "REQUESTED",
+    note: `Technician declined job (${trimmedReason}). Returned to dispatch queue.`,
+    created_by_role: profile.role,
+    created_by_id: profile.id,
+  });
+
+  return updated;
+}
+
+/**
+ * Validates that physical work is ready to start on an approved repair.
+ * Confirms status is IN_PROGRESS and quote is APPROVED.
+ */
+export async function startRepair(repairRequestId: string): Promise<RepairRequestRow> {
+  if (!repairRequestId) throw new Error("Repair request ID is required.");
+  const profile = await getAuthenticatedProfile();
+
+  if (profile.role !== "technician" && profile.role !== "admin") {
+    throw new Error("Unauthorized: Only technicians can start repair work.");
+  }
+
+  const isVerified = await verifyTechnicianIsVerified(profile.id);
+  if (!isVerified && profile.role !== "admin") {
+    throw new Error("Unauthorized: Unverified technicians cannot start repair work.");
+  }
+
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairRequestId);
+  const { data: repair, error: repairError } = isUuid
+    ? await supabase.from("repair_requests").select("*").eq("id", repairRequestId).maybeSingle()
+    : await supabase.from("repair_requests").select("*").eq("job_number", repairRequestId).maybeSingle();
+
+  if (repairError || !repair) {
+    throw new Error("Repair request not found or inaccessible.");
+  }
+
+  if (repair.technician_id !== profile.id && profile.role !== "admin") {
+    throw new Error("Unauthorized: You are not assigned to this repair ticket.");
+  }
+
+  if (repair.status !== "IN_PROGRESS") {
+    throw new Error(`Cannot start repair work: Ticket is in '${repair.status}' status (quote must be approved first).`);
+  }
+
+  // Ensure an approved quote exists
+  const { data: approvedQuote } = await supabase
+    .from("quotes")
+    .select("id")
+    .eq("repair_request_id", repair.id)
+    .eq("status", "APPROVED")
+    .maybeSingle();
+
+  if (!approvedQuote && profile.role !== "admin") {
+    throw new Error("Cannot start repair work: No approved quote found for this repair ticket.");
+  }
+
+  await supabase.from("repair_timeline").insert({
+    repair_request_id: repair.id,
+    status: "IN_PROGRESS",
+    note: "Technician began disassembly and physical repair work",
+    created_by_role: profile.role,
+    created_by_id: profile.id,
+  });
+
+  return repair;
+}
+
+/**
+ * Pauses active repair work when waiting for spare parts delivery.
+ * Transitions status: IN_PROGRESS -> WAITING_FOR_PARTS.
+ * Persists hold details into parts_hold JSONB.
+ */
+export async function waitForParts(repairRequestId: string, input: WaitForPartsInput): Promise<RepairRequestRow> {
+  if (!repairRequestId) throw new Error("Repair request ID is required.");
+  if (!input.part?.trim()) throw new Error("Part name is required to pause for parts.");
+  if (!input.eta?.trim()) throw new Error("Expected arrival (ETA) is required.");
+  if (!input.reason?.trim()) throw new Error("Reason for parts hold is required.");
+
+  const profile = await getAuthenticatedProfile();
+
+  if (profile.role !== "technician" && profile.role !== "admin") {
+    throw new Error("Unauthorized: Only technicians can pause repairs for parts.");
+  }
+
+  const isVerified = await verifyTechnicianIsVerified(profile.id);
+  if (!isVerified && profile.role !== "admin") {
+    throw new Error("Unauthorized: Unverified technicians cannot manage parts hold.");
+  }
+
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairRequestId);
+  const { data: repair, error: repairError } = isUuid
+    ? await supabase.from("repair_requests").select("*").eq("id", repairRequestId).maybeSingle()
+    : await supabase.from("repair_requests").select("*").eq("job_number", repairRequestId).maybeSingle();
+
+  if (repairError || !repair) {
+    throw new Error("Repair request not found or inaccessible.");
+  }
+
+  if (repair.technician_id !== profile.id && profile.role !== "admin") {
+    throw new Error("Unauthorized: You are not assigned to this repair ticket.");
+  }
+
+  if (repair.status !== "IN_PROGRESS") {
+    throw new Error(`Cannot pause for parts: Ticket is in '${repair.status}' status (must be IN_PROGRESS).`);
+  }
+
+  if (!isLegalRepairTransition(repair.status, "WAITING_FOR_PARTS")) {
+    throw new Error(`Illegal state transition: Cannot transition from '${repair.status}' to 'WAITING_FOR_PARTS'.`);
+  }
+
+  const now = new Date().toISOString();
+  const partsHoldData = {
+    part: input.part.trim(),
+    reason: input.reason.trim(),
+    eta: input.eta.trim(),
+    revisedCompletion: input.revisedCompletion?.trim() || null,
+    note: input.note?.trim() || null,
+    since: now,
+    updated_at: now,
+    resolvedAt: null,
+  };
+
+  const { data: updated, error: updateError } = await supabase
+    .from("repair_requests")
+    .update({
+      status: "WAITING_FOR_PARTS",
+      is_testing: false,
+      parts_hold: partsHoldData as Json,
+      status_since: now,
+    })
+    .eq("id", repair.id)
+    .select()
+    .single();
+
+  if (updateError || !updated) {
+    throw new Error(`Failed to pause repair for parts: ${updateError?.message}`);
+  }
+
+  await supabase.from("repair_timeline").insert({
+    repair_request_id: repair.id,
+    status: "WAITING_FOR_PARTS",
+    note: `Paused for parts: ${input.part.trim()} (ETA: ${input.eta.trim()})`,
+    created_by_role: profile.role,
+    created_by_id: profile.id,
+  });
+
+  return updated;
+}
+
+/**
+ * Updates the estimated arrival time for pending spare parts without mutating repair status.
+ */
+export async function updatePartsEta(repairRequestId: string, input: UpdatePartsEtaInput): Promise<RepairRequestRow> {
+  if (!repairRequestId) throw new Error("Repair request ID is required.");
+  if (!input.eta?.trim()) throw new Error("Updated parts ETA is required.");
+
+  const profile = await getAuthenticatedProfile();
+
+  if (profile.role !== "technician" && profile.role !== "admin") {
+    throw new Error("Unauthorized: Only technicians can update parts ETA.");
+  }
+
+  const isVerified = await verifyTechnicianIsVerified(profile.id);
+  if (!isVerified && profile.role !== "admin") {
+    throw new Error("Unauthorized: Unverified technicians cannot update parts ETA.");
+  }
+
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairRequestId);
+  const { data: repair, error: repairError } = isUuid
+    ? await supabase.from("repair_requests").select("*").eq("id", repairRequestId).maybeSingle()
+    : await supabase.from("repair_requests").select("*").eq("job_number", repairRequestId).maybeSingle();
+
+  if (repairError || !repair) {
+    throw new Error("Repair request not found or inaccessible.");
+  }
+
+  if (repair.technician_id !== profile.id && profile.role !== "admin") {
+    throw new Error("Unauthorized: You are not assigned to this repair ticket.");
+  }
+
+  if (repair.status !== "WAITING_FOR_PARTS") {
+    throw new Error(`Cannot update parts ETA: Ticket is in '${repair.status}' status (must be WAITING_FOR_PARTS).`);
+  }
+
+  const currentHold = (repair.parts_hold as Record<string, unknown>) ?? {};
+  const updatedHold: Record<string, unknown> = {
+    ...currentHold,
+    eta: input.eta.trim(),
+    updated_at: new Date().toISOString(),
+  };
+  if (input.revisedCompletion !== undefined) {
+    updatedHold["revisedCompletion"] = input.revisedCompletion.trim() || null;
+  }
+  if (input.note !== undefined) {
+    updatedHold["note"] = input.note.trim() || null;
+  }
+
+  const { data: updated, error: updateError } = await supabase
+    .from("repair_requests")
+    .update({
+      parts_hold: updatedHold as Json,
+    })
+    .eq("id", repair.id)
+    .select()
+    .single();
+
+  if (updateError || !updated) {
+    throw new Error(`Failed to update parts ETA: ${updateError?.message}`);
+  }
+
+  await supabase.from("repair_timeline").insert({
+    repair_request_id: repair.id,
+    status: "NOTE",
+    note: `Parts ETA updated: ${input.eta.trim()}`,
+    created_by_role: profile.role,
+    created_by_id: profile.id,
+  });
+
+  return updated;
+}
+
+/**
+ * Resumes work on a repair after parts arrive.
+ * Transitions status: WAITING_FOR_PARTS -> IN_PROGRESS.
+ * Preserves historical parts hold data with resolvedAt timestamp.
+ */
+export async function resumeRepair(repairRequestId: string): Promise<RepairRequestRow> {
+  if (!repairRequestId) throw new Error("Repair request ID is required.");
+  const profile = await getAuthenticatedProfile();
+
+  if (profile.role !== "technician" && profile.role !== "admin") {
+    throw new Error("Unauthorized: Only technicians can resume repairs.");
+  }
+
+  const isVerified = await verifyTechnicianIsVerified(profile.id);
+  if (!isVerified && profile.role !== "admin") {
+    throw new Error("Unauthorized: Unverified technicians cannot resume repairs.");
+  }
+
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairRequestId);
+  const { data: repair, error: repairError } = isUuid
+    ? await supabase.from("repair_requests").select("*").eq("id", repairRequestId).maybeSingle()
+    : await supabase.from("repair_requests").select("*").eq("job_number", repairRequestId).maybeSingle();
+
+  if (repairError || !repair) {
+    throw new Error("Repair request not found or inaccessible.");
+  }
+
+  if (repair.technician_id !== profile.id && profile.role !== "admin") {
+    throw new Error("Unauthorized: You are not assigned to this repair ticket.");
+  }
+
+  if (repair.status !== "WAITING_FOR_PARTS") {
+    throw new Error(`Cannot resume repair: Ticket is in '${repair.status}' status (must be WAITING_FOR_PARTS).`);
+  }
+
+  if (!isLegalRepairTransition(repair.status, "IN_PROGRESS")) {
+    throw new Error(`Illegal state transition: Cannot transition from '${repair.status}' to 'IN_PROGRESS'.`);
+  }
+
+  const now = new Date().toISOString();
+  const currentHold = (repair.parts_hold as Record<string, unknown>) ?? {};
+  const updatedHold: Record<string, unknown> = {
+    ...currentHold,
+    resolvedAt: now,
+  };
+
+  const { data: updated, error: updateError } = await supabase
+    .from("repair_requests")
+    .update({
+      status: "IN_PROGRESS",
+      parts_hold: updatedHold as Json,
+      status_since: now,
+    })
+    .eq("id", repair.id)
+    .select()
+    .single();
+
+  if (updateError || !updated) {
+    throw new Error(`Failed to resume repair: ${updateError?.message}`);
+  }
+
+  const partName = currentHold["part"] || "parts";
+  await supabase.from("repair_timeline").insert({
+    repair_request_id: repair.id,
+    status: "IN_PROGRESS",
+    note: `Spare parts arrived (${partName}). Repair work resumed.`,
+    created_by_role: profile.role,
+    created_by_id: profile.id,
+  });
+
+  return updated;
+}
+
+/**
+ * Initiates operational load testing.
+ * Status remains IN_PROGRESS; sets is_testing = true.
+ */
+export async function startTesting(repairRequestId: string): Promise<RepairRequestRow> {
+  if (!repairRequestId) throw new Error("Repair request ID is required.");
+  const profile = await getAuthenticatedProfile();
+
+  if (profile.role !== "technician" && profile.role !== "admin") {
+    throw new Error("Unauthorized: Only technicians can initiate machine testing.");
+  }
+
+  const isVerified = await verifyTechnicianIsVerified(profile.id);
+  if (!isVerified && profile.role !== "admin") {
+    throw new Error("Unauthorized: Unverified technicians cannot start machine testing.");
+  }
+
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairRequestId);
+  const { data: repair, error: repairError } = isUuid
+    ? await supabase.from("repair_requests").select("*").eq("id", repairRequestId).maybeSingle()
+    : await supabase.from("repair_requests").select("*").eq("job_number", repairRequestId).maybeSingle();
+
+  if (repairError || !repair) {
+    throw new Error("Repair request not found or inaccessible.");
+  }
+
+  if (repair.technician_id !== profile.id && profile.role !== "admin") {
+    throw new Error("Unauthorized: You are not assigned to this repair ticket.");
+  }
+
+  if (repair.status !== "IN_PROGRESS") {
+    throw new Error(`Cannot start testing: Ticket is in '${repair.status}' status (must be IN_PROGRESS).`);
+  }
+
+  const { data: updated, error: updateError } = await supabase
+    .from("repair_requests")
+    .update({
+      is_testing: true,
+    })
+    .eq("id", repair.id)
+    .select()
+    .single();
+
+  if (updateError || !updated) {
+    throw new Error(`Failed to set testing mode: ${updateError?.message}`);
+  }
+
+  await supabase.from("repair_timeline").insert({
+    repair_request_id: repair.id,
+    status: "IN_PROGRESS",
+    note: "Repair work completed. Testing under operational load started.",
+    created_by_role: profile.role,
+    created_by_id: profile.id,
+  });
+
+  return updated;
+}
+
+/**
+ * Completes a repair request, marks equipment as Operational if appropriate,
+ * clears testing mode, and stores structured completion details.
+ * Transitions status: IN_PROGRESS -> COMPLETED.
+ */
+export async function completeRepair(
+  repairRequestId: string,
+  input: CompleteRepairInput
+): Promise<RepairRequestRow> {
+  if (!repairRequestId) throw new Error("Repair request ID is required.");
+  const trimmedNotes = input.notes?.trim();
+  if (!trimmedNotes) {
+    throw new Error("Completion notes describing the work performed are required.");
+  }
+
+  const profile = await getAuthenticatedProfile();
+
+  if (profile.role !== "technician" && profile.role !== "admin") {
+    throw new Error("Unauthorized: Only technicians can complete repairs.");
+  }
+
+  const isVerified = await verifyTechnicianIsVerified(profile.id);
+  if (!isVerified && profile.role !== "admin") {
+    throw new Error("Unauthorized: Unverified technicians cannot complete repairs.");
+  }
+
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairRequestId);
+  const { data: repair, error: repairError } = isUuid
+    ? await supabase.from("repair_requests").select("*").eq("id", repairRequestId).maybeSingle()
+    : await supabase.from("repair_requests").select("*").eq("job_number", repairRequestId).maybeSingle();
+
+  if (repairError || !repair) {
+    throw new Error("Repair request not found or inaccessible.");
+  }
+
+  if (repair.technician_id !== profile.id && profile.role !== "admin") {
+    throw new Error("Unauthorized: You are not assigned to this repair ticket.");
+  }
+
+  if (repair.status !== "IN_PROGRESS") {
+    throw new Error(`Cannot complete repair: Ticket is in '${repair.status}' status (must be IN_PROGRESS).`);
+  }
+
+  if (!isLegalRepairTransition(repair.status, "COMPLETED")) {
+    throw new Error(`Illegal state transition: Cannot transition from '${repair.status}' to 'COMPLETED'.`);
+  }
+
+  const now = new Date().toISOString();
+  const completionData = {
+    notes: trimmedNotes,
+    photo: input.photo || null,
+    tested: Boolean(input.tested),
+    completed_at: now,
+  };
+
+  const { data: updated, error: updateError } = await supabase
+    .from("repair_requests")
+    .update({
+      status: "COMPLETED",
+      is_testing: false,
+      completion_details: completionData as Json,
+      status_since: now,
+    })
+    .eq("id", repair.id)
+    .select()
+    .single();
+
+  if (updateError || !updated) {
+    throw new Error(`Failed to complete repair: ${updateError?.message}`);
+  }
+
+  await supabase.from("repair_timeline").insert({
+    repair_request_id: repair.id,
+    status: "COMPLETED",
+    note: `Repair completed & verified: "${trimmedNotes}"`,
+    created_by_role: profile.role,
+    created_by_id: profile.id,
+  });
+
+  // Restore equipment to Operational if no other active repairs exist
+  const { data: otherActive } = await supabase
+    .from("repair_requests")
+    .select("id")
+    .eq("equipment_id", repair.equipment_id)
+    .neq("id", repair.id)
+    .not("status", "in", '("COMPLETED","CANCELLED")');
+
+  if (!otherActive || otherActive.length === 0) {
+    const { error: eqError } = await supabase
+      .from("equipment")
+      .update({ status: "Operational" })
+      .eq("id", repair.equipment_id);
+
+    if (eqError) {
+      console.warn(`[TerraByte] Warning: Failed to set equipment to Operational: ${eqError.message}`);
+    }
+  }
+
+  return updated;
+}
+

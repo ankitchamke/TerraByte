@@ -6,6 +6,8 @@ export type RepairTimelineRow = Database["public"]["Tables"]["repair_timeline"][
 export type EquipmentRow = Database["public"]["Tables"]["equipment"]["Row"];
 export type RepairStatus = Database["public"]["Enums"]["repair_status"];
 
+export type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
+
 export interface CreateRepairRequestInput {
   equipment_id: string;
   symptoms: string[];
@@ -17,6 +19,7 @@ export interface CreateRepairRequestInput {
 
 export interface RepairRequestWithEquipment extends RepairRequestRow {
   equipment: EquipmentRow | null;
+  technician?: Pick<ProfileRow, "id" | "full_name" | "phone" | "village"> | null;
 }
 
 export interface RepairRequestDetail extends RepairRequestWithEquipment {
@@ -185,7 +188,7 @@ export async function getFarmerRepairRequests(): Promise<RepairRequestWithEquipm
 
   const { data, error } = await supabase
     .from("repair_requests")
-    .select("*, equipment(*)")
+    .select("*, equipment(*), technician:technician_id(id, full_name, phone, village)")
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -197,7 +200,7 @@ export async function getFarmerRepairRequests(): Promise<RepairRequestWithEquipm
 
 /**
  * Fetches full details for a single repair request by its UUID or job_number,
- * including equipment information and audit timeline events.
+ * including equipment information, assigned technician profile, and audit timeline events.
  * Protected by PostgreSQL RLS: Restricts access to authorized participants.
  */
 export async function getRepairRequestById(id: string): Promise<RepairRequestDetail | null> {
@@ -208,7 +211,7 @@ export async function getRepairRequestById(id: string): Promise<RepairRequestDet
   // Allow lookup by UUID or human-readable job_number
   const query = supabase
     .from("repair_requests")
-    .select("*, equipment(*), repair_timeline(*)")
+    .select("*, equipment(*), repair_timeline(*), technician:technician_id(id, full_name, phone, village)")
     .order("created_at", { referencedTable: "repair_timeline", ascending: true });
 
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);

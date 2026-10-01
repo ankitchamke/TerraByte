@@ -13,11 +13,18 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as FarmerRouteImport } from './routes/farmer'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as McpRouteImport } from './routes/mcp'
+import { Route as ServiceCentreRouteImport } from './routes/service-centre'
 import { Route as TechnicianRouteImport } from './routes/technician'
+import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
+import { Route as AdminTechniciansRouteImport } from './routes/admin/technicians'
 import { Route as FarmerIndexRouteImport } from './routes/farmer/index'
 import { Route as FarmerReportBreakdownRouteImport } from './routes/farmer/report-breakdown'
+import { Route as RegisterFarmerRouteImport } from './routes/register/farmer'
+import { Route as RegisterTechnicianRouteImport } from './routes/register/technician'
 import { Route as TechnicianIndexRouteImport } from './routes/technician/index'
+import { Route as TechnicianPendingRouteImport } from './routes/technician/pending'
 import { Route as AdminRepairIdRouteImport } from './routes/admin/repair/$id'
 import { Route as FarmerEquipmentIndexRouteImport } from './routes/farmer/equipment/index'
 import { Route as FarmerEquipmentIdRouteImport } from './routes/farmer/equipment/$id'
@@ -44,14 +51,35 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const McpRoute = McpRouteImport.update({
+  id: '/mcp',
+  path: '/mcp',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ServiceCentreRoute = ServiceCentreRouteImport.update({
+  id: '/service-centre',
+  path: '/service-centre',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TechnicianRoute = TechnicianRouteImport.update({
   id: '/technician',
   path: '/technician',
   getParentRoute: () => rootRouteImport,
 } as any)
+const Char91DotwellKnownChar93OauthProtectedResourceRoute =
+  Char91DotwellKnownChar93OauthProtectedResourceRouteImport.update({
+    id: '/.well-known/oauth-protected-resource',
+    path: '/.well-known/oauth-protected-resource',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminTechniciansRoute = AdminTechniciansRouteImport.update({
+  id: '/technicians',
+  path: '/technicians',
   getParentRoute: () => AdminRoute,
 } as any)
 const FarmerIndexRoute = FarmerIndexRouteImport.update({
@@ -64,9 +92,24 @@ const FarmerReportBreakdownRoute = FarmerReportBreakdownRouteImport.update({
   path: '/report-breakdown',
   getParentRoute: () => FarmerRoute,
 } as any)
+const RegisterFarmerRoute = RegisterFarmerRouteImport.update({
+  id: '/register/farmer',
+  path: '/register/farmer',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RegisterTechnicianRoute = RegisterTechnicianRouteImport.update({
+  id: '/register/technician',
+  path: '/register/technician',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TechnicianIndexRoute = TechnicianIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => TechnicianRoute,
+} as any)
+const TechnicianPendingRoute = TechnicianPendingRouteImport.update({
+  id: '/pending',
+  path: '/pending',
   getParentRoute: () => TechnicianRoute,
 } as any)
 const AdminRepairIdRoute = AdminRepairIdRouteImport.update({
@@ -100,8 +143,15 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteWithChildren
   '/farmer': typeof FarmerRouteWithChildren
   '/login': typeof LoginRoute
+  '/mcp': typeof McpRoute
+  '/service-centre': typeof ServiceCentreRoute
   '/technician': typeof TechnicianRouteWithChildren
+  '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/admin/technicians': typeof AdminTechniciansRoute
   '/farmer/report-breakdown': typeof FarmerReportBreakdownRoute
+  '/register/farmer': typeof RegisterFarmerRoute
+  '/register/technician': typeof RegisterTechnicianRoute
+  '/technician/pending': typeof TechnicianPendingRoute
   '/admin/': typeof AdminIndexRoute
   '/farmer/': typeof FarmerIndexRoute
   '/technician/': typeof TechnicianIndexRoute
@@ -114,7 +164,14 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
+  '/mcp': typeof McpRoute
+  '/service-centre': typeof ServiceCentreRoute
+  '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/admin/technicians': typeof AdminTechniciansRoute
   '/farmer/report-breakdown': typeof FarmerReportBreakdownRoute
+  '/register/farmer': typeof RegisterFarmerRoute
+  '/register/technician': typeof RegisterTechnicianRoute
+  '/technician/pending': typeof TechnicianPendingRoute
   '/admin': typeof AdminIndexRoute
   '/farmer': typeof FarmerIndexRoute
   '/technician': typeof TechnicianIndexRoute
@@ -130,8 +187,15 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteWithChildren
   '/farmer': typeof FarmerRouteWithChildren
   '/login': typeof LoginRoute
+  '/mcp': typeof McpRoute
+  '/service-centre': typeof ServiceCentreRoute
   '/technician': typeof TechnicianRouteWithChildren
+  '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/admin/technicians': typeof AdminTechniciansRoute
   '/farmer/report-breakdown': typeof FarmerReportBreakdownRoute
+  '/register/farmer': typeof RegisterFarmerRoute
+  '/register/technician': typeof RegisterTechnicianRoute
+  '/technician/pending': typeof TechnicianPendingRoute
   '/admin/': typeof AdminIndexRoute
   '/farmer/': typeof FarmerIndexRoute
   '/technician/': typeof TechnicianIndexRoute
@@ -148,8 +212,15 @@ export interface FileRouteTypes {
     | '/admin'
     | '/farmer'
     | '/login'
+    | '/mcp'
+    | '/service-centre'
     | '/technician'
+    | '/.well-known/oauth-protected-resource'
+    | '/admin/technicians'
     | '/farmer/report-breakdown'
+    | '/register/farmer'
+    | '/register/technician'
+    | '/technician/pending'
     | '/admin/'
     | '/farmer/'
     | '/technician/'
@@ -162,7 +233,14 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/login'
+    | '/mcp'
+    | '/service-centre'
+    | '/.well-known/oauth-protected-resource'
+    | '/admin/technicians'
     | '/farmer/report-breakdown'
+    | '/register/farmer'
+    | '/register/technician'
+    | '/technician/pending'
     | '/admin'
     | '/farmer'
     | '/technician'
@@ -177,8 +255,15 @@ export interface FileRouteTypes {
     | '/admin'
     | '/farmer'
     | '/login'
+    | '/mcp'
+    | '/service-centre'
     | '/technician'
+    | '/.well-known/oauth-protected-resource'
+    | '/admin/technicians'
     | '/farmer/report-breakdown'
+    | '/register/farmer'
+    | '/register/technician'
+    | '/technician/pending'
     | '/admin/'
     | '/farmer/'
     | '/technician/'
@@ -194,7 +279,12 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRouteWithChildren
   FarmerRoute: typeof FarmerRouteWithChildren
   LoginRoute: typeof LoginRoute
+  McpRoute: typeof McpRoute
+  ServiceCentreRoute: typeof ServiceCentreRoute
   TechnicianRoute: typeof TechnicianRouteWithChildren
+  Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  RegisterFarmerRoute: typeof RegisterFarmerRoute
+  RegisterTechnicianRoute: typeof RegisterTechnicianRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -227,6 +317,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/mcp': {
+      id: '/mcp'
+      path: '/mcp'
+      fullPath: '/mcp'
+      preLoaderRoute: typeof McpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/service-centre': {
+      id: '/service-centre'
+      path: '/service-centre'
+      fullPath: '/service-centre'
+      preLoaderRoute: typeof ServiceCentreRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/technician': {
       id: '/technician'
       path: '/technician'
@@ -234,11 +338,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TechnicianRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/.well-known/oauth-protected-resource': {
+      id: '/.well-known/oauth-protected-resource'
+      path: '/.well-known/oauth-protected-resource'
+      fullPath: '/.well-known/oauth-protected-resource'
+      preLoaderRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/': {
       id: '/admin/'
       path: '/'
       fullPath: '/admin/'
       preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/technicians': {
+      id: '/admin/technicians'
+      path: '/technicians'
+      fullPath: '/admin/technicians'
+      preLoaderRoute: typeof AdminTechniciansRouteImport
       parentRoute: typeof AdminRoute
     }
     '/farmer/': {
@@ -255,11 +373,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FarmerReportBreakdownRouteImport
       parentRoute: typeof FarmerRoute
     }
+    '/register/farmer': {
+      id: '/register/farmer'
+      path: '/register/farmer'
+      fullPath: '/register/farmer'
+      preLoaderRoute: typeof RegisterFarmerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/register/technician': {
+      id: '/register/technician'
+      path: '/register/technician'
+      fullPath: '/register/technician'
+      preLoaderRoute: typeof RegisterTechnicianRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/technician/': {
       id: '/technician/'
       path: '/'
       fullPath: '/technician/'
       preLoaderRoute: typeof TechnicianIndexRouteImport
+      parentRoute: typeof TechnicianRoute
+    }
+    '/technician/pending': {
+      id: '/technician/pending'
+      path: '/pending'
+      fullPath: '/technician/pending'
+      preLoaderRoute: typeof TechnicianPendingRouteImport
       parentRoute: typeof TechnicianRoute
     }
     '/admin/repair/$id': {
@@ -301,11 +440,13 @@ declare module '@tanstack/react-router' {
 }
 
 interface AdminRouteChildren {
+  AdminTechniciansRoute: typeof AdminTechniciansRoute
   AdminIndexRoute: typeof AdminIndexRoute
   AdminRepairIdRoute: typeof AdminRepairIdRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
+  AdminTechniciansRoute: AdminTechniciansRoute,
   AdminIndexRoute: AdminIndexRoute,
   AdminRepairIdRoute: AdminRepairIdRoute,
 }
@@ -332,11 +473,13 @@ const FarmerRouteWithChildren =
   FarmerRoute._addFileChildren(FarmerRouteChildren)
 
 interface TechnicianRouteChildren {
+  TechnicianPendingRoute: typeof TechnicianPendingRoute
   TechnicianIndexRoute: typeof TechnicianIndexRoute
   TechnicianJobIdRoute: typeof TechnicianJobIdRoute
 }
 
 const TechnicianRouteChildren: TechnicianRouteChildren = {
+  TechnicianPendingRoute: TechnicianPendingRoute,
   TechnicianIndexRoute: TechnicianIndexRoute,
   TechnicianJobIdRoute: TechnicianJobIdRoute,
 }
@@ -350,8 +493,24 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRouteWithChildren,
   FarmerRoute: FarmerRouteWithChildren,
   LoginRoute: LoginRoute,
+  McpRoute: McpRoute,
+  ServiceCentreRoute: ServiceCentreRoute,
   TechnicianRoute: TechnicianRouteWithChildren,
+  Char91DotwellKnownChar93OauthProtectedResourceRoute:
+    Char91DotwellKnownChar93OauthProtectedResourceRoute,
+  RegisterFarmerRoute: RegisterFarmerRoute,
+  RegisterTechnicianRoute: RegisterTechnicianRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

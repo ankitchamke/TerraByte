@@ -17,7 +17,7 @@ interface Row {
   village: string | null;
   is_verified: boolean;
   created_at: string;
-  technician_profiles: { workshop: string; service_area: string | null } | null;
+  workshop_name: string;
 }
 
 function Technicians() {
@@ -30,20 +30,35 @@ function Technicians() {
     setLoading(true);
     const { data, error } = await supabase
       .from("profiles")
-      .select("id, full_name, phone, village, is_verified, created_at, technician_profiles(workshop, service_area)")
+      .select("id, full_name, phone, village, created_at, technician_profiles(workshop_name, is_verified)")
       .eq("role", "technician")
       .order("created_at", { ascending: false });
     setLoading(false);
     if (error) { setErr(error.message); return; }
     setErr("");
-    setRows((data ?? []) as unknown as Row[]);
+    const mapped: Row[] = (data ?? []).map((p: any) => {
+      const tp = Array.isArray(p.technician_profiles) ? p.technician_profiles[0] : p.technician_profiles;
+      return {
+        id: p.id,
+        full_name: p.full_name,
+        phone: p.phone,
+        village: p.village,
+        is_verified: Boolean(tp?.is_verified),
+        created_at: p.created_at,
+        workshop_name: tp?.workshop_name || "Workshop not provided",
+      };
+    });
+    setRows(mapped);
   }, []);
 
   useEffect(() => { void load(); }, [load]);
 
   const setVerified = async (id: string, is_verified: boolean) => {
     setBusy(id);
-    const { error } = await supabase.from("profiles").update({ is_verified }).eq("id", id);
+    const { error } = await supabase
+      .from("technician_profiles")
+      .update({ is_verified })
+      .or(`profile_id.eq.${id},id.eq.${id}`);
     setBusy(null);
     if (error) { setErr(error.message); return; }
     await load();
@@ -72,8 +87,8 @@ function Technicians() {
             {list.map((r) => (
               <div key={r.id} className={cn("rounded-2xl border bg-card p-4", r.is_verified ? "border-border" : "border-warning/60")}>
                 <p className="font-semibold">{r.full_name || "Unnamed technician"}</p>
-                <p className="text-sm text-muted-foreground">{r.technician_profiles?.workshop || "Workshop not provided"}</p>
-                <p className="text-sm text-muted-foreground">{r.technician_profiles?.service_area || r.village || "—"} · {r.phone || "no phone"}</p>
+                <p className="text-sm text-muted-foreground">{r.workshop_name}</p>
+                <p className="text-sm text-muted-foreground">{r.village || "—"} · {r.phone || "no phone"}</p>
                 <button
                   disabled={busy === r.id}
                   onClick={() => void setVerified(r.id, !r.is_verified)}

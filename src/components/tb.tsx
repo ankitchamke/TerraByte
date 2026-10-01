@@ -25,11 +25,11 @@ const APP_ROLE: Record<Role, AppRole> = { farmer: "farmer", technician: "technic
  * the role always comes from the authenticated profile row, never from local state.
  */
 export function RoleGuard({ role, children, allowUnverified }: { role: Role; children: ReactNode; allowUnverified?: boolean }) {
-  const { ready, userId, profile, profileError } = useAuth();
+  const { ready, userId, emailConfirmed, profile, profileError } = useAuth();
   const s = useTB();
   const nav = useNavigate();
   const loc = useLocation();
-  const ok = !!profile && profile.role === APP_ROLE[role];
+  const ok = !!profile && profile.role === APP_ROLE[role] && emailConfirmed;
   const sessionRole = s.session?.role;
   const isPending = loc.pathname === "/technician/pending";
 
@@ -37,6 +37,8 @@ export function RoleGuard({ role, children, allowUnverified }: { role: Role; chi
   if (ready) {
     if (!userId || profileError || !profile) {
       target = "/login";
+    } else if (!emailConfirmed) {
+      target = "/login?unconfirmed=true";
     } else if (profile.role !== APP_ROLE[role]) {
       target = homeFor(profile);
     } else if (profile.role === "technician") {

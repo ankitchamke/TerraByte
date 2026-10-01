@@ -19,6 +19,7 @@ import { Route as TechnicianRouteImport } from './routes/technician'
 import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminTechniciansRouteImport } from './routes/admin/technicians'
+import { Route as AuthConfirmRouteImport } from './routes/auth/confirm'
 import { Route as FarmerIndexRouteImport } from './routes/farmer/index'
 import { Route as FarmerReportBreakdownRouteImport } from './routes/farmer/report-breakdown'
 import { Route as RegisterFarmerRouteImport } from './routes/register/farmer'
@@ -81,6 +82,11 @@ const AdminTechniciansRoute = AdminTechniciansRouteImport.update({
   id: '/technicians',
   path: '/technicians',
   getParentRoute: () => AdminRoute,
+} as any)
+const AuthConfirmRoute = AuthConfirmRouteImport.update({
+  id: '/auth/confirm',
+  path: '/auth/confirm',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const FarmerIndexRoute = FarmerIndexRouteImport.update({
   id: '/',
@@ -148,6 +154,7 @@ export interface FileRoutesByFullPath {
   '/technician': typeof TechnicianRouteWithChildren
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin/technicians': typeof AdminTechniciansRoute
+  '/auth/confirm': typeof AuthConfirmRoute
   '/farmer/report-breakdown': typeof FarmerReportBreakdownRoute
   '/register/farmer': typeof RegisterFarmerRoute
   '/register/technician': typeof RegisterTechnicianRoute
@@ -168,6 +175,7 @@ export interface FileRoutesByTo {
   '/service-centre': typeof ServiceCentreRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin/technicians': typeof AdminTechniciansRoute
+  '/auth/confirm': typeof AuthConfirmRoute
   '/farmer/report-breakdown': typeof FarmerReportBreakdownRoute
   '/register/farmer': typeof RegisterFarmerRoute
   '/register/technician': typeof RegisterTechnicianRoute
@@ -192,6 +200,7 @@ export interface FileRoutesById {
   '/technician': typeof TechnicianRouteWithChildren
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin/technicians': typeof AdminTechniciansRoute
+  '/auth/confirm': typeof AuthConfirmRoute
   '/farmer/report-breakdown': typeof FarmerReportBreakdownRoute
   '/register/farmer': typeof RegisterFarmerRoute
   '/register/technician': typeof RegisterTechnicianRoute
@@ -217,6 +226,7 @@ export interface FileRouteTypes {
     | '/technician'
     | '/.well-known/oauth-protected-resource'
     | '/admin/technicians'
+    | '/auth/confirm'
     | '/farmer/report-breakdown'
     | '/register/farmer'
     | '/register/technician'
@@ -237,6 +247,7 @@ export interface FileRouteTypes {
     | '/service-centre'
     | '/.well-known/oauth-protected-resource'
     | '/admin/technicians'
+    | '/auth/confirm'
     | '/farmer/report-breakdown'
     | '/register/farmer'
     | '/register/technician'
@@ -260,6 +271,7 @@ export interface FileRouteTypes {
     | '/technician'
     | '/.well-known/oauth-protected-resource'
     | '/admin/technicians'
+    | '/auth/confirm'
     | '/farmer/report-breakdown'
     | '/register/farmer'
     | '/register/technician'
@@ -283,6 +295,7 @@ export interface RootRouteChildren {
   ServiceCentreRoute: typeof ServiceCentreRoute
   TechnicianRoute: typeof TechnicianRouteWithChildren
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  AuthConfirmRoute: typeof AuthConfirmRoute
   RegisterFarmerRoute: typeof RegisterFarmerRoute
   RegisterTechnicianRoute: typeof RegisterTechnicianRoute
 }
@@ -358,6 +371,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/technicians'
       preLoaderRoute: typeof AdminTechniciansRouteImport
       parentRoute: typeof AdminRoute
+    }
+    '/auth/confirm': {
+      id: '/auth/confirm'
+      path: '/auth/confirm'
+      fullPath: '/auth/confirm'
+      preLoaderRoute: typeof AuthConfirmRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/farmer/': {
       id: '/farmer/'
@@ -498,6 +518,7 @@ const rootRouteChildren: RootRouteChildren = {
   TechnicianRoute: TechnicianRouteWithChildren,
   Char91DotwellKnownChar93OauthProtectedResourceRoute:
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
+  AuthConfirmRoute: AuthConfirmRoute,
   RegisterFarmerRoute: RegisterFarmerRoute,
   RegisterTechnicianRoute: RegisterTechnicianRoute,
 }

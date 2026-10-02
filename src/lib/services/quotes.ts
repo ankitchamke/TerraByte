@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
+import { createNotification } from "./notifications";
 
 export type QuoteRow = Database["public"]["Tables"]["quotes"]["Row"];
 export type QuoteItemRow = Database["public"]["Tables"]["quote_items"]["Row"];
@@ -326,6 +327,18 @@ export async function createQuote(input: CreateQuoteInput): Promise<QuoteDetail>
     console.warn(`[TerraByte] Warning: Failed to record quote timeline entry: ${timelineError.message}`);
   }
 
+  // Notify farmer of new quote
+  try {
+    await createNotification({
+      recipient_role: "farmer",
+      recipient_user_id: repair.farmer_id,
+      notification_text: `Quote ready for ${repair.job_number}: ₹${totals.totalAmount.toLocaleString("en-IN")}`,
+      link_target: `/farmer/repair/${repair.id}`,
+    });
+  } catch (notifErr) {
+    console.warn("[TerraByte] Warning: Failed to send quote notification:", notifErr);
+  }
+
   return {
     ...quote,
     quote_items: insertedItems,
@@ -460,6 +473,18 @@ export async function reviseQuote(input: ReviseQuoteInput): Promise<QuoteDetail>
     console.warn(`[TerraByte] Warning: Failed to record revised quote timeline entry: ${timelineError.message}`);
   }
 
+  // Notify farmer of revised quote
+  try {
+    await createNotification({
+      recipient_role: "farmer",
+      recipient_user_id: repair.farmer_id,
+      notification_text: `Revised quote ready for ${repair.job_number} (v${newVersion}): ₹${totals.totalAmount.toLocaleString("en-IN")}`,
+      link_target: `/farmer/repair/${repair.id}`,
+    });
+  } catch (notifErr) {
+    console.warn("[TerraByte] Warning: Failed to send revised quote notification:", notifErr);
+  }
+
   return {
     ...newQuote,
     quote_items: insertedItems,
@@ -550,6 +575,18 @@ export async function approveQuote(quoteId: string): Promise<QuoteDetail> {
 
   if (timelineError) {
     console.warn(`[TerraByte] Warning: Failed to record quote approval timeline entry: ${timelineError.message}`);
+  }
+
+  // Notify technician that quote was approved and work can begin
+  try {
+    await createNotification({
+      recipient_role: "technician",
+      recipient_user_id: quote.technician_id,
+      notification_text: `Quote approved for repair ticket — you may proceed with work`,
+      link_target: `/technician/job/${repair.id}`,
+    });
+  } catch (notifErr) {
+    console.warn("[TerraByte] Warning: Failed to send quote approval notification:", notifErr);
   }
 
   const items = (updatedQuote as any).quote_items || [];
@@ -647,6 +684,32 @@ export async function rejectQuote(quoteId: string, reason?: string): Promise<Quo
 
   if (timelineError) {
     console.warn(`[TerraByte] Warning: Failed to record quote rejection timeline entry: ${timelineError.message}`);
+  }
+
+  // Notify technician and admin
+  try {
+    if (trimmedReason) {
+      await createNotification({
+        recipient_role: "technician",
+        recipient_user_id: quote.technician_id,
+        notification_text: `Farmer requested quote revision: "${trimmedReason}"`,
+        link_target: `/technician/job/${repair.id}`,
+      });
+    } else {
+      await createNotification({
+        recipient_role: "technician",
+        recipient_user_id: quote.technician_id,
+        notification_text: `Quote rejected by farmer`,
+        link_target: `/technician/job/${repair.id}`,
+      });
+      await createNotification({
+        recipient_role: "admin",
+        notification_text: `Quote rejected by farmer for repair ticket`,
+        link_target: `/admin/repair/${repair.id}`,
+      });
+    }
+  } catch (notifErr) {
+    console.warn("[TerraByte] Warning: Failed to send quote rejection notification:", notifErr);
   }
 
   const items = (updatedQuote as any).quote_items || [];

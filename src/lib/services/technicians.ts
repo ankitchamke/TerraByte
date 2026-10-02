@@ -1,5 +1,6 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
+import { createNotification } from "./notifications";
 
 export type TechnicianProfileRow = Database["public"]["Tables"]["technician_profiles"]["Row"];
 export type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
@@ -221,6 +222,27 @@ export async function assignTechnician(input: AssignTechnicianInput): Promise<Re
 
   if (timelineError) {
     console.warn(`[TerraByte] Warning: Failed to record assignment timeline entry: ${timelineError.message}`);
+  }
+
+  // Notify technician of assignment
+  try {
+    await createNotification({
+      recipient_role: "technician",
+      recipient_user_id: input.technician_id,
+      notification_text: `You have been assigned to repair request ${repair.job_number}`,
+      link_target: `/technician/job/${repair.id}`,
+    });
+
+    if (isAdmin) {
+      await createNotification({
+        recipient_role: "farmer",
+        recipient_user_id: repair.farmer_id,
+        notification_text: `Technician assigned to ${repair.job_number}. Inspection on the way.`,
+        link_target: `/farmer/repair/${repair.id}`,
+      });
+    }
+  } catch (notifErr) {
+    console.warn("[TerraByte] Warning: Failed to send assignment notification:", notifErr);
   }
 
   return updatedRepair;

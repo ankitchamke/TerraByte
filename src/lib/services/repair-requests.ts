@@ -1,5 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
+import { createNotification } from "./notifications";
+import { createServiceHistoryFromRepair } from "./service-history";
 
 export type RepairRequestRow = Database["public"]["Tables"]["repair_requests"]["Row"];
 export type RepairTimelineRow = Database["public"]["Tables"]["repair_timeline"]["Row"];
@@ -174,6 +176,17 @@ export async function createRepairRequest(input: CreateRepairRequestInput): Prom
 
   if (timelineError) {
     console.warn(`[TerraByte] Warning: Failed to record initial timeline entry: ${timelineError.message}`);
+  }
+
+  // 6. Notify Service Centre Admin of new breakdown request
+  try {
+    await createNotification({
+      recipient_role: "admin",
+      notification_text: `New breakdown reported (${jobNumber}): ${input.symptoms.join(", ")}`,
+      link_target: `/admin/repair/${repair.id}`,
+    });
+  } catch (notifErr) {
+    console.warn("[TerraByte] Warning: Failed to send breakdown notification:", notifErr);
   }
 
   return repair;
@@ -424,6 +437,18 @@ export async function acceptRepairRequest(repairRequestId: string): Promise<Repa
     created_by_id: profile.id,
   });
 
+  // Notify farmer that technician accepted and is dispatched
+  try {
+    await createNotification({
+      recipient_role: "farmer",
+      recipient_user_id: repair.farmer_id,
+      notification_text: `Technician accepted repair ${repair.job_number}. Inspection on the way.`,
+      link_target: `/farmer/repair/${repair.id}`,
+    });
+  } catch (notifErr) {
+    console.warn("[TerraByte] Warning: Failed to send accept notification:", notifErr);
+  }
+
   return updated;
 }
 
@@ -495,6 +520,23 @@ export async function declineRepairRequest(repairRequestId: string, reason: stri
     created_by_role: profile.role,
     created_by_id: profile.id,
   });
+
+  // Notify admin and farmer
+  try {
+    await createNotification({
+      recipient_role: "admin",
+      notification_text: `${repair.job_number} declined by technician (${trimmedReason}) — needs reassignment`,
+      link_target: `/admin/repair/${repair.id}`,
+    });
+    await createNotification({
+      recipient_role: "farmer",
+      recipient_user_id: repair.farmer_id,
+      notification_text: `Technician declined repair ${repair.job_number} (${trimmedReason}). Reassignment in progress.`,
+      link_target: `/farmer/repair/${repair.id}`,
+    });
+  } catch (notifErr) {
+    console.warn("[TerraByte] Warning: Failed to send decline notifications:", notifErr);
+  }
 
   return updated;
 }
@@ -635,6 +677,18 @@ export async function waitForParts(repairRequestId: string, input: WaitForPartsI
     created_by_id: profile.id,
   });
 
+  // Notify farmer that repair is paused for parts
+  try {
+    await createNotification({
+      recipient_role: "farmer",
+      recipient_user_id: repair.farmer_id,
+      notification_text: `Repair ${repair.job_number} paused: waiting for ${input.part.trim()} (ETA ${input.eta.trim()})`,
+      link_target: `/farmer/repair/${repair.id}`,
+    });
+  } catch (notifErr) {
+    console.warn("[TerraByte] Warning: Failed to send parts hold notification:", notifErr);
+  }
+
   return updated;
 }
 
@@ -706,6 +760,18 @@ export async function updatePartsEta(repairRequestId: string, input: UpdateParts
     created_by_role: profile.role,
     created_by_id: profile.id,
   });
+
+  // Notify farmer that ETA was updated
+  try {
+    await createNotification({
+      recipient_role: "farmer",
+      recipient_user_id: repair.farmer_id,
+      notification_text: `${repair.job_number}: spare part ETA updated to ${input.eta.trim()}`,
+      link_target: `/farmer/repair/${repair.id}`,
+    });
+  } catch (notifErr) {
+    console.warn("[TerraByte] Warning: Failed to send parts ETA notification:", notifErr);
+  }
 
   return updated;
 }
@@ -779,6 +845,18 @@ export async function resumeRepair(repairRequestId: string): Promise<RepairReque
     created_by_role: profile.role,
     created_by_id: profile.id,
   });
+
+  // Notify farmer that repair has resumed
+  try {
+    await createNotification({
+      recipient_role: "farmer",
+      recipient_user_id: repair.farmer_id,
+      notification_text: `Part arrived — repair ${repair.job_number} resumed`,
+      link_target: `/farmer/repair/${repair.id}`,
+    });
+  } catch (notifErr) {
+    console.warn("[TerraByte] Warning: Failed to send resume notification:", notifErr);
+  }
 
   return updated;
 }
@@ -937,6 +1015,25 @@ export async function completeRepair(
     if (eqError) {
       console.warn(`[TerraByte] Warning: Failed to set equipment to Operational: ${eqError.message}`);
     }
+  }
+
+  // Auto-generate verified service history record bound to equipment
+  try {
+    await createServiceHistoryFromRepair(repair.id);
+  } catch (shErr) {
+    console.warn(`[TerraByte] Warning: Failed to auto-generate service history on completion:`, shErr);
+  }
+
+  // Notify farmer that repair is completed and machinery is ready
+  try {
+    await createNotification({
+      recipient_role: "farmer",
+      recipient_user_id: repair.farmer_id,
+      notification_text: `Repair completed for ${repair.job_number}! Please inspect machinery and confirm handover.`,
+      link_target: `/farmer/repair/${repair.id}`,
+    });
+  } catch (notifErr) {
+    console.warn("[TerraByte] Warning: Failed to send completion notification:", notifErr);
   }
 
   return updated;

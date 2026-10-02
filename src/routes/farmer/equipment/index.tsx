@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Camera, Plus, Tractor, X } from "lucide-react";
+import { ArrowLeft, Camera, Plus, Tractor, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -107,6 +107,12 @@ function EquipmentList() {
 
   return (
     <div className="space-y-5">
+      <Link
+        to="/farmer"
+        className="inline-flex h-10 items-center gap-1 text-sm font-semibold text-muted-foreground"
+      >
+        <ArrowLeft className="h-4 w-4" /> Home
+      </Link>
       <div className="flex items-center justify-between">
         <h1 className="text-3xl font-bold">My equipment</h1>
         <button onClick={() => setOpen(!open)} className={btn.primary}>

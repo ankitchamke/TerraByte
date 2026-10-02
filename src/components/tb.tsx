@@ -221,7 +221,15 @@ export function Shell({ role, children, wide }: { role: Role; children: ReactNod
         console.warn("[TerraByte] Failed to mark notification as read:", err);
       }
     }
-    void nav({ to: notif.link as "/" });
+    let targetLink = notif.link;
+    if (role === "admin" && targetLink) {
+      if (targetLink.startsWith("/farmer/repair/")) {
+        targetLink = targetLink.replace("/farmer/repair/", "/admin/repair/");
+      } else if (targetLink.startsWith("/technician/job/")) {
+        targetLink = targetLink.replace("/technician/job/", "/admin/repair/");
+      }
+    }
+    void nav({ to: targetLink as "/" });
   };
 
   const handleMarkAllAsRead = async () => {

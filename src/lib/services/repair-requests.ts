@@ -25,8 +25,12 @@ export interface RepairRequestWithEquipment extends RepairRequestRow {
   farmer?: Pick<ProfileRow, "id" | "full_name" | "phone" | "village"> | null;
 }
 
+export type RepairTimelineWithActor = RepairTimelineRow & {
+  created_by?: Pick<ProfileRow, "id" | "full_name" | "role"> | null;
+};
+
 export interface RepairRequestDetail extends RepairRequestWithEquipment {
-  repair_timeline: RepairTimelineRow[];
+  repair_timeline: RepairTimelineWithActor[];
 }
 
 /**
@@ -228,7 +232,7 @@ export async function getRepairRequestById(id: string): Promise<RepairRequestDet
   // Allow lookup by UUID or human-readable job_number (case-insensitive for resilience)
   const query = supabase
     .from("repair_requests")
-    .select("*, equipment(*), repair_timeline(*), technician:technician_id(id, full_name, phone, village), farmer:farmer_id(id, full_name, phone, village)")
+    .select("*, equipment(*), repair_timeline(*, created_by:created_by_id(id, full_name, role)), technician:technician_id(id, full_name, phone, village), farmer:farmer_id(id, full_name, phone, village)")
     .order("created_at", { referencedTable: "repair_timeline", ascending: true });
 
   const { data, error } = isUuid
@@ -395,6 +399,25 @@ export async function cancelRepairRequest(id: string): Promise<RepairRequestRow>
     if (eqRestoreError) {
       console.warn(`[TerraByte] Warning: Failed to restore equipment status to Operational: ${eqRestoreError.message}`);
     }
+  }
+
+  // Notify admin (and assigned technician if any) of operational cancellation
+  try {
+    if (repair.technician_id) {
+      await createNotification({
+        recipient_role: "technician",
+        recipient_user_id: repair.technician_id,
+        notification_text: `Repair request ${repair.job_number} was cancelled by farmer.`,
+        link_target: `/technician/job/${repair.id}`,
+      });
+    }
+    await createNotification({
+      recipient_role: "admin",
+      notification_text: `Repair request ${repair.job_number} was cancelled by farmer.`,
+      link_target: `/admin/repair/${repair.id}`,
+    });
+  } catch (notifErr) {
+    console.warn("[TerraByte] Warning: Failed to dispatch cancellation notification:", notifErr);
   }
 
   return updated;

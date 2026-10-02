@@ -73,25 +73,88 @@ export async function createNotification(input: CreateNotificationInput): Promis
 }
 
 /**
+ * Determines whether a notification qualifies as an actionable operational event
+ * for Service Centre (admin) attention.
+ * Strictly excludes normal Farmer <-> Technician workflow chatter/activity.
+ */
+export function isActionableServiceCentreNotification(text: string): boolean {
+  if (!text) return false;
+  const t = text.toLowerCase();
+
+  // Chatter patterns that must NEVER appear in Service Centre notifications
+  const chatterPatterns = [
+    "accepted repair",
+    "technician accepted",
+    "quote ready",
+    "revised quote",
+    "requested changes to quote",
+    "requested quote revision",
+    "approved quote",
+    "quote approved",
+    "started repair",
+    "repair started",
+    "work note",
+    "parts received",
+    "has resumed",
+    "is delayed while waiting for spare parts",
+    "spare part eta updated",
+    "now being tested",
+    "testing found an issue",
+    "remedial work complete",
+    "ready for handover",
+    "handover confirmation",
+    "confirmed handover",
+    "signed off",
+  ];
+  for (const pattern of chatterPatterns) {
+    if (t.includes(pattern)) return false;
+  }
+
+  // Actionable operational patterns for Service Centre
+  const operationalPatterns = [
+    "breakdown reported",
+    "new breakdown",
+    "declined by technician",
+    "needs reassignment",
+    "clarification requested",
+    "requested service centre",
+    "intervention",
+    "cancelled",
+    "unassigned",
+    "exception",
+    "quote rejected by farmer",
+    "rejected by farmer",
+  ];
+  return operationalPatterns.some((pattern) => t.includes(pattern));
+}
+
+/**
  * Fetches notifications for the currently authenticated caller.
  * RLS enforces that users only see notifications targeted to their profile or broadcast to their role.
  * Ordered newest first.
+ * For Service Centre (admin), filters down to actionable operational events only.
  */
 export async function getNotificationsForCurrentUser(
   options?: GetNotificationsOptions
 ): Promise<NotificationRow[]> {
-  await getAuthenticatedProfile();
+  const profile = await getAuthenticatedProfile();
 
   let query = supabase
     .from("notifications")
     .select("*")
     .order("created_at", { ascending: false });
 
+  // Strictly filter notifications intended for the current user/role
+  query = query.or(
+    `recipient_user_id.eq.${profile.id},and(recipient_user_id.is.null,recipient_role.eq.${profile.role})`
+  );
+
   if (options?.unreadOnly) {
     query = query.eq("is_read", false);
   }
 
-  if (options?.limit && options.limit > 0) {
+  // For non-admin, apply limit directly in SQL query
+  if (options?.limit && options.limit > 0 && profile.role !== "admin") {
     query = query.limit(options.limit);
   }
 
@@ -101,7 +164,17 @@ export async function getNotificationsForCurrentUser(
     throw new Error(`Failed to fetch notifications: ${error.message}`);
   }
 
-  return data || [];
+  let result = data || [];
+
+  // For Service Centre / admin, strictly filter to actionable operational events
+  if (profile.role === "admin") {
+    result = result.filter((n) => isActionableServiceCentreNotification(n.notification_text));
+    if (options?.limit && options.limit > 0) {
+      result = result.slice(0, options.limit);
+    }
+  }
+
+  return result;
 }
 
 /**
@@ -128,22 +201,33 @@ export async function markNotificationAsRead(notificationId: string): Promise<No
 
 /**
  * Marks all notifications for the current user as read.
+ * For Service Centre (admin), only marks filtered actionable operational notifications.
  */
 export async function markAllNotificationsAsRead(): Promise<void> {
   const profile = await getAuthenticatedProfile();
 
-  let query = supabase
-    .from("notifications")
-    .update({ is_read: true })
-    .eq("is_read", false);
+  if (profile.role === "admin") {
+    const unread = await getNotificationsForCurrentUser({ unreadOnly: true });
+    const ids = unread.map((n) => n.id);
+    if (ids.length === 0) return;
+    const { error } = await supabase
+      .from("notifications")
+      .update({ is_read: true })
+      .in("id", ids);
 
-  if (profile.role !== "admin") {
-    query = query.or(
-      `recipient_user_id.eq.${profile.id},and(recipient_user_id.is.null,recipient_role.eq.${profile.role})`
-    );
+    if (error) {
+      throw new Error(`Failed to mark notifications as read: ${error.message}`);
+    }
+    return;
   }
 
-  const { error } = await query;
+  const { error } = await supabase
+    .from("notifications")
+    .update({ is_read: true })
+    .eq("is_read", false)
+    .or(
+      `recipient_user_id.eq.${profile.id},and(recipient_user_id.is.null,recipient_role.eq.${profile.role})`
+    );
 
   if (error) {
     throw new Error(`Failed to mark notifications as read: ${error.message}`);
@@ -152,14 +236,23 @@ export async function markAllNotificationsAsRead(): Promise<void> {
 
 /**
  * Gets the total count of unread notifications for the currently authenticated user.
+ * For Service Centre (admin), only counts unread actionable operational notifications.
  */
 export async function getUnreadNotificationCount(): Promise<number> {
-  await getAuthenticatedProfile();
+  const profile = await getAuthenticatedProfile();
+
+  if (profile.role === "admin") {
+    const notifications = await getNotificationsForCurrentUser({ unreadOnly: true });
+    return notifications.length;
+  }
 
   const { count, error } = await supabase
     .from("notifications")
     .select("*", { count: "exact", head: true })
-    .eq("is_read", false);
+    .eq("is_read", false)
+    .or(
+      `recipient_user_id.eq.${profile.id},and(recipient_user_id.is.null,recipient_role.eq.${profile.role})`
+    );
 
   if (error) {
     throw new Error(`Failed to get unread notification count: ${error.message}`);

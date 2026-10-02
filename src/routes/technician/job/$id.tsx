@@ -251,7 +251,7 @@ function Job() {
 
   return (
     <div className="space-y-5">
-      <Link to="/technician" className="inline-flex h-10 items-center gap-1 text-sm font-semibold text-muted-foreground">
+      <Link to="/technician" className="inline-flex h-10 items-center gap-1 text-sm font-semibold text-muted-foreground hover:text-foreground">
         <ArrowLeft className="h-4 w-4" /> Jobs
       </Link>
       <div className="flex flex-wrap items-start justify-between gap-2">

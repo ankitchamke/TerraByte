@@ -5,8 +5,20 @@ import { formatEtaDateTime } from "@/lib/date-utils";
 import { cn } from "@/lib/utils";
 
 export function AssessmentCard({ r, compact }: { r: Repair; compact?: boolean }) {
-  const a = r.assessment;
-  const sevTone = a.severity === "High" ? "bg-destructive text-destructive-foreground" : a.severity === "Moderate to High" ? "bg-warning text-warning-foreground" : "bg-accent text-accent-foreground";
+  const a = r?.assessment || ({} as any);
+  const severity = a.severity || "Moderate";
+  const system = a.system || "General Mechanical";
+  const possibleIssue = a.possibleIssue || "Physical inspection required by technician on site";
+  const advice = a.advice || "Avoid heavy usage until inspected by a technician.";
+  const partsCategory = Array.isArray(a.partsCategory) ? a.partsCategory : [];
+
+  const sevTone =
+    severity === "High"
+      ? "bg-destructive text-destructive-foreground"
+      : severity === "Moderate to High"
+        ? "bg-warning text-warning-foreground"
+        : "bg-accent text-accent-foreground";
+
   return (
     <Card className="border-info/30">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -14,12 +26,19 @@ export function AssessmentCard({ r, compact }: { r: Repair; compact?: boolean })
         <span className="rounded-sm border border-dashed border-info/50 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-info">Assistive · Demo engine</span>
       </div>
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        <div><Label>Likely affected system</Label><p className="text-lg font-bold">{a.system}</p></div>
-        <div><Label>Severity</Label><span className={cn("inline-block rounded-full px-3 py-1 text-sm font-bold", sevTone)}>{a.severity}</span></div>
-        <div className="sm:col-span-2"><Label>Possible issue</Label><p>{a.possibleIssue}</p></div>
-        {!compact && <div className="sm:col-span-2"><Label>Potential parts category</Label><div className="flex flex-wrap gap-1.5">{a.partsCategory.map((p) => <span key={p} className="rounded-lg bg-muted px-2 py-1 text-sm">{p}</span>)}</div></div>}
+        <div><Label>Likely affected system</Label><p className="text-lg font-bold">{system}</p></div>
+        <div><Label>Severity</Label><span className={cn("inline-block rounded-full px-3 py-1 text-sm font-bold", sevTone)}>{severity}</span></div>
+        <div className="sm:col-span-2"><Label>Possible issue</Label><p>{possibleIssue}</p></div>
+        {!compact && partsCategory.length > 0 && (
+          <div className="sm:col-span-2">
+            <Label>Potential parts category</Label>
+            <div className="flex flex-wrap gap-1.5">
+              {partsCategory.map((p) => <span key={p} className="rounded-lg bg-muted px-2 py-1 text-sm">{p}</span>)}
+            </div>
+          </div>
+        )}
       </div>
-      <p className="mt-4 rounded-xl bg-warning/15 p-3 text-sm"><b>Advice:</b> {a.advice}</p>
+      <p className="mt-4 rounded-xl bg-warning/15 p-3 text-sm"><b>Advice:</b> {advice}</p>
       <p className="mt-3 text-xs text-muted-foreground">This is not a confirmed diagnosis. The technician will inspect and confirm the cause on site.</p>
     </Card>
   );

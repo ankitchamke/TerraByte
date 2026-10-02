@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { AlertOctagon, ChevronRight } from "lucide-react";
+import { AlertOctagon, ChevronDown, ChevronRight, ChevronUp, Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Card, DemoTag, StatusPill } from "@/components/tb";
 import { ago } from "@/lib/tb-store";
@@ -51,6 +51,7 @@ function Admin() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [f, setF] = useState<F>("All");
+  const [showAllTechs, setShowAllTechs] = useState(false);
   const [, tick] = useState(0);
 
   const loadData = useCallback(async () => {
@@ -119,6 +120,25 @@ function Admin() {
     { k: "Avg. downtime (hrs)", v: "—", tone: "text-foreground" },
   ];
 
+  const INITIAL_TECHS_COUNT = 4;
+
+  const techWorkload = technicians.map((t) => {
+    const load = open.filter((r) => r.technician_id === t.profile_id).length;
+    return {
+      t,
+      load,
+      techName: t.profile?.full_name || "Technician",
+      workshopName: t.workshop_name || "Workshop",
+      isAvailable: Boolean(t.is_available),
+    };
+  });
+
+  const sortedTechWorkload = [...techWorkload].sort((a, b) => b.load - a.load);
+  const maxLoad = Math.max(1, ...sortedTechWorkload.map((tw) => tw.load));
+  const visibleTechs = showAllTechs
+    ? sortedTechWorkload
+    : sortedTechWorkload.slice(0, INITIAL_TECHS_COUNT);
+
   const rows = open
     .filter(test[f])
     .sort(
@@ -179,6 +199,104 @@ function Admin() {
           </div>
         </div>
       )}
+
+      {/* Compact Technician Workload Summary (placed near top of dashboard) */}
+      {sortedTechWorkload.length > 0 && (
+        <div className="space-y-3 rounded-2xl border border-border bg-card p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Users className="h-5 w-5 text-primary" />
+              <h2 className="text-lg font-bold">Technician workload</h2>
+              <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">
+                {sortedTechWorkload.length} active in district
+              </span>
+            </div>
+            {sortedTechWorkload.length > INITIAL_TECHS_COUNT && (
+              <button
+                type="button"
+                onClick={() => setShowAllTechs(!showAllTechs)}
+                className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline cursor-pointer"
+              >
+                {showAllTechs ? (
+                  <>
+                    <ChevronUp className="h-3.5 w-3.5" /> Show top {INITIAL_TECHS_COUNT}
+                  </>
+                ) : (
+                  <>
+                    View all {sortedTechWorkload.length} technicians <ChevronRight className="h-3.5 w-3.5" />
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+
+          <div
+            className={cn(
+              "grid gap-3 sm:grid-cols-2 lg:grid-cols-4",
+              showAllTechs && sortedTechWorkload.length > 8 && "max-h-[420px] overflow-y-auto pr-1"
+            )}
+          >
+            {visibleTechs.map((tw) => (
+              <div
+                key={tw.t.id}
+                className="flex flex-col justify-between rounded-xl border border-border bg-muted/30 p-3 shadow-xs hover:border-primary/40 transition-colors"
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-sm truncate" title={tw.techName}>
+                        {tw.techName}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate" title={tw.workshopName}>
+                        {tw.workshopName}
+                      </p>
+                    </div>
+                    <span
+                      className={cn(
+                        "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                        tw.isAvailable ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "h-1.5 w-1.5 rounded-full",
+                          tw.isAvailable ? "bg-success" : "bg-muted-foreground"
+                        )}
+                      />
+                      {tw.isAvailable ? "Online" : "Busy"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mt-3 pt-2 border-t border-border/50">
+                  <div className="flex items-baseline justify-between text-xs">
+                    <span className="font-medium text-foreground">
+                      <b className="font-display text-sm font-bold text-primary mr-1">{tw.load}</b>
+                      {tw.load === 1 ? "active job" : "active jobs"}
+                    </span>
+                    <span className="font-mono text-[11px] text-muted-foreground">
+                      {Math.round((tw.load / Math.max(1, open.length)) * 100)}% load
+                    </span>
+                  </div>
+                  <div className="mt-1.5 h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-primary transition-all duration-300"
+                      style={{
+                        width: `${
+                          tw.load === 0
+                            ? 0
+                            : Math.max(6, Math.min(100, Math.round((tw.load / maxLoad) * 100)))
+                        }%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="flex gap-2 overflow-x-auto pb-1">
         {FILTERS.map((x) => (
           <button
@@ -251,39 +369,6 @@ function Admin() {
             })}
           </tbody>
         </table>
-      </div>
-      <div>
-        <h2 className="mb-3 text-xl font-bold">Technician workload</h2>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          {technicians.map((t) => {
-            const load = open.filter((r) => r.technician_id === t.profile_id).length;
-            const techName = t.profile?.full_name || "Technician";
-            const workshopName = t.workshop_name || "Workshop";
-            return (
-              <div key={t.id} className="rounded-2xl border border-border bg-card p-4">
-                <p className="font-semibold">{techName}</p>
-                <p className="text-xs text-muted-foreground">{workshopName}</p>
-                <div className="mt-2 flex items-center justify-between">
-                  <span
-                    className={cn(
-                      "text-xs font-semibold",
-                      t.is_available ? "text-success" : "text-muted-foreground"
-                    )}
-                  >
-                    {t.is_available ? "Online" : "Busy"}
-                  </span>
-                  <span className="font-display text-2xl font-bold">{load}</span>
-                </div>
-                <div className="mt-1 h-1.5 rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-primary"
-                    style={{ width: `${Math.min(100, load * 33)}%` }}
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
       </div>
     </div>
   );

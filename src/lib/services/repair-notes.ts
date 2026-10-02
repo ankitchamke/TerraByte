@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
 import type { Assessment } from "@/lib/assessment";
+import { createNotification } from "./notifications";
 
 export type RepairNoteRow = Database["public"]["Tables"]["repair_notes"]["Row"];
 export type RepairRequestRow = Database["public"]["Tables"]["repair_requests"]["Row"];
@@ -120,8 +121,8 @@ export async function addRepairNote(repairRequestId: string, noteText: string): 
   // 1. Fetch repair request to verify assignment and lifecycle status
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairRequestId);
   const { data: repair, error: repairError } = isUuid
-    ? await supabase.from("repair_requests").select("id, technician_id, status").eq("id", repairRequestId).maybeSingle()
-    : await supabase.from("repair_requests").select("id, technician_id, status").eq("job_number", repairRequestId).maybeSingle();
+    ? await supabase.from("repair_requests").select("id, technician_id, status, job_number, farmer_id").eq("id", repairRequestId).maybeSingle()
+    : await supabase.from("repair_requests").select("id, technician_id, status, job_number, farmer_id").eq("job_number", repairRequestId).maybeSingle();
 
   if (repairError || !repair) {
     throw new Error("Repair request not found or inaccessible.");
@@ -170,6 +171,8 @@ export async function addRepairNote(repairRequestId: string, noteText: string): 
     console.warn(`[TerraByte] Warning: Failed to record timeline entry for note: ${timelineError.message}`);
   }
 
+  // Important rule (Phase 4.3): Do NOT generate notifications for every internal technician note.
+  // The repair timeline/activity log remains the detailed history.
   return noteRow as unknown as RepairNoteWithAuthor;
 }
 

@@ -1,11 +1,12 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { AlertCircle, ArrowLeft, Camera, Lock, PackageSearch, Plus, Trash2 } from "lucide-react";
+import { AlertCircle, ArrowLeft, Camera, Loader2, Lock, PackageSearch, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AssessmentCard, QuoteTable, Timeline } from "@/components/repair-parts";
-import { btn, CallButton, Card, input, Label, StatusPill } from "@/components/tb";
+import { btn, CallButton, Card, ClickableImage, DateTimePicker, formatEtaDateTime, input, Label, StatusPill } from "@/components/tb";
 import { fileToSmallDataUrl } from "@/lib/image";
 import { actions, ago, fmtTime, inr, quoteTotals, useTB, type Quote, type QuotePart, type Repair } from "@/lib/tb-store";
+import { formatEtaDateTime as formatEta, getEtaPresets, toDateTimeLocalString, valueToDateTimeLocal } from "@/lib/date-utils";
 import { useAuth } from "@/lib/auth";
 import { meta } from "@/lib/seo";
 import { cn } from "@/lib/utils";
@@ -14,6 +15,7 @@ import {
   acceptRepairRequest,
   completeRepair,
   declineRepairRequest,
+  failTesting,
   getRepairRequestById,
   resumeRepair,
   startTesting,
@@ -21,7 +23,7 @@ import {
   waitForParts,
   type RepairRequestDetail,
 } from "@/lib/services/repair-requests";
-import { addRepairNote } from "@/lib/services/repair-notes";
+import { addRepairNote, getRepairNotes, type RepairNoteWithAuthor } from "@/lib/services/repair-notes";
 import {
   createQuote,
   getQuotesForRepair,
@@ -63,6 +65,7 @@ function Job() {
   const hasLoadedRef = useRef(false);
   const [r, setR] = useState<RepairRequestDetail | null>(null);
   const [quotes, setQuotes] = useState<QuoteDetail[]>([]);
+  const [notes, setNotes] = useState<RepairNoteWithAuthor[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [accepting, setAccepting] = useState(false);
@@ -74,12 +77,14 @@ function Job() {
         setLoading(true);
       }
       setError(null);
-      const [repairData, quotesData] = await Promise.all([
+      const [repairData, quotesData, notesData] = await Promise.all([
         getRepairRequestById(id),
         getQuotesForRepair(id).catch(() => []),
+        getRepairNotes(id).catch(() => []),
       ]);
       setR(repairData);
       setQuotes(quotesData);
+      setNotes(notesData);
       hasLoadedRef.current = true;
     } catch (err: any) {
       console.error("[TerraByte] Failed to load job details:", err);
@@ -188,6 +193,12 @@ function Job() {
   const activeQuote = pendingQuote || approvedQuote || latestQuote;
   const viewQuote = activeQuote ? toQuoteView(activeQuote) : undefined;
 
+  const breakdownPhotos: string[] = Array.isArray(r.photos)
+    ? r.photos.filter((p) => typeof p === "string" && p.trim().length > 0)
+    : typeof r.photos === "string"
+    ? ((r.photos as string).trim().startsWith("[") ? JSON.parse(r.photos) : [(r.photos as string).trim()]).filter(Boolean)
+    : [];
+
   const adaptedRepair: Repair = {
     id: r.job_number || r.id,
     equipmentId: r.equipment_id,
@@ -199,7 +210,7 @@ function Job() {
     location: r.location,
     symptoms: r.symptoms,
     description: r.description,
-    photos: r.photos,
+    photos: breakdownPhotos,
     assessment: (r.assessment as any) || {},
     ...(viewQuote ? { quote: viewQuote } : {}),
     ...(r.clarification_note ? { clarification: r.clarification_note } : {}),
@@ -225,7 +236,11 @@ function Job() {
     testing: Boolean(r.is_testing),
     ...(r.verified_at ? { verifiedAt: new Date(r.verified_at).getTime() } : {}),
     declinedBy: r.declined_by || [],
-    notes: [],
+    notes: notes.map((n) => ({
+      text: n.note_text,
+      by: (n.author?.role === "admin" ? "admin" : n.author?.role === "farmer" ? "farmer" : "technician") as any,
+      at: new Date(n.created_at).getTime(),
+    })),
     timeline: (r.repair_timeline || []).map((tl) => ({
       status: tl.status as any,
       by: (tl.created_by_role === "admin" ? "admin" : tl.created_by_role === "farmer" ? "farmer" : "technician") as any,
@@ -276,13 +291,35 @@ function Job() {
               <p>"{r.description}"</p>
             </div>
           )}
-          {r.photos.length > 0 && (
-            <div className="flex flex-wrap gap-2 sm:col-span-2">
-              {r.photos.map((p, i) => (
-                <img key={i} src={p} alt="Problem" className="h-28 w-28 rounded-xl object-cover" />
-              ))}
+          <div className="sm:col-span-2 space-y-2 pt-2 border-t border-border/50">
+            <div className="flex items-center justify-between">
+              <Label className="uppercase text-xs tracking-wider text-muted-foreground font-bold">
+                Reported breakdown photos
+              </Label>
+              {breakdownPhotos.length > 0 && (
+                <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">
+                  {breakdownPhotos.length} {breakdownPhotos.length === 1 ? "photo" : "photos"}
+                </span>
+              )}
             </div>
-          )}
+            {breakdownPhotos.length > 0 ? (
+              <div className="flex flex-wrap gap-2.5 pt-1">
+                {breakdownPhotos.map((p, i) => (
+                  <ClickableImage
+                    key={i}
+                    src={p}
+                    alt={`Breakdown photo ${i + 1}`}
+                    className="h-24 w-24 rounded-xl border border-border shadow-xs"
+                    thumbnailClassName="h-24 w-24 object-cover"
+                  />
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground italic py-1">
+                No photos attached by farmer
+              </p>
+            )}
+          </div>
         </div>
       </Card>
 
@@ -354,7 +391,7 @@ function Job() {
               <QuoteTable q={adaptedRepair.quote} />
             </Card>
           )}
-          <InProgress repairId={r.id} r={adaptedRepair} onUpdate={loadData} />
+          <InProgress repairId={r.id} r={adaptedRepair} notes={notes} onUpdate={loadData} />
         </>
       )}
 
@@ -497,7 +534,7 @@ function QuoteBuilder({
         labourDesc: previousQuote.labour_description || "Inspection, repair and test run",
         labour: Number(previousQuote.labour_amount),
         taxPct: Number(previousQuote.tax_percent),
-        eta: previousQuote.estimated_completion || "Today, 6:00 PM",
+        eta: previousQuote.estimated_completion || getEtaPresets()[2]?.iso || "",
         warranty: previousQuote.warranty_terms || "90 days on parts & labour",
       };
     }
@@ -506,7 +543,7 @@ function QuoteBuilder({
       labourDesc: "Inspection, repair and test run",
       labour: 800,
       taxPct: 0,
-      eta: "Today, 6:00 PM",
+      eta: getEtaPresets()[2]?.iso || "",
       warranty: "90 days on parts & labour",
     };
   });
@@ -594,10 +631,11 @@ function QuoteBuilder({
           {parsedClarification.photo && (
             <div>
               <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Attached Photo</p>
-              <img
+              <ClickableImage
                 src={parsedClarification.photo}
                 alt="Farmer attachment"
-                className="mt-1.5 h-28 w-28 rounded-xl object-cover border border-border"
+                className="mt-1.5 h-28 w-28"
+                thumbnailClassName="h-28 w-28 object-cover"
               />
             </div>
           )}
@@ -720,9 +758,12 @@ function QuoteBuilder({
             ))}
           </select>
         </div>
-        <div>
+        <div className="space-y-1">
           <Label>Est. completion</Label>
-          <input className={input} value={q.eta} onChange={(e) => setQ({ ...q, eta: e.target.value })} />
+          <DateTimePicker
+            value={q.eta}
+            onChange={(val) => setQ({ ...q, eta: val })}
+          />
         </div>
         <div>
           <Label>Warranty</Label>
@@ -765,24 +806,48 @@ function QuoteBuilder({
 interface InProgressProps {
   repairId: string;
   r: Repair;
+  notes: RepairNoteWithAuthor[];
   onUpdate: () => Promise<void>;
 }
 
-function InProgress({ repairId, r, onUpdate }: InProgressProps) {
+function InProgress({ repairId, r, notes, onUpdate }: InProgressProps) {
   const [note, setNote] = useState("");
-  const [mode, setMode] = useState<"none" | "parts" | "complete">("none");
-  const [p, setP] = useState({
-    part: r.quote?.parts[0]?.name ?? "",
-    reason: "Not in van stock",
-    eta: "Tomorrow 9:30 AM",
-    note: "",
-    revisedCompletion: "Tomorrow, 1:00 PM",
+  const [mode, setMode] = useState<"none" | "parts" | "complete" | "test_failed">("none");
+  const [p, setP] = useState(() => {
+    const presets = getEtaPresets();
+    return {
+      part: r.quote?.parts[0]?.name ?? "",
+      reason: "Not in van stock",
+      eta: presets[1]?.iso || "",
+      note: "",
+      revisedCompletion: presets[2]?.iso || "",
+    };
   });
+  const [failReason, setFailReason] = useState("");
   const [final, setFinal] = useState("");
   const [photo, setPhoto] = useState("");
   const [tested, setTested] = useState(false);
   const [noteSubmitting, setNoteSubmitting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  const handleFailTesting = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await failTesting(repairId, {
+        ...(failReason.trim() ? { reason: failReason.trim() } : {}),
+      });
+      setMode("none");
+      setFailReason("");
+      toast.success("Testing failure recorded. Returned to active repair.");
+      await onUpdate();
+    } catch (err: any) {
+      console.error("[TerraByte] Failed to record testing failure:", err);
+      toast.error(err?.message || "Failed to record testing failure");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const handleAddNote = async () => {
     if (!note.trim() || noteSubmitting) return;
@@ -790,7 +855,7 @@ function InProgress({ repairId, r, onUpdate }: InProgressProps) {
     try {
       await addRepairNote(repairId, note.trim());
       setNote("");
-      toast.success("Note shared with farmer");
+      toast.success("Note saved and added to timeline");
       await onUpdate();
     } catch (err: any) {
       console.error("[TerraByte] Failed to add note:", err);
@@ -801,18 +866,18 @@ function InProgress({ repairId, r, onUpdate }: InProgressProps) {
   };
 
   const handleWaitForParts = async () => {
-    if (!p.part.trim() || !p.eta.trim() || submitting) return;
+    if (!p.part.trim() || !p.eta.trim() || !p.reason.trim() || submitting) return;
     setSubmitting(true);
     try {
       await waitForParts(repairId, {
         part: p.part.trim(),
-        reason: p.reason.trim() || "Not in van stock",
+        reason: p.reason.trim(),
         eta: p.eta.trim(),
         ...(p.revisedCompletion.trim() ? { revisedCompletion: p.revisedCompletion.trim() } : {}),
         ...(p.note.trim() ? { note: p.note.trim() } : {}),
       });
       setMode("none");
-      toast("Farmer notified of the delay");
+      toast.success("Repair paused. Farmer notified of the delay.");
       await onUpdate();
     } catch (err: any) {
       console.error("[TerraByte] Failed to pause for parts:", err);
@@ -879,7 +944,7 @@ function InProgress({ repairId, r, onUpdate }: InProgressProps) {
             maxLength={300}
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="e.g. Injector removed, spray test done"
+            placeholder="e.g. Injector removed, fuel line cleaned"
           />
           <button
             disabled={!note.trim() || noteSubmitting}
@@ -890,28 +955,114 @@ function InProgress({ repairId, r, onUpdate }: InProgressProps) {
           </button>
         </div>
       </Card>
+      {notes.length > 0 && (
+        <Card className="space-y-2">
+          <Label>Technician work notes ({notes.length})</Label>
+          <div className="space-y-2 max-h-60 overflow-y-auto">
+            {notes.map((n) => (
+              <div key={n.id} className="rounded-xl border border-border bg-muted/40 p-3 text-sm">
+                <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
+                  <span className="font-semibold text-foreground">{n.author?.full_name || "Technician"}</span>
+                  <span>{ago(new Date(n.created_at).getTime())} ago</span>
+                </div>
+                <p className="text-foreground leading-relaxed">{n.note_text}</p>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
       {mode === "none" && (
-        <div className="grid gap-2 sm:grid-cols-3">
-          <button onClick={() => setMode("parts")} className={cn(btn.amber, "h-14")}>
-            <PackageSearch className="h-5 w-5" /> Waiting for parts
-          </button>
-          {!r.testing ? (
+        <div className="space-y-2">
+          {r.testing && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 rounded-xl border border-primary/40 bg-primary/5">
+              <span className="flex items-center gap-2 font-semibold text-primary">
+                <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                Testing in progress under operational load
+              </span>
+              <button
+                type="button"
+                onClick={() => setMode("test_failed")}
+                className="text-xs font-bold text-destructive hover:underline px-3 py-1.5 rounded-lg border border-destructive/30 hover:bg-destructive/10 whitespace-nowrap"
+              >
+                Testing failed — resume repair
+              </button>
+            </div>
+          )}
+          <div className="grid gap-2 sm:grid-cols-3">
+            <button onClick={() => setMode("parts")} className={cn(btn.amber, "h-14")}>
+              <PackageSearch className="h-5 w-5" /> Waiting for parts
+            </button>
+            {!r.testing ? (
+              <button
+                disabled={submitting}
+                onClick={handleStartTesting}
+                className={cn(btn.ghost, "h-14 disabled:opacity-50")}
+              >
+                {submitting ? "Starting…" : "Start testing"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                disabled={submitting}
+                onClick={() => setMode("test_failed")}
+                className={cn(btn.urgent, "h-14 text-sm font-semibold")}
+              >
+                Testing failed — resume repair
+              </button>
+            )}
+            <button
+              onClick={() => {
+                if (!r.testing) {
+                  toast.error("Please start machine testing before completing the repair.");
+                  return;
+                }
+                setMode("complete");
+              }}
+              className={cn(btn.primary, "h-14")}
+            >
+              Complete & hand over
+            </button>
+          </div>
+        </div>
+      )}
+      {mode === "test_failed" && (
+        <Card className="space-y-3 border-destructive">
+          <div className="flex items-center gap-2 text-lg font-bold text-destructive">
+            <AlertCircle className="h-5 w-5" /> Testing failed — return to repair
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Operational testing identified an issue. Enter details below to return this machine to active repair work and notify the farmer.
+          </p>
+          <div>
+            <Label>Issue observed during testing (optional)</Label>
+            <textarea
+              rows={3}
+              className={input}
+              value={failReason}
+              onChange={(e) => setFailReason(e.target.value)}
+              placeholder="e.g. Engine temperature still rising under load, secondary seal leak..."
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
             <button
               disabled={submitting}
-              onClick={handleStartTesting}
-              className={cn(btn.ghost, "h-14 disabled:opacity-50")}
+              onClick={() => {
+                setMode("none");
+                setFailReason("");
+              }}
+              className={btn.ghost}
             >
-              {submitting ? "Starting…" : "Start testing"}
+              Cancel
             </button>
-          ) : (
-            <span className={cn(btn.ghost, "h-14 font-semibold text-primary opacity-90")}>
-              Testing in progress…
-            </span>
-          )}
-          <button onClick={() => setMode("complete")} className={cn(btn.primary, "h-14")}>
-            Mark completed
-          </button>
-        </div>
+            <button
+              disabled={submitting}
+              onClick={handleFailTesting}
+              className={cn(btn.urgent, "disabled:opacity-50")}
+            >
+              {submitting ? "Returning…" : "Confirm failure & resume repair"}
+            </button>
+          </div>
+        </Card>
       )}
       {mode === "parts" && (
         <Card className="space-y-3 border-warning">
@@ -932,21 +1083,19 @@ function InProgress({ repairId, r, onUpdate }: InProgressProps) {
               onChange={(e) => setP({ ...p, reason: e.target.value })}
             />
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1">
               <Label>Expected arrival</Label>
-              <input
-                className={input}
+              <DateTimePicker
                 value={p.eta}
-                onChange={(e) => setP({ ...p, eta: e.target.value })}
+                onChange={(val) => setP({ ...p, eta: val })}
               />
             </div>
-            <div>
+            <div className="space-y-1">
               <Label>Revised completion</Label>
-              <input
-                className={input}
+              <DateTimePicker
                 value={p.revisedCompletion}
-                onChange={(e) => setP({ ...p, revisedCompletion: e.target.value })}
+                onChange={(val) => setP({ ...p, revisedCompletion: val })}
               />
             </div>
           </div>
@@ -1092,22 +1241,31 @@ function Waiting({ repairId, r, onUpdate }: WaitingProps) {
       <p className="text-sm text-muted-foreground">
         {parts.reason} · paused {ago(parts.since)} ago
       </p>
-      <div className="flex gap-2">
-        <input className={input} value={eta} onChange={(e) => setEta(e.target.value)} />
-        <button
-          disabled={!eta.trim() || submitting}
-          onClick={handleUpdateEta}
-          className={cn(btn.ghost, "disabled:opacity-50")}
-        >
-          {submitting ? "Updating…" : "Update ETA"}
-        </button>
+      <div className="space-y-1.5">
+        <Label>Expected arrival</Label>
+        <div className="flex gap-2">
+          <DateTimePicker
+            value={eta}
+            onChange={(val) => setEta(val)}
+          />
+          <button
+            disabled={!eta.trim() || submitting}
+            onClick={handleUpdateEta}
+            className={cn(btn.ghost, "h-11 shrink-0 whitespace-nowrap disabled:opacity-50")}
+          >
+            {submitting ? "Updating…" : "Update ETA"}
+          </button>
+        </div>
+        <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+          <span>Current: <b className="text-foreground">{formatEta(parts.eta)}</b></span>
+        </div>
       </div>
       <button
         disabled={submitting}
         onClick={handleResume}
         className={cn(btn.primary, "h-14 w-full text-lg disabled:opacity-50")}
       >
-        {submitting ? "Resuming…" : "Part arrived — resume repair"}
+        {submitting ? "Resuming…" : "Parts received — Resume repair"}
       </button>
     </Card>
   );

@@ -30,7 +30,7 @@ export interface Quote {
   eta: string; warranty: string; version: number; sentAt: number;
 }
 export interface PartsHold { part: string; reason: string; eta: string; note: string; revisedCompletion: string; since: number }
-export interface TimelineEntry { status: RepairStatus | "TESTING" | "NOTE" | "REASSIGNED" | "VERIFIED"; at: number; note?: string; by: Role | "system" }
+export interface TimelineEntry { status: RepairStatus | "TESTING" | "TESTING_FAILED" | "NOTE" | "REASSIGNED" | "VERIFIED"; at: number; note?: string; by: Role | "system" }
 export interface Repair {
   id: string; equipmentId: string; farmerId: string; technicianId: string | null;
   status: RepairStatus; testing: boolean; symptoms: string[]; description: string;

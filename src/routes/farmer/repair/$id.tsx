@@ -3,7 +3,7 @@ import { ArrowLeft, CheckCircle2, Loader2, PackageSearch, ShieldCheck } from "lu
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AssessmentCard, QuoteTable, TechCard, Timeline } from "@/components/repair-parts";
-import { btn, CallButton, Card, input, Label, StatusPill, Stepper } from "@/components/tb";
+import { btn, CallButton, Card, ClickableImage, formatEtaDateTime, input, Label, StatusPill, Stepper } from "@/components/tb";
 import {
   cancelRepairRequest,
   getRepairRequestById,
@@ -371,35 +371,39 @@ function RepairHub() {
         </div>
       </div>
 
-      {r.status === "WAITING_FOR_PARTS" && partsHold && (
+      {r.status === "WAITING_FOR_PARTS" && (
         <section className="overflow-hidden rounded-2xl border-2 border-warning bg-card">
           <div className="flex items-center gap-2 bg-warning px-5 py-3 font-display text-lg font-bold text-warning-foreground">
-            <PackageSearch className="h-5 w-5" /> Repair paused — waiting for spare part
+            <PackageSearch className="h-5 w-5" /> Paused: Waiting for Spare Parts
           </div>
           <div className="grid gap-4 p-5 sm:grid-cols-2">
             <div>
               <Label>Missing part</Label>
-              <p className="text-lg font-bold">{partsHold.part}</p>
+              <p className="text-lg font-bold">{partsHold?.part || "Spare part"}</p>
             </div>
             <div>
               <Label>Expected arrival</Label>
-              <p className="text-lg font-bold">{partsHold.eta}</p>
+              <p className="text-lg font-bold">{formatEtaDateTime(partsHold?.eta)}</p>
             </div>
-            <div className="sm:col-span-2">
-              <Label>Why paused</Label>
-              <p>{partsHold.reason}</p>
-            </div>
-            {partsHold.note && (
+            {partsHold?.reason && (
+              <div className="sm:col-span-2">
+                <Label>Why paused</Label>
+                <p>{partsHold.reason}</p>
+              </div>
+            )}
+            {partsHold?.note && (
               <p className="rounded-xl bg-muted p-3 text-sm italic sm:col-span-2">
                 "{partsHold.note}" — {assignedTechData?.name ?? "Technician"}
               </p>
             )}
-            <div className="sm:col-span-2">
-              <Label>Revised completion</Label>
-              <p className="font-semibold">
-                {partsHold.revised_completion || partsHold.revisedCompletion || "TBD"}
-              </p>
-            </div>
+            {(partsHold?.revised_completion || partsHold?.revisedCompletion) && (
+              <div className="sm:col-span-2">
+                <Label>Revised completion</Label>
+                <p className="font-semibold">
+                  {formatEtaDateTime(partsHold.revised_completion || partsHold.revisedCompletion)}
+                </p>
+              </div>
+            )}
           </div>
         </section>
       )}
@@ -601,7 +605,12 @@ function RepairHub() {
                 {parsed.photo && (
                   <div className="pt-1">
                     <p className="text-xs font-semibold text-muted-foreground">Attached Photo:</p>
-                    <img src={parsed.photo} alt="Attached photo" className="mt-1 h-20 w-20 rounded-lg object-cover border" />
+                    <ClickableImage
+                      src={parsed.photo}
+                      alt="Attached photo"
+                      className="mt-1 h-20 w-20"
+                      thumbnailClassName="h-20 w-20 object-cover"
+                    />
                   </div>
                 )}
               </div>
@@ -610,17 +619,46 @@ function RepairHub() {
         </Card>
       )}
 
+
+      {r.status === "IN_PROGRESS" && r.is_testing && (
+        <Card className="border-primary/40 space-y-2">
+          <div className="flex items-center gap-2 font-bold text-primary">
+            <Loader2 className="h-5 w-5 animate-spin" />
+            <span className="text-lg">Testing in progress</span>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            The technician is testing your machine under operational load to verify everything works properly before handover.
+          </p>
+        </Card>
+      )}
+
+      {r.status === "IN_PROGRESS" && !r.is_testing && (
+        <Card className="border-primary/30 space-y-2">
+          <div className="flex items-center gap-2 font-bold text-primary">
+            <span className="relative flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-primary"></span>
+            </span>
+            <span className="text-lg">Repair in progress</span>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            The technician is currently carrying out the approved repair work on your equipment.
+          </p>
+        </Card>
+      )}
+
       {r.status === "COMPLETED" && (
         <section className="overflow-hidden rounded-2xl border-2 border-success bg-card">
           <div className="flex items-center gap-2 bg-success px-5 py-3 font-display text-lg font-bold text-primary-foreground">
-            <CheckCircle2 className="h-5 w-5" /> Repair Complete & Verified
+            <CheckCircle2 className="h-5 w-5" /> Repair completed / Ready for handover
           </div>
           <div className="space-y-4 p-5">
-            {completion?.photo_url && (
-              <img
-                src={completion.photo_url}
+            {(completion?.photo_url || completion?.photo) && (
+              <ClickableImage
+                src={completion.photo_url || completion.photo}
                 alt="Completion proof"
-                className="max-h-60 w-full rounded-xl object-cover"
+                className="max-h-60 w-full"
+                thumbnailClassName="max-h-60 w-full object-cover"
               />
             )}
             <div>
@@ -714,6 +752,23 @@ function RepairHub() {
 
       {r.status !== "REQUESTED" && r.status !== "COMPLETED" && (
         <AssessmentCard r={{ assessment: assessmentObj } as any} compact />
+      )}
+
+      {r.photos && r.photos.length > 0 && (
+        <Card className="space-y-2">
+          <Label>Reported breakdown photos ({r.photos.length})</Label>
+          <div className="flex flex-wrap gap-2 pt-1">
+            {r.photos.map((p, i) => (
+              <ClickableImage
+                key={i}
+                src={p}
+                alt={`Breakdown photo ${i + 1}`}
+                className="h-24 w-24"
+                thumbnailClassName="h-24 w-24 object-cover"
+              />
+            ))}
+          </div>
+        </Card>
       )}
 
       <details className="rounded-2xl border border-border bg-card p-5">

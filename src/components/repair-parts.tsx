@@ -1,6 +1,7 @@
 import { BadgeCheck, MapPin, Sparkles, Star } from "lucide-react";
 import { Card, Label } from "@/components/tb";
 import { fmtTime, inr, quoteTotals, type Quote, type Repair, type Technician } from "@/lib/tb-store";
+import { formatEtaDateTime } from "@/lib/date-utils";
 import { cn } from "@/lib/utils";
 
 export function AssessmentCard({ r, compact }: { r: Repair; compact?: boolean }) {
@@ -70,7 +71,7 @@ export function QuoteTable({ q }: { q: Quote }) {
         <div className="flex justify-between border-t border-border pt-2 font-display text-2xl font-bold"><dt>Total</dt><dd>{inr(t.total)}</dd></div>
       </dl>
       <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
-        <div><Label>Est. completion</Label><p className="font-semibold">{q.eta}</p></div>
+        <div><Label>Est. completion</Label><p className="font-semibold">{formatEtaDateTime(q.eta)}</p></div>
         <div><Label>Warranty</Label><p className="font-semibold">{q.warranty || "—"}</p></div>
       </div>
       <p className="mt-2 font-mono text-[11px] text-muted-foreground">Quote v{q.version} · sent {fmtTime(q.sentAt)}</p>
@@ -83,8 +84,8 @@ export function Timeline({ r }: { r: Repair }) {
     <ol className="space-y-3 text-sm">
       {[...r.timeline].reverse().map((e, i) => (
         <li key={i} className="flex gap-3">
-          <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
-          <div className="min-w-0"><p><b className="font-mono text-xs">{e.status}</b> <span className="text-muted-foreground">· {e.by} · {fmtTime(e.at)}</span></p>{e.note && <p className="text-muted-foreground">{e.note}</p>}</div>
+          <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", e.status === "TESTING_FAILED" ? "bg-destructive ring-2 ring-destructive/20" : "bg-primary")} />
+          <div className="min-w-0"><p><b className={cn("font-mono text-xs", e.status === "TESTING_FAILED" && "text-destructive font-bold")}>{e.status}</b> <span className="text-muted-foreground">· {e.by} · {fmtTime(e.at)}</span></p>{e.note && <p className="text-muted-foreground">{e.note}</p>}</div>
         </li>
       ))}
     </ol>

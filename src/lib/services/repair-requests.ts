@@ -22,6 +22,7 @@ export interface CreateRepairRequestInput {
 export interface RepairRequestWithEquipment extends RepairRequestRow {
   equipment: EquipmentRow | null;
   technician?: Pick<ProfileRow, "id" | "full_name" | "phone" | "village"> | null;
+  farmer?: Pick<ProfileRow, "id" | "full_name" | "phone" | "village"> | null;
 }
 
 export interface RepairRequestDetail extends RepairRequestWithEquipment {
@@ -221,22 +222,97 @@ export async function getRepairRequestById(id: string): Promise<RepairRequestDet
 
   await getAuthenticatedProfile();
 
-  // Allow lookup by UUID or human-readable job_number
+  const trimmedId = id.trim();
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmedId);
+
+  // Allow lookup by UUID or human-readable job_number (case-insensitive for resilience)
   const query = supabase
     .from("repair_requests")
-    .select("*, equipment(*), repair_timeline(*), technician:technician_id(id, full_name, phone, village)")
+    .select("*, equipment(*), repair_timeline(*), technician:technician_id(id, full_name, phone, village), farmer:farmer_id(id, full_name, phone, village)")
     .order("created_at", { referencedTable: "repair_timeline", ascending: true });
 
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
   const { data, error } = isUuid
-    ? await query.eq("id", id).maybeSingle()
-    : await query.eq("job_number", id).maybeSingle();
+    ? await query.eq("id", trimmedId).maybeSingle()
+    : await query.ilike("job_number", trimmedId).maybeSingle();
 
   if (error) {
     throw new Error(`Failed to load repair details: ${error.message}`);
   }
 
-  return (data as RepairRequestDetail) ?? null;
+  if (!data) return null;
+
+  // Normalize photos to guaranteed string array regardless of database encoding
+  let photos: string[] = [];
+  if (Array.isArray(data.photos)) {
+    photos = data.photos.filter((p): p is string => typeof p === "string" && p.trim().length > 0);
+  } else if (typeof data.photos === "string") {
+    const raw = (data.photos as string).trim();
+    if (raw.startsWith("[") && raw.endsWith("]")) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          photos = parsed.filter((p): p is string => typeof p === "string" && p.trim().length > 0);
+        }
+      } catch {
+        photos = [raw];
+      }
+    } else if (raw.startsWith("{") && raw.endsWith("}")) {
+      // Postgres array literal format "{item1,item2}"
+      photos = raw
+        .slice(1, -1)
+        .split(",")
+        .map((s) => s.replace(/^"(.*)"$/, "$1").trim())
+        .filter(Boolean);
+    } else if (raw) {
+      photos = [raw];
+    }
+  }
+
+  return {
+    ...(data as RepairRequestDetail),
+    photos,
+  };
+}
+
+/**
+ * Fetches all repair requests for the authenticated technician.
+ * Includes assigned/requested jobs, equipment details, and farmer information.
+ * Protected by PostgreSQL RLS.
+ */
+export async function getTechnicianRepairRequests(): Promise<RepairRequestWithEquipment[]> {
+  const profile = await getAuthenticatedProfile();
+
+  const { data, error } = await supabase
+    .from("repair_requests")
+    .select("*, equipment(*), farmer:farmer_id(id, full_name, phone, village), technician:technician_id(id, full_name, phone, village)")
+    .eq("technician_id", profile.id)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(`Failed to load technician repair requests: ${error.message}`);
+  }
+
+  return (data as RepairRequestWithEquipment[]) ?? [];
+}
+
+/**
+ * Fetches all repair requests for the Service Centre / Admin operations queue.
+ * Includes equipment details, farmer name, and assigned technician profile.
+ * Protected by PostgreSQL RLS: Admin role only.
+ */
+export async function getAdminRepairRequests(): Promise<RepairRequestDetail[]> {
+  await getAuthenticatedProfile();
+
+  const { data, error } = await supabase
+    .from("repair_requests")
+    .select("*, equipment(*), farmer:farmer_id(id, full_name, phone, village), technician:technician_id(id, full_name, phone, village)")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(`Failed to load operations repair requests: ${error.message}`);
+  }
+
+  return (data as any[]) ?? [];
 }
 
 /**
@@ -682,7 +758,7 @@ export async function waitForParts(repairRequestId: string, input: WaitForPartsI
     await createNotification({
       recipient_role: "farmer",
       recipient_user_id: repair.farmer_id,
-      notification_text: `Repair ${repair.job_number} paused: waiting for ${input.part.trim()} (ETA ${input.eta.trim()})`,
+      notification_text: `Repair ${repair.job_number} is delayed while waiting for spare parts. Expected arrival: ${input.eta.trim()}.`,
       link_target: `/farmer/repair/${repair.id}`,
     });
   } catch (notifErr) {
@@ -851,7 +927,7 @@ export async function resumeRepair(repairRequestId: string): Promise<RepairReque
     await createNotification({
       recipient_role: "farmer",
       recipient_user_id: repair.farmer_id,
-      notification_text: `Part arrived — repair ${repair.job_number} resumed`,
+      notification_text: `Parts received. Repair ${repair.job_number} has resumed.`,
       link_target: `/farmer/repair/${repair.id}`,
     });
   } catch (notifErr) {
@@ -910,11 +986,122 @@ export async function startTesting(repairRequestId: string): Promise<RepairReque
 
   await supabase.from("repair_timeline").insert({
     repair_request_id: repair.id,
-    status: "IN_PROGRESS",
+    status: "TESTING",
     note: "Repair work completed. Testing under operational load started.",
     created_by_role: profile.role,
     created_by_id: profile.id,
   });
+
+  // Notify farmer that machine testing under operational load has started
+  try {
+    await createNotification({
+      recipient_role: "farmer",
+      recipient_user_id: repair.farmer_id,
+      notification_text: `Repair ${repair.job_number} is now being tested.`,
+      link_target: `/farmer/repair/${repair.id}`,
+    });
+  } catch (notifErr) {
+    console.warn("[TerraByte] Warning: Failed to send testing notification:", notifErr);
+  }
+
+  return updated;
+}
+
+export interface FailTestingInput {
+  reason?: string;
+}
+
+/**
+ * Handles operational load testing failure.
+ * Clears is_testing flag, keeps status IN_PROGRESS, logs TESTING_FAILED in timeline,
+ * optionally appends to repair_notes, and notifies the farmer that technician is continuing repair work.
+ */
+export async function failTesting(
+  repairRequestId: string,
+  input?: FailTestingInput
+): Promise<RepairRequestRow> {
+  if (!repairRequestId) throw new Error("Repair request ID is required.");
+  const profile = await getAuthenticatedProfile();
+
+  if (profile.role !== "technician" && profile.role !== "admin") {
+    throw new Error("Unauthorized: Only technicians can report testing results.");
+  }
+
+  const isVerified = await verifyTechnicianIsVerified(profile.id);
+  if (!isVerified && profile.role !== "admin") {
+    throw new Error("Unauthorized: Unverified technicians cannot manage machine testing.");
+  }
+
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairRequestId);
+  const { data: repair, error: repairError } = isUuid
+    ? await supabase.from("repair_requests").select("*").eq("id", repairRequestId).maybeSingle()
+    : await supabase.from("repair_requests").select("*").eq("job_number", repairRequestId).maybeSingle();
+
+  if (repairError || !repair) {
+    throw new Error("Repair request not found or inaccessible.");
+  }
+
+  if (repair.technician_id !== profile.id && profile.role !== "admin") {
+    throw new Error("Unauthorized: You are not assigned to this repair ticket.");
+  }
+
+  if (repair.status !== "IN_PROGRESS") {
+    throw new Error(`Cannot report testing failure: Ticket is in '${repair.status}' status (must be IN_PROGRESS).`);
+  }
+
+  if (!repair.is_testing) {
+    throw new Error("Cannot report testing failure: Machine is not currently in testing mode.");
+  }
+
+  const { data: updated, error: updateError } = await supabase
+    .from("repair_requests")
+    .update({
+      is_testing: false,
+    })
+    .eq("id", repair.id)
+    .select()
+    .single();
+
+  if (updateError || !updated) {
+    throw new Error(`Failed to update testing failure: ${updateError?.message}`);
+  }
+
+  const failureNote = input?.reason?.trim()
+    ? `Operational testing failed: ${input.reason.trim()}. Returning to active repair.`
+    : "Operational load testing identified an issue. Returning to active repair.";
+
+  await supabase.from("repair_timeline").insert({
+    repair_request_id: repair.id,
+    status: "TESTING_FAILED",
+    note: failureNote,
+    created_by_role: profile.role,
+    created_by_id: profile.id,
+  });
+
+  // If a specific reason was provided, also persist in technician repair notes
+  if (input?.reason?.trim()) {
+    try {
+      await supabase.from("repair_notes").insert({
+        repair_request_id: repair.id,
+        author_id: profile.id,
+        note_text: `Testing failure: ${input.reason.trim()}`,
+      });
+    } catch (noteErr) {
+      console.warn("[TerraByte] Warning: Failed to insert testing failure note:", noteErr);
+    }
+  }
+
+  // Notify farmer that testing found an issue and repair continues
+  try {
+    await createNotification({
+      recipient_role: "farmer",
+      recipient_user_id: repair.farmer_id,
+      notification_text: `Testing found an issue with repair ${repair.job_number}. The technician is continuing the repair.`,
+      link_target: `/farmer/repair/${repair.id}`,
+    });
+  } catch (notifErr) {
+    console.warn("[TerraByte] Warning: Failed to send testing failure notification:", notifErr);
+  }
 
   return updated;
 }
@@ -960,6 +1147,14 @@ export async function completeRepair(
 
   if (repair.status !== "IN_PROGRESS") {
     throw new Error(`Cannot complete repair: Ticket is in '${repair.status}' status (must be IN_PROGRESS).`);
+  }
+
+  if (!repair.is_testing && profile.role !== "admin") {
+    throw new Error("Cannot complete repair: Operational load testing must be started before completing the repair.");
+  }
+
+  if (!input.tested) {
+    throw new Error("Machine must be tested under load and confirmed working before completion.");
   }
 
   if (!isLegalRepairTransition(repair.status, "COMPLETED")) {
@@ -1029,7 +1224,7 @@ export async function completeRepair(
     await createNotification({
       recipient_role: "farmer",
       recipient_user_id: repair.farmer_id,
-      notification_text: `Repair completed for ${repair.job_number}! Please inspect machinery and confirm handover.`,
+      notification_text: `Repair ${repair.job_number} has been completed and is ready for handover.`,
       link_target: `/farmer/repair/${repair.id}`,
     });
   } catch (notifErr) {

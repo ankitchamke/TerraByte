@@ -277,3 +277,62 @@ export async function getAssignedTechnician(repairRequestId: string): Promise<Ve
 
   return tech as unknown as VerifiedTechnicianWithProfile;
 }
+
+/**
+ * Fetches the technician profile details for the authenticated user, if registered.
+ */
+export async function getMyTechnicianProfile(): Promise<VerifiedTechnicianWithProfile | null> {
+  const profile = await getAuthenticatedProfile();
+
+  const { data, error } = await supabase
+    .from("technician_profiles")
+    .select("*, profile:profile_id(id, full_name, phone, village)")
+    .eq("profile_id", profile.id)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[TerraByte] Failed to load technician profile:", error);
+    return null;
+  }
+
+  return (data as unknown as VerifiedTechnicianWithProfile) ?? null;
+}
+
+/**
+ * Updates the availability status for the authenticated technician.
+ */
+export async function updateTechnicianAvailability(isAvailable: boolean): Promise<boolean> {
+  const profile = await getAuthenticatedProfile();
+
+  const { error } = await supabase
+    .from("technician_profiles")
+    .update({
+      is_available: isAvailable,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("profile_id", profile.id);
+
+  if (error) {
+    throw new Error(`Failed to update availability: ${error.message}`);
+  }
+
+  return isAvailable;
+}
+
+/**
+ * Fetches all registered technicians for Service Centre operations and workload overview.
+ */
+export async function getVerifiedTechnicians(): Promise<VerifiedTechnicianWithProfile[]> {
+  await getAuthenticatedProfile();
+
+  const { data, error } = await supabase
+    .from("technician_profiles")
+    .select("*, profile:profile_id(id, full_name, phone, village)")
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    throw new Error(`Failed to load technicians: ${error.message}`);
+  }
+
+  return (data as unknown as VerifiedTechnicianWithProfile[]) ?? [];
+}

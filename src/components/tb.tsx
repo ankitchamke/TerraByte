@@ -1,5 +1,5 @@
 import { Link, useNavigate, useLocation } from "@tanstack/react-router";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Bell, Check, LogOut, Phone, RotateCcw, Tractor, WifiOff, Wrench, Radio } from "lucide-react";
 import { actions, ago, FARMER_LABEL, resetDemo, STAFF_LABEL, useTB, type Repair, type RepairStatus, type Role } from "@/lib/tb-store";
 import { homeFor, signOut, useAuth, type AppRole } from "@/lib/auth";
@@ -9,7 +9,11 @@ import {
   markAllNotificationsAsRead,
   type NotificationRow,
 } from "@/lib/services/notifications";
+import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+export { ImageLightbox, ClickableImage } from "./image-lightbox";
+export { formatEtaDateTime, toDateTimeLocalString, valueToDateTimeLocal, getEtaPresets } from "@/lib/date-utils";
+export { DateTimePicker } from "./date-time-picker";
 
 export function useOnline() {
   const [on, setOn] = useState(true);
@@ -88,6 +92,33 @@ export function Shell({ role, children, wide }: { role: Role; children: ReactNod
   const online = useOnline();
   const nav = useNavigate();
   const [open, setOpen] = useState(false);
+  const notifRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      if (notifRef.current && !notifRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
 
   // Task 5 / Phase 4.1.5: Real notifications for all authenticated roles
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
@@ -110,9 +141,40 @@ export function Shell({ role, children, wide }: { role: Role; children: ReactNod
   }, [userId]);
 
   useEffect(() => {
-    if (userId) {
+    if (!userId) return;
+
+    void fetchNotifications();
+
+    // Supabase Realtime channel subscription for live notifications
+    const channel = supabase
+      .channel(`notifications-live-${userId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "notifications",
+        },
+        () => {
+          void fetchNotifications();
+        }
+      )
+      .subscribe();
+
+    const handleFocus = () => {
       void fetchNotifications();
-    }
+    };
+    window.addEventListener("focus", handleFocus);
+
+    const pollTimer = setInterval(() => {
+      void fetchNotifications();
+    }, 15000);
+
+    return () => {
+      void supabase.removeChannel(channel);
+      window.removeEventListener("focus", handleFocus);
+      clearInterval(pollTimer);
+    };
   }, [userId, fetchNotifications]);
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
@@ -191,7 +253,7 @@ export function Shell({ role, children, wide }: { role: Role; children: ReactNod
             </span>
           </Link>
           <div className="ml-auto flex items-center gap-1">
-            <div className="relative">
+            <div className="relative" ref={notifRef}>
               <button
                 type="button"
                 aria-label="Notifications"
@@ -342,7 +404,7 @@ export function Stepper({ r }: { r: Repair }) {
               {done ? <Check className="h-4 w-4" /> : k + 1}
             </span>
             <span className={cn("pt-0.5 text-sm", cur ? "font-bold" : done ? "font-medium" : "text-muted-foreground")}>
-              {s}{cur && paused && <span className="ml-2 rounded bg-warning/25 px-1.5 py-0.5 text-xs font-semibold">Paused</span>}
+              {cur && paused ? "Paused: Waiting for Spare Parts" : s}
             </span>
           </li>
         );
@@ -358,8 +420,8 @@ export function CallButton({ phone, label = "Call", className }: { phone: string
 export function Card({ children, className }: { children: ReactNode; className?: string }) {
   return <section className={cn("rounded-2xl border border-border bg-card p-5 text-card-foreground", className)}>{children}</section>;
 }
-export function Label({ children }: { children: ReactNode }) {
-  return <p className="mb-1 font-mono text-[11px] uppercase tracking-widest text-muted-foreground">{children}</p>;
+export function Label({ children, className }: { children: ReactNode; className?: string }) {
+  return <p className={cn("mb-1 font-mono text-[11px] uppercase tracking-widest text-muted-foreground", className)}>{children}</p>;
 }
 export const btn = {
   primary: "inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-primary px-5 font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40",

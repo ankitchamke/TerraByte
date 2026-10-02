@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft, CheckCircle2, Loader2, PackageSearch, ShieldCheck } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AssessmentCard, QuoteTable, TechCard, Timeline } from "@/components/repair-parts";
 import { btn, CallButton, Card, input, Label, StatusPill, Stepper } from "@/components/tb";
@@ -12,6 +12,7 @@ import {
 import {
   approveQuote,
   getQuotesForRepair,
+  parseClarificationNote,
   rejectQuote,
   type QuoteDetail,
 } from "@/lib/services/quotes";
@@ -26,6 +27,7 @@ import {
 import { ago, fmtTime, inr, quoteTotals, type Quote, type Technician } from "@/lib/tb-store";
 import { meta } from "@/lib/seo";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/farmer/repair/$id")({
   head: () => meta("Repair Hub", "Live status of your machine's repair."),
@@ -79,7 +81,10 @@ function RepairHub() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [reason, setReason] = useState("");
+  const hasLoadedRef = useRef(false);
+  const [revisionReason, setRevisionReason] = useState("Too expensive");
+  const [otherExplanation, setOtherExplanation] = useState("");
+  const [photoUrl, setPhotoUrl] = useState("");
   const [declining, setDeclining] = useState(false);
   const [actionInProgress, setActionInProgress] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -87,7 +92,9 @@ function RepairHub() {
 
   const loadData = useCallback(async () => {
     try {
-      setLoading(true);
+      if (!hasLoadedRef.current) {
+        setLoading(true);
+      }
       setError(null);
 
       const repairData = await getRepairRequestById(id);
@@ -112,9 +119,12 @@ function RepairHub() {
       setNotes(notesData);
       setAssignedTech(assignedTechData);
       setEligibleTechs(eligibleTechsData);
+      hasLoadedRef.current = true;
     } catch (err: any) {
       console.error("[TerraByte] Failed to load repair details:", err);
-      setError(err?.message || "Failed to load repair details");
+      if (!hasLoadedRef.current) {
+        setError(err?.message || "Failed to load repair details");
+      }
     } finally {
       setLoading(false);
     }
@@ -122,7 +132,66 @@ function RepairHub() {
 
   useEffect(() => {
     void loadData();
-  }, [loadData]);
+
+    // Subscribe to live updates for this repair ticket
+    const channel = supabase
+      .channel(`farmer-repair-live-${id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "repair_requests",
+        },
+        () => {
+          void loadData();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "quotes",
+        },
+        () => {
+          void loadData();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "repair_timeline",
+        },
+        () => {
+          void loadData();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "repair_notes",
+        },
+        () => {
+          void loadData();
+        }
+      )
+      .subscribe();
+
+    const handleFocus = () => {
+      void loadData();
+    };
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      void supabase.removeChannel(channel);
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, [id, loadData]);
 
   if (loading) {
     return (
@@ -220,13 +289,20 @@ function RepairHub() {
   };
 
   const handleDeclineQuote = async () => {
-    if (!pendingQuote || !reason.trim() || actionInProgress) return;
+    if (!pendingQuote || actionInProgress) return;
+    if (revisionReason === "Other" && !otherExplanation.trim()) return;
+
     setActionInProgress(true);
     try {
-      await rejectQuote(pendingQuote.id, reason.trim());
+      await rejectQuote(pendingQuote.id, {
+        reason: revisionReason,
+        explanation: revisionReason === "Other" ? otherExplanation.trim() : undefined,
+        photo: photoUrl.trim() || undefined,
+      });
       setDeclining(false);
-      setReason("");
-      toast("Sent to technician for revision");
+      setOtherExplanation("");
+      setPhotoUrl("");
+      toast.success("Sent to technician for revision");
       await loadData();
     } catch (err: any) {
       toast.error(err?.message || "Failed to request quote revision");
@@ -397,6 +473,14 @@ function RepairHub() {
             <ShieldCheck className="h-5 w-5 shrink-0" /> No work or charges start until you approve
             this quote.
           </p>
+          {r.clarification_note && (
+            <div className="mb-4 rounded-xl border-2 border-primary/30 bg-primary/5 p-4 space-y-1">
+              <p className="text-xs font-bold uppercase tracking-wider text-primary">Technician Note</p>
+              <p className="text-sm font-medium text-foreground italic leading-relaxed">
+                "{r.clarification_note}"
+              </p>
+            </div>
+          )}
           <QuoteTable q={viewQuote} />
           {!declining ? (
             <div className="mt-5 grid gap-2">
@@ -423,36 +507,61 @@ function RepairHub() {
               </div>
             </div>
           ) : (
-            <div className="mt-5 space-y-2">
-              <Label>What should the technician change?</Label>
-              <div className="flex flex-wrap gap-2">
-                {[
-                  "Too expensive",
-                  "Want local (non-OEM) parts",
-                  "Need earlier completion",
-                  "Please explain labour",
-                ].map((x) => (
-                  <button
-                    key={x}
-                    onClick={() => setReason(x)}
-                    className={cn(
-                      "rounded-full border px-3 py-1.5 text-sm",
-                      reason === x ? "border-primary bg-primary/10" : "border-border"
-                    )}
-                  >
-                    {x}
-                  </button>
-                ))}
+            <div className="mt-5 space-y-3">
+              <div>
+                <Label>Reason for revision</Label>
+                <div className="mt-1 flex flex-wrap gap-2">
+                  {[
+                    "Too expensive",
+                    "Want local (non-OEM) parts",
+                    "Need earlier completion",
+                    "Please explain labour",
+                    "Other",
+                  ].map((x) => (
+                    <button
+                      key={x}
+                      type="button"
+                      onClick={() => setRevisionReason(x)}
+                      className={cn(
+                        "rounded-full border px-3 py-1.5 text-sm font-medium transition-colors",
+                        revisionReason === x
+                          ? "border-primary bg-primary/10 text-primary font-semibold"
+                          : "border-border text-foreground hover:bg-muted"
+                      )}
+                    >
+                      {x}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <input
-                className={input}
-                maxLength={200}
-                value={reason}
-                onChange={(ev) => setReason(ev.target.value)}
-                placeholder="Short reason"
-              />
-              <div className="grid grid-cols-2 gap-2">
+
+              {revisionReason === "Other" && (
+                <div>
+                  <Label>What would you like changed?</Label>
+                  <textarea
+                    className={cn(input, "h-24 resize-none py-2 text-sm leading-relaxed")}
+                    maxLength={500}
+                    value={otherExplanation}
+                    onChange={(ev) => setOtherExplanation(ev.target.value)}
+                    placeholder="Describe what you would like changed..."
+                  />
+                </div>
+              )}
+
+              <div>
+                <Label>Photo / reference link (Optional)</Label>
+                <input
+                  className={input}
+                  maxLength={500}
+                  value={photoUrl}
+                  onChange={(ev) => setPhotoUrl(ev.target.value)}
+                  placeholder="Optional image URL or reference"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-1">
                 <button
+                  type="button"
                   disabled={actionInProgress}
                   onClick={() => setDeclining(false)}
                   className={btn.ghost}
@@ -460,7 +569,11 @@ function RepairHub() {
                   Back
                 </button>
                 <button
-                  disabled={!reason.trim() || actionInProgress}
+                  type="button"
+                  disabled={
+                    (revisionReason === "Other" && !otherExplanation.trim()) ||
+                    actionInProgress
+                  }
                   onClick={handleDeclineQuote}
                   className={cn(btn.amber, "disabled:opacity-50")}
                 >
@@ -473,11 +586,27 @@ function RepairHub() {
       )}
 
       {r.status === "QUOTE_REVISED" && (
-        <Card className="border-accent">
-          <p className="font-semibold">The technician is revising the quote.</p>
-          {r.clarification_note && (
-            <p className="text-sm text-muted-foreground">Your note: "{r.clarification_note}"</p>
-          )}
+        <Card className="border-accent space-y-2">
+          <p className="font-semibold text-lg">The technician is revising your quote.</p>
+          {r.clarification_note && (() => {
+            const parsed = parseClarificationNote(r.clarification_note);
+            return (
+              <div className="rounded-xl bg-muted/60 p-3 text-sm space-y-1">
+                {parsed.reason && (
+                  <p><span className="font-semibold text-muted-foreground">Reason:</span> {parsed.reason}</p>
+                )}
+                {parsed.explanation && (
+                  <p><span className="font-semibold text-muted-foreground">Your explanation:</span> "{parsed.explanation}"</p>
+                )}
+                {parsed.photo && (
+                  <div className="pt-1">
+                    <p className="text-xs font-semibold text-muted-foreground">Attached Photo:</p>
+                    <img src={parsed.photo} alt="Attached photo" className="mt-1 h-20 w-20 rounded-lg object-cover border" />
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </Card>
       )}
 
@@ -576,10 +705,10 @@ function RepairHub() {
         />
       </Card>
 
-      {viewQuote && !["QUOTE_PENDING", "COMPLETED"].includes(r.status) && (
+      {approvedQuote && ["IN_PROGRESS", "WAITING_FOR_PARTS"].includes(r.status) && (
         <Card>
           <h2 className="mb-3 text-lg font-bold">Approved quote</h2>
-          <QuoteTable q={viewQuote} />
+          <QuoteTable q={toQuoteView(approvedQuote)} />
         </Card>
       )}
 

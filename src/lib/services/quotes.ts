@@ -29,6 +29,7 @@ export interface CreateQuoteInput {
 
 export interface ReviseQuoteInput extends CreateQuoteInput {
   previous_quote_id: string;
+  technician_explanation?: string | undefined;
 }
 
 export interface QuoteTotals {
@@ -253,6 +254,18 @@ export async function createQuote(input: CreateQuoteInput): Promise<QuoteDetail>
     throw new Error(`Cannot create quote: Repair ticket is in '${repair.status}' status.`);
   }
 
+  // Prevent duplicate active quotes for the same repair
+  const { data: existingPendingQuote } = await supabase
+    .from("quotes")
+    .select("id")
+    .eq("repair_request_id", repair.id)
+    .eq("status", "PENDING")
+    .maybeSingle();
+
+  if (existingPendingQuote) {
+    throw new Error("A pending quote already exists for this repair request. Wait for the farmer to respond or request changes.");
+  }
+
   // 2. Insert quote row (version 1, PENDING)
   const now = new Date().toISOString();
   const { data: quote, error: quoteInsertError } = await supabase
@@ -332,7 +345,7 @@ export async function createQuote(input: CreateQuoteInput): Promise<QuoteDetail>
     await createNotification({
       recipient_role: "farmer",
       recipient_user_id: repair.farmer_id,
-      notification_text: `Quote ready for ${repair.job_number}: ₹${totals.totalAmount.toLocaleString("en-IN")}`,
+      notification_text: `Quote ready for repair ${repair.job_number}. Review and approve the proposed repair.`,
       link_target: `/farmer/repair/${repair.id}`,
     });
   } catch (notifErr) {
@@ -447,24 +460,27 @@ export async function reviseQuote(input: ReviseQuoteInput): Promise<QuoteDetail>
     throw new Error(`Failed to save revised quote items: ${itemsError?.message}`);
   }
 
-  // 6. Update repair request status to 'QUOTE_PENDING' and clear clarification note
+  // 6. Update repair request status to 'QUOTE_PENDING' and save technician explanation if provided
   await supabase
     .from("repair_requests")
     .update({
       status: "QUOTE_PENDING",
-      clarification_note: null,
+      clarification_note: input.technician_explanation?.trim() || null,
       status_since: now,
     })
     .eq("id", repair.id);
 
   // 7. Record timeline audit entry
   const totals = calculateQuoteTotals(insertedItems, input.labour_amount, input.tax_percent);
+  const techNoteSummary = input.technician_explanation?.trim()
+    ? ` Note: "${input.technician_explanation.trim()}"`
+    : "";
   const { error: timelineError } = await supabase
     .from("repair_timeline")
     .insert({
       repair_request_id: repair.id,
       status: "QUOTE_PENDING",
-      note: `Revised quote sent (v${newVersion}: ₹${totals.totalAmount.toLocaleString("en-IN")})`,
+      note: `Revised quote sent (v${newVersion}: ₹${totals.totalAmount.toLocaleString("en-IN")}).${techNoteSummary}`,
       created_by_role: profile.role,
       created_by_id: profile.id,
     });
@@ -478,7 +494,7 @@ export async function reviseQuote(input: ReviseQuoteInput): Promise<QuoteDetail>
     await createNotification({
       recipient_role: "farmer",
       recipient_user_id: repair.farmer_id,
-      notification_text: `Revised quote ready for ${repair.job_number} (v${newVersion}): ₹${totals.totalAmount.toLocaleString("en-IN")}`,
+      notification_text: `Revised quote ready for repair ${repair.job_number} (v${newVersion}). Review and approve the proposed repair.`,
       link_target: `/farmer/repair/${repair.id}`,
     });
   } catch (notifErr) {
@@ -509,7 +525,7 @@ export async function approveQuote(quoteId: string): Promise<QuoteDetail> {
   // 1. Fetch quote with repair request
   const { data: quote, error: quoteError } = await supabase
     .from("quotes")
-    .select("*, quote_items(*), repair_request:repair_request_id(id, farmer_id, status)")
+    .select("*, quote_items(*), repair_request:repair_request_id(id, job_number, farmer_id, status)")
     .eq("id", quoteId)
     .maybeSingle();
 
@@ -517,7 +533,7 @@ export async function approveQuote(quoteId: string): Promise<QuoteDetail> {
     throw new Error("Quote not found or inaccessible.");
   }
 
-  const repair = quote.repair_request as unknown as { id: string; farmer_id: string; status: RepairStatus };
+  const repair = quote.repair_request as unknown as { id: string; job_number: string; farmer_id: string; status: RepairStatus };
   if (!repair) {
     throw new Error("Associated repair ticket not found.");
   }
@@ -533,6 +549,10 @@ export async function approveQuote(quoteId: string): Promise<QuoteDetail> {
   // 3. Status check: quote must be PENDING
   if (quote.status !== "PENDING") {
     throw new Error(`Cannot approve quote: Quote is already '${quote.status}'.`);
+  }
+
+  if (repair.status !== "QUOTE_PENDING") {
+    throw new Error(`Cannot approve quote: Repair ticket is in '${repair.status}' status (must be QUOTE_PENDING).`);
   }
 
   const now = new Date().toISOString();
@@ -582,7 +602,7 @@ export async function approveQuote(quoteId: string): Promise<QuoteDetail> {
     await createNotification({
       recipient_role: "technician",
       recipient_user_id: quote.technician_id,
-      notification_text: `Quote approved for repair ticket — you may proceed with work`,
+      notification_text: `Farmer approved quote for repair ${repair.job_number}. Proceed with repair work.`,
       link_target: `/technician/job/${repair.id}`,
     });
   } catch (notifErr) {
@@ -598,6 +618,64 @@ export async function approveQuote(quoteId: string): Promise<QuoteDetail> {
   };
 }
 
+export interface RejectQuoteInput {
+  reason: string;
+  explanation?: string | undefined;
+  photo?: string | undefined;
+}
+
+export interface ParsedClarification {
+  reason?: string | undefined;
+  explanation?: string | undefined;
+  photo?: string | undefined;
+}
+
+/**
+ * Parses structured clarification note into reason, explanation, and photo.
+ * Gracefully handles legacy strings or freeform text.
+ */
+export function parseClarificationNote(note?: string | null): ParsedClarification {
+  if (!note) return {};
+  const trimmed = note.trim();
+
+  // Predefined reasons without required extra explanation
+  const predefined = [
+    "Too expensive",
+    "Want local (non-OEM) parts",
+    "Need earlier completion",
+    "Please explain labour",
+  ];
+  if (predefined.includes(trimmed)) {
+    return { reason: trimmed };
+  }
+
+  // Pattern: "Reason: ...\nExplanation: ...\nPhoto: ..."
+  const match = trimmed.match(
+    /^Reason:\s*([^\n]+)(?:\n+(?:Explanation|Farmer message|Message):\s*([\s\S]*?))?(?:\n+Photo:\s*(\S+))?$/i
+  );
+  if (match) {
+    return {
+      reason: match[1]?.trim() || undefined,
+      explanation: match[2]?.trim() || undefined,
+      photo: match[3]?.trim() || undefined,
+    };
+  }
+
+  // Pattern: "[Reason] Explanation"
+  const bracketMatch = trimmed.match(/^\[(.*?)\]\s*([\s\S]+)$/);
+  if (bracketMatch && bracketMatch[1] && bracketMatch[2]) {
+    return { reason: bracketMatch[1].trim(), explanation: bracketMatch[2].trim() };
+  }
+
+  // Pattern: "Reason: Explanation" or "Reason - Explanation"
+  const colonMatch = trimmed.match(/^([^-–—:\n]+)\s*[-–—:]\s*([\s\S]+)$/);
+  if (colonMatch && colonMatch[1] && colonMatch[2]) {
+    return { reason: colonMatch[1].trim(), explanation: colonMatch[2].trim() };
+  }
+
+  return { explanation: trimmed };
+}
+
 /**
  * Rejects a pending quote or sends it back to the technician for revision.
  * Authorization Rules:
@@ -607,7 +685,10 @@ export async function approveQuote(quoteId: string): Promise<QuoteDetail> {
  * - Sets repair status to 'QUOTE_REVISED' with clarification note.
  * - Records timeline audit event.
  */
-export async function rejectQuote(quoteId: string, reason?: string): Promise<QuoteDetail> {
+export async function rejectQuote(
+  quoteId: string,
+  reasonOrInput?: string | RejectQuoteInput
+): Promise<QuoteDetail> {
   if (!quoteId) throw new Error("Quote ID is required.");
 
   const profile = await getAuthenticatedProfile();
@@ -615,7 +696,7 @@ export async function rejectQuote(quoteId: string, reason?: string): Promise<Quo
   // 1. Fetch quote with repair request
   const { data: quote, error: quoteError } = await supabase
     .from("quotes")
-    .select("*, quote_items(*), repair_request:repair_request_id(id, farmer_id, status)")
+    .select("*, quote_items(*), repair_request:repair_request_id(id, job_number, farmer_id, status)")
     .eq("id", quoteId)
     .maybeSingle();
 
@@ -623,7 +704,7 @@ export async function rejectQuote(quoteId: string, reason?: string): Promise<Quo
     throw new Error("Quote not found or inaccessible.");
   }
 
-  const repair = quote.repair_request as unknown as { id: string; farmer_id: string; status: RepairStatus };
+  const repair = quote.repair_request as unknown as { id: string; job_number: string; farmer_id: string; status: RepairStatus };
   if (!repair) {
     throw new Error("Associated repair ticket not found.");
   }
@@ -641,8 +722,42 @@ export async function rejectQuote(quoteId: string, reason?: string): Promise<Quo
     throw new Error(`Cannot reject quote: Quote is already '${quote.status}'.`);
   }
 
-  const trimmedReason = reason?.trim();
-  const newStatus: QuoteStatus = trimmedReason ? "REVISED" : "REJECTED";
+  if (repair.status !== "QUOTE_PENDING") {
+    throw new Error(`Cannot reject quote: Repair ticket is in '${repair.status}' status (must be QUOTE_PENDING).`);
+  }
+
+  let selectedReason = "";
+  let explanation = "";
+  let photo: string | undefined = undefined;
+
+  if (typeof reasonOrInput === "object" && reasonOrInput !== null) {
+    selectedReason = reasonOrInput.reason?.trim() || "";
+    explanation = reasonOrInput.explanation?.trim() || "";
+    photo = reasonOrInput.photo?.trim();
+  } else if (typeof reasonOrInput === "string") {
+    const trimmed = reasonOrInput.trim();
+    const parsed = parseClarificationNote(trimmed);
+    selectedReason = parsed.reason || "";
+    explanation = parsed.explanation || (parsed.reason ? "" : trimmed);
+  }
+
+  // Format clarification note to persist in repair_requests.clarification_note
+  let clarificationToSave: string;
+  if (selectedReason && explanation) {
+    clarificationToSave = `Reason: ${selectedReason}\nExplanation: ${explanation}${photo ? `\nPhoto: ${photo}` : ""}`;
+  } else if (selectedReason) {
+    clarificationToSave = photo ? `Reason: ${selectedReason}\nPhoto: ${photo}` : selectedReason;
+  } else if (explanation) {
+    clarificationToSave = explanation;
+  } else {
+    clarificationToSave = "Quote declined by farmer";
+  }
+
+  const notifSummary = (selectedReason && explanation)
+    ? `${selectedReason}: "${explanation.length > 60 ? explanation.slice(0, 57) + "..." : explanation}"`
+    : (selectedReason || explanation || "Quote declined by farmer");
+
+  const newStatus: QuoteStatus = (selectedReason || explanation) ? "REVISED" : "REJECTED";
   const now = new Date().toISOString();
 
   // 4. Update quote status
@@ -662,7 +777,7 @@ export async function rejectQuote(quoteId: string, reason?: string): Promise<Quo
     .from("repair_requests")
     .update({
       status: "QUOTE_REVISED",
-      clarification_note: trimmedReason || "Quote declined by farmer",
+      clarification_note: clarificationToSave,
       status_since: now,
     })
     .eq("id", repair.id);
@@ -677,7 +792,7 @@ export async function rejectQuote(quoteId: string, reason?: string): Promise<Quo
     .insert({
       repair_request_id: repair.id,
       status: "QUOTE_REVISED",
-      note: trimmedReason ? `Quote revision requested: "${trimmedReason}"` : "Quote declined by farmer",
+      note: `Quote revision requested: "${notifSummary}"`,
       created_by_role: profile.role,
       created_by_id: profile.id,
     });
@@ -688,23 +803,23 @@ export async function rejectQuote(quoteId: string, reason?: string): Promise<Quo
 
   // Notify technician and admin
   try {
-    if (trimmedReason) {
+    if (selectedReason || explanation) {
       await createNotification({
         recipient_role: "technician",
         recipient_user_id: quote.technician_id,
-        notification_text: `Farmer requested quote revision: "${trimmedReason}"`,
+        notification_text: `Farmer requested changes to quote for repair ${repair.job_number}: ${notifSummary}`,
         link_target: `/technician/job/${repair.id}`,
       });
     } else {
       await createNotification({
         recipient_role: "technician",
         recipient_user_id: quote.technician_id,
-        notification_text: `Quote rejected by farmer`,
+        notification_text: `Quote rejected by farmer for repair ${repair.job_number}`,
         link_target: `/technician/job/${repair.id}`,
       });
       await createNotification({
         recipient_role: "admin",
-        notification_text: `Quote rejected by farmer for repair ticket`,
+        notification_text: `Quote rejected by farmer for repair ${repair.job_number}`,
         link_target: `/admin/repair/${repair.id}`,
       });
     }

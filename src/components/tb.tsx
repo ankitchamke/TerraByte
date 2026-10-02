@@ -1,8 +1,14 @@
 import { Link, useNavigate, useLocation } from "@tanstack/react-router";
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Bell, Check, LogOut, Phone, RotateCcw, Tractor, WifiOff, Wrench, Radio } from "lucide-react";
 import { actions, ago, FARMER_LABEL, resetDemo, STAFF_LABEL, useTB, type Repair, type RepairStatus, type Role } from "@/lib/tb-store";
 import { homeFor, signOut, useAuth, type AppRole } from "@/lib/auth";
+import {
+  getNotificationsForCurrentUser,
+  markNotificationAsRead,
+  markAllNotificationsAsRead,
+  type NotificationRow,
+} from "@/lib/services/notifications";
 import { cn } from "@/lib/utils";
 
 export function useOnline() {
@@ -78,15 +84,94 @@ export function DemoTag({ className }: { className?: string }) {
 
 export function Shell({ role, children, wide }: { role: Role; children: ReactNode; wide?: boolean }) {
   const s = useTB();
-  const { profile, email } = useAuth();
+  const { profile, email, userId } = useAuth();
   const online = useOnline();
   const nav = useNavigate();
   const [open, setOpen] = useState(false);
-  const uid = s.session?.userId;
-  const mine = s.notifications.filter((n) => n.role === role && (!n.userId || n.userId === uid));
-  const unread = mine.filter((n) => !n.read).length;
+
+  // Task 5 / Phase 4.1.5: Real notifications for all authenticated roles
+  const [notifications, setNotifications] = useState<NotificationRow[]>([]);
+  const [loadingNotifs, setLoadingNotifs] = useState(false);
+  const [notifError, setNotifError] = useState<string | null>(null);
+
+  const fetchNotifications = useCallback(async () => {
+    if (!userId) return;
+    try {
+      setLoadingNotifs(true);
+      setNotifError(null);
+      const data = await getNotificationsForCurrentUser();
+      setNotifications(data);
+    } catch (err: any) {
+      console.error("[TerraByte] Failed to load notifications:", err);
+      setNotifError(err?.message || "Failed to load notifications");
+    } finally {
+      setLoadingNotifs(false);
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    if (userId) {
+      void fetchNotifications();
+    }
+  }, [userId, fetchNotifications]);
+
+  const unreadCount = notifications.filter((n) => !n.is_read).length;
   const who = profile?.full_name?.trim() || email || "Signed in";
   const home = `/${role}` as "/farmer";
+
+  const handleToggleNotifications = async () => {
+    const nextOpen = !open;
+    setOpen(nextOpen);
+
+    if (nextOpen && userId) {
+      try {
+        const fresh = await getNotificationsForCurrentUser();
+        setNotifications(fresh);
+      } catch (err: any) {
+        console.warn("[TerraByte] Failed to refresh notifications:", err);
+      }
+    }
+  };
+
+  const handleNotificationClick = async (notif: { id: string; link?: string | null; isRead?: boolean }) => {
+    if (!notif.link) {
+      if (!notif.isRead) {
+        try {
+          await markNotificationAsRead(notif.id);
+          setNotifications((prev) =>
+            prev.map((item) => (item.id === notif.id ? { ...item, is_read: true } : item))
+          );
+        } catch (err: any) {
+          console.warn("[TerraByte] Failed to mark notification as read:", err);
+        }
+      }
+      return;
+    }
+
+    setOpen(false);
+    if (!notif.isRead) {
+      try {
+        await markNotificationAsRead(notif.id);
+        setNotifications((prev) =>
+          prev.map((item) => (item.id === notif.id ? { ...item, is_read: true } : item))
+        );
+      } catch (err: any) {
+        console.warn("[TerraByte] Failed to mark notification as read:", err);
+      }
+    }
+    void nav({ to: notif.link as "/" });
+  };
+
+  const handleMarkAllAsRead = async () => {
+    if (!userId || unreadCount === 0) return;
+    try {
+      await markAllNotificationsAsRead();
+      setNotifications((prev) => prev.map((item) => ({ ...item, is_read: true })));
+    } catch (err: any) {
+      console.warn("[TerraByte] Failed to mark all notifications as read:", err);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       {!online && (
@@ -107,21 +192,98 @@ export function Shell({ role, children, wide }: { role: Role; children: ReactNod
           </Link>
           <div className="ml-auto flex items-center gap-1">
             <div className="relative">
-              <button aria-label="Notifications" onClick={() => { setOpen(!open); if (!open) actions.markRead(role, uid); }} className="relative grid h-11 w-11 place-items-center rounded-lg hover:bg-muted">
+              <button
+                type="button"
+                aria-label="Notifications"
+                onClick={handleToggleNotifications}
+                className="relative grid h-11 w-11 place-items-center rounded-lg hover:bg-muted"
+              >
                 <Bell className="h-5 w-5" />
-                {unread > 0 && <span className="absolute right-1.5 top-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground">{unread}</span>}
+                {unreadCount > 0 && (
+                  <span className="absolute right-1.5 top-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground">
+                    {unreadCount}
+                  </span>
+                )}
               </button>
               {open && (
                 <div className="absolute right-0 top-12 z-50 w-80 max-w-[90vw] overflow-hidden rounded-xl border border-border bg-popover shadow-xl">
-                  <div className="border-b border-border px-4 py-2 text-sm font-semibold">Notifications</div>
-                  <div className="max-h-96 overflow-y-auto">
-                    {mine.length === 0 && <p className="p-4 text-sm text-muted-foreground">Nothing yet.</p>}
-                    {mine.map((n) => (
-                      <button key={n.id} onClick={() => { setOpen(false); if (n.link) nav({ to: n.link as "/" }); }} className="block w-full border-b border-border px-4 py-3 text-left text-sm last:border-0 hover:bg-muted">
-                        <span className="block">{n.text}</span>
-                        <span className="text-xs text-muted-foreground">{ago(n.at)} ago</span>
+                  <div className="flex items-center justify-between border-b border-border px-4 py-2 text-sm font-semibold">
+                    <span>Notifications</span>
+                    {unreadCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleMarkAllAsRead}
+                        className="text-xs font-normal text-primary hover:underline"
+                      >
+                        Mark all as read
                       </button>
-                    ))}
+                    )}
+                  </div>
+                  <div className="max-h-96 overflow-y-auto">
+                    {loadingNotifs && notifications.length === 0 && (
+                      <p className="p-4 text-sm text-muted-foreground">Loading notifications…</p>
+                    )}
+                    {notifError && notifications.length === 0 && (
+                      <p className="p-4 text-sm text-destructive">{notifError}</p>
+                    )}
+                    {!loadingNotifs && !notifError && notifications.length === 0 && (
+                      <p className="p-4 text-sm text-muted-foreground">Nothing yet.</p>
+                    )}
+                    {notifications.map((n) => {
+                      const isActionable = Boolean(n.link_target);
+                      return (
+                        <div
+                          key={n.id}
+                          role={isActionable ? "button" : "article"}
+                          tabIndex={isActionable ? 0 : undefined}
+                          onClick={() =>
+                            handleNotificationClick({
+                              id: n.id,
+                              link: n.link_target,
+                              isRead: n.is_read,
+                            })
+                          }
+                          onKeyDown={(e) => {
+                            if (isActionable && (e.key === "Enter" || e.key === " ")) {
+                              e.preventDefault();
+                              void handleNotificationClick({
+                                id: n.id,
+                                link: n.link_target,
+                                isRead: n.is_read,
+                              });
+                            }
+                          }}
+                          className={cn(
+                            "block w-full border-b border-border px-4 py-3 text-left text-sm last:border-0 transition-colors",
+                            isActionable
+                              ? "cursor-pointer hover:bg-muted"
+                              : "cursor-default bg-muted/20"
+                          )}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <span
+                              className={cn(
+                                "block",
+                                !n.is_read ? "font-semibold text-foreground" : "text-muted-foreground"
+                              )}
+                            >
+                              {n.notification_text}
+                            </span>
+                            {!n.is_read && (
+                              <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-destructive" />
+                            )}
+                          </div>
+                          <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
+                            <span>{ago(new Date(n.created_at).getTime())} ago</span>
+                            {!isActionable && (
+                              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                                System Notice
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}

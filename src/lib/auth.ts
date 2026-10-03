@@ -20,9 +20,10 @@ export interface AuthState {
   profile: Profile | null;
   /** set when a session exists but no valid profile row could be read */
   profileError: string | null;
+  isPasswordRecovery: boolean;
 }
 
-let state: AuthState = { ready: false, userId: null, email: null, emailConfirmed: false, profile: null, profileError: null };
+let state: AuthState = { ready: false, userId: null, email: null, emailConfirmed: false, profile: null, profileError: null, isPasswordRecovery: false };
 const listeners = new Set<() => void>();
 const set = (p: Partial<AuthState>) => {
   state = { ...state, ...p };
@@ -92,25 +93,35 @@ let started = false;
 export function startAuth() {
   if (started || typeof window === "undefined") return;
   started = true;
-  supabase.auth.onAuthStateChange((_event, session) => {
+  supabase.auth.onAuthStateChange((event, session) => {
     const u = session?.user;
     if (!u) {
-      set({ ready: true, userId: null, email: null, emailConfirmed: false, profile: null, profileError: null });
+      set({ ready: true, userId: null, email: null, emailConfirmed: false, profile: null, profileError: null, isPasswordRecovery: false });
       return;
     }
+    const isRecovery = event === "PASSWORD_RECOVERY";
     const emailConfirmed = !!(u.email_confirmed_at || (u as unknown as { confirmed_at?: string }).confirmed_at);
-    set({ userId: u.id, email: u.email ?? null, emailConfirmed });
+    set({
+      userId: u.id,
+      email: u.email ?? null,
+      emailConfirmed,
+      isPasswordRecovery: isRecovery ? true : (event === "SIGNED_IN" || event === "USER_UPDATED" ? false : state.isPasswordRecovery),
+    });
     void loadProfile(u.id, u.email ?? null, emailConfirmed);
   });
   void supabase.auth.getSession().then(({ data }) => {
     const u = data.session?.user;
-    if (!u) set({ ready: true, userId: null, email: null, emailConfirmed: false, profile: null, profileError: null });
+    if (!u) set({ ready: true, userId: null, email: null, emailConfirmed: false, profile: null, profileError: null, isPasswordRecovery: false });
     else {
       const emailConfirmed = !!(u.email_confirmed_at || (u as unknown as { confirmed_at?: string }).confirmed_at);
       set({ userId: u.id, email: u.email ?? null, emailConfirmed });
       void loadProfile(u.id, u.email ?? null, emailConfirmed);
     }
   });
+}
+
+export function clearPasswordRecoveryState() {
+  set({ isPasswordRecovery: false });
 }
 
 export function refreshProfile() {

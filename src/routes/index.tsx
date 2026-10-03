@@ -561,7 +561,7 @@ function HomePage() {
 
                   {/* Flow arrow indicator between stages on desktop */}
                   {idx < 4 && (
-                    <div className="hidden lg:flex absolute -right-2.5 top-1/2 -translate-y-1/2 z-10 grid h-5 w-5 place-items-center rounded-full border border-border bg-background text-muted-foreground shadow-2xs">
+                    <div className="hidden lg:flex items-center justify-center absolute left-[calc(100%+0.375rem)] top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 h-5 w-5 rounded-full border border-border bg-background text-muted-foreground shadow-2xs pointer-events-none">
                       <ChevronRight className="h-3 w-3" />
                     </div>
                   )}

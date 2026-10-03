@@ -169,6 +169,7 @@ function FarmerHome() {
                 key={e.id}
                 to="/farmer/equipment/$id"
                 params={{ id: e.id }}
+                search={{ from: "home" }}
                 className="flex items-center gap-4 rounded-2xl border border-border bg-card p-4 hover:border-primary/50"
               >
                 {e.photo_url ? (

@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { AlertTriangle, ArrowLeft, ChevronRight, FileText, Tractor } from "lucide-react";
+import { AlertTriangle, ChevronRight, FileText, Tractor } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { btn, Card, Label, StatusPill } from "@/components/tb";
+import { btn, Card, ContextualBack, Label, StatusPill } from "@/components/tb";
 import { getEquipmentById, type EquipmentRow } from "@/lib/services/equipment";
 import {
   getServiceHistoryForEquipment,
@@ -12,7 +12,20 @@ import { inr, type RepairStatus } from "@/lib/tb-store";
 import { meta } from "@/lib/seo";
 import { cn } from "@/lib/utils";
 
+interface EquipmentDetailSearch {
+  from?: "home" | "list" | "repair";
+  repairId?: string;
+}
+
 export const Route = createFileRoute("/farmer/equipment/$id")({
+  validateSearch: (s: Record<string, unknown>): EquipmentDetailSearch => {
+    const from = s["from"];
+    const validFrom = from === "home" || from === "list" || from === "repair" ? from : undefined;
+    return {
+      from: validFrom,
+      repairId: typeof s["repairId"] === "string" ? (s["repairId"] as string) : undefined,
+    };
+  },
   head: () => meta("Machine record", "Machine details and permanent service history."),
   component: EquipmentDetail,
 });
@@ -26,6 +39,14 @@ const fmtDate = (d: string | number) =>
 
 function EquipmentDetail() {
   const { id } = Route.useParams();
+  const { from, repairId } = Route.useSearch();
+  const backTarget =
+    from === "repair" && repairId
+      ? { to: `/farmer/repair/${repairId}`, label: "Repair Ticket" }
+      : from === "home"
+      ? { to: "/farmer", label: "Home" }
+      : { to: "/farmer/equipment", label: "All machines" };
+
   const [e, setE] = useState<EquipmentRow | null>(null);
   const [recs, setRecs] = useState<ServiceHistoryRow[]>([]);
   const [activeRepair, setActiveRepair] = useState<{
@@ -79,12 +100,7 @@ function EquipmentDetail() {
   if (loading) {
     return (
       <div className="space-y-5">
-        <Link
-          to="/farmer/equipment"
-          className="inline-flex h-10 items-center gap-1 text-sm font-semibold text-muted-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" /> All machines
-        </Link>
+        <ContextualBack to={backTarget.to} label={backTarget.label} />
         <div className="py-12 text-center text-muted-foreground">Loading machine record…</div>
       </div>
     );
@@ -93,12 +109,7 @@ function EquipmentDetail() {
   if (error) {
     return (
       <div className="space-y-5">
-        <Link
-          to="/farmer/equipment"
-          className="inline-flex h-10 items-center gap-1 text-sm font-semibold text-muted-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" /> All machines
-        </Link>
+        <ContextualBack to={backTarget.to} label={backTarget.label} />
         <Card className="text-destructive">
           <p>Failed to load machine record: {error}</p>
           <button onClick={() => void loadData()} className={cn(btn.ghost, "mt-3")}>
@@ -112,16 +123,11 @@ function EquipmentDetail() {
   if (!e) {
     return (
       <div className="space-y-5">
-        <Link
-          to="/farmer/equipment"
-          className="inline-flex h-10 items-center gap-1 text-sm font-semibold text-muted-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" /> All machines
-        </Link>
+        <ContextualBack to={backTarget.to} label={backTarget.label} />
         <Card>
           <p>Machine not found.</p>
-          <Link to="/farmer/equipment" className={cn(btn.ghost, "mt-3")}>
-            Back to all machines
+          <Link to={backTarget.to as any} className={cn(btn.ghost, "mt-3")}>
+            Back to {backTarget.label.toLowerCase()}
           </Link>
         </Card>
       </div>
@@ -133,12 +139,7 @@ function EquipmentDetail() {
 
   return (
     <div className="space-y-5">
-      <Link
-        to="/farmer/equipment"
-        className="inline-flex h-10 items-center gap-1 text-sm font-semibold text-muted-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" /> All machines
-      </Link>
+      <ContextualBack to={backTarget.to} label={backTarget.label} />
       <div className="overflow-hidden rounded-2xl bg-soil text-soil-foreground">
         <div className="flex gap-4 p-5">
           {e.photo_url ? (
@@ -175,6 +176,7 @@ function EquipmentDetail() {
         <Link
           to="/farmer/repair/$id"
           params={{ id: activeRepair.id }}
+          search={{ from: "equipment", equipmentId: e.id }}
           className="flex items-center gap-3 rounded-2xl border-2 border-destructive/40 bg-destructive/5 p-4"
         >
           <AlertTriangle className="h-6 w-6 shrink-0 text-destructive" />

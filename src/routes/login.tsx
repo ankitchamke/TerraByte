@@ -41,6 +41,8 @@ function Login() {
       setInfoMsg("Please verify your email address before accessing the workspace.");
     } else if (searchParams.get("verified") === "true") {
       setInfoMsg("Email verified successfully! You can now sign in.");
+    } else if (searchParams.get("reset") === "success") {
+      setInfoMsg("Password reset successfully! You can now sign in with your new password.");
     }
 
     const errorDesc = searchParams.get("error_description") || hashParams.get("error_description");
@@ -135,7 +137,25 @@ function Login() {
       ) : (
         <form onSubmit={submit} className="mt-6 space-y-4">
           <Field label="Email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
-          <Field label="Password" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+          <div>
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-sm font-semibold">Password</span>
+              <Link
+                to="/forgot-password"
+                className="text-xs font-semibold text-primary hover:underline transition-colors"
+              >
+                Forgot password?
+              </Link>
+            </div>
+            <input
+              type="password"
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="h-12 w-full rounded-xl border border-border bg-background px-3 text-base outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+            />
+          </div>
           <FormError>{err}</FormError>
 
           {unconfirmedEmail && (

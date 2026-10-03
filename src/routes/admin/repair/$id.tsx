@@ -1,7 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   AlertOctagon,
-  ArrowLeft,
   ChevronDown,
   ChevronUp,
   History,
@@ -16,6 +15,7 @@ import {
   CallButton,
   Card,
   ClickableImage,
+  ContextualBack,
   input,
   Label,
   StatusPill,
@@ -239,9 +239,7 @@ function AdminRepair() {
   if (loading) {
     return (
       <div className="space-y-5">
-        <Link to="/admin" className="inline-flex h-10 items-center gap-1 text-sm font-semibold text-muted-foreground">
-          <ArrowLeft className="h-4 w-4" /> Pipeline
-        </Link>
+        <ContextualBack to="/admin" label="Pipeline" />
         <div className="py-12 text-center text-muted-foreground">Loading repair details…</div>
       </div>
     );
@@ -253,9 +251,7 @@ function AdminRepair() {
   if (!dbRepair && !mockR) {
     return (
       <div className="space-y-5">
-        <Link to="/admin" className="inline-flex h-10 items-center gap-1 text-sm font-semibold text-muted-foreground">
-          <ArrowLeft className="h-4 w-4" /> Pipeline
-        </Link>
+        <ContextualBack to="/admin" label="Pipeline" />
         <Card>
           <p className="text-muted-foreground">{error || "Repair ticket not found."}</p>
           <Link to="/admin" className="mt-3 inline-block font-semibold text-primary underline">
@@ -434,12 +430,7 @@ function AdminRepair() {
 
   return (
     <div className="space-y-5">
-      <Link
-        to="/admin"
-        className="inline-flex h-10 items-center gap-1 text-sm font-semibold text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" /> Pipeline
-      </Link>
+      <ContextualBack to="/admin" label="Pipeline" />
 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>

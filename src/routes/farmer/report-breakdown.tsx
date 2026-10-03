@@ -231,9 +231,17 @@ function Report() {
     <div className="space-y-5">
       <div className="flex items-center gap-3">
         <button
-          aria-label="Back"
+          aria-label={d.step > 1 ? "Previous step" : pre ? "Back to machine record" : "Back to home"}
           disabled={submitting}
-          onClick={() => (d.step > 1 ? up({ step: d.step - 1 }) : nav({ to: "/farmer" }))}
+          onClick={() => {
+            if (d.step > 1) {
+              up({ step: d.step - 1 });
+            } else if (pre) {
+              nav({ to: `/farmer/equipment/${pre}` as any });
+            } else {
+              nav({ to: "/farmer" });
+            }
+          }}
           className="grid h-11 w-11 place-items-center rounded-xl border-2 border-border disabled:opacity-50"
         >
           <ArrowLeft className="h-5 w-5" />

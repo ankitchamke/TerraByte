@@ -1,9 +1,9 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { AlertCircle, ArrowLeft, Camera, Loader2, Lock, PackageSearch, Plus, Trash2 } from "lucide-react";
+import { AlertCircle, Camera, Loader2, Lock, PackageSearch, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AssessmentCard, QuoteTable, Timeline } from "@/components/repair-parts";
-import { btn, CallButton, Card, ClickableImage, DateTimePicker, formatEtaDateTime, input, Label, StatusPill } from "@/components/tb";
+import { btn, CallButton, Card, ClickableImage, ContextualBack, DateTimePicker, formatEtaDateTime, input, Label, StatusPill } from "@/components/tb";
 import { fileToSmallDataUrl } from "@/lib/image";
 import { actions, ago, fmtTime, inr, quoteTotals, useTB, type Quote, type QuotePart, type Repair } from "@/lib/tb-store";
 import { formatEtaDateTime as formatEta, getEtaPresets, toDateTimeLocalString, valueToDateTimeLocal } from "@/lib/date-utils";
@@ -145,9 +145,7 @@ function Job() {
   if (loading) {
     return (
       <div className="space-y-5">
-        <Link to="/technician" className="inline-flex h-10 items-center gap-1 text-sm font-semibold text-muted-foreground">
-          <ArrowLeft className="h-4 w-4" /> Jobs
-        </Link>
+        <ContextualBack to="/technician" label="Jobs" />
         <div className="py-12 text-center text-muted-foreground">Loading job details…</div>
       </div>
     );
@@ -156,9 +154,7 @@ function Job() {
   if (error || !r) {
     return (
       <div className="space-y-5">
-        <Link to="/technician" className="inline-flex h-10 items-center gap-1 text-sm font-semibold text-muted-foreground">
-          <ArrowLeft className="h-4 w-4" /> Jobs
-        </Link>
+        <ContextualBack to="/technician" label="Jobs" />
         <Card className="text-destructive">
           <p>{error || "Repair job not found."}</p>
           <Link to="/technician" className="mt-2 inline-block font-semibold text-primary underline">
@@ -172,9 +168,7 @@ function Job() {
   if (r.technician_id !== profile?.id && r.status !== "COMPLETED" && profile?.role !== "service_centre") {
     return (
       <div className="space-y-5">
-        <Link to="/technician" className="inline-flex h-10 items-center gap-1 text-sm font-semibold text-muted-foreground">
-          <ArrowLeft className="h-4 w-4" /> Jobs
-        </Link>
+        <ContextualBack to="/technician" label="Jobs" />
         <Card>
           This job isn't assigned to you.{" "}
           <Link to="/technician" className="font-semibold text-primary">Back to jobs</Link>
@@ -251,9 +245,7 @@ function Job() {
 
   return (
     <div className="space-y-5">
-      <Link to="/technician" className="inline-flex h-10 items-center gap-1 text-sm font-semibold text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="h-4 w-4" /> Jobs
-      </Link>
+      <ContextualBack to="/technician" label="Jobs" />
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="font-mono text-sm text-muted-foreground">Job {r.job_number || r.id} · {ago(createdAtMs)} ago</p>

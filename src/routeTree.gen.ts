@@ -12,14 +12,17 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as FarmerRouteImport } from './routes/farmer'
+import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as McpRouteImport } from './routes/mcp'
+import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as ServiceCentreRouteImport } from './routes/service-centre'
 import { Route as TechnicianRouteImport } from './routes/technician'
 import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminTechniciansRouteImport } from './routes/admin/technicians'
 import { Route as AuthConfirmRouteImport } from './routes/auth/confirm'
+import { Route as AuthResetPasswordRouteImport } from './routes/auth/reset-password'
 import { Route as FarmerIndexRouteImport } from './routes/farmer/index'
 import { Route as FarmerReportBreakdownRouteImport } from './routes/farmer/report-breakdown'
 import { Route as RegisterFarmerRouteImport } from './routes/register/farmer'
@@ -47,6 +50,11 @@ const FarmerRoute = FarmerRouteImport.update({
   path: '/farmer',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
+  id: '/forgot-password',
+  path: '/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -55,6 +63,11 @@ const LoginRoute = LoginRouteImport.update({
 const McpRoute = McpRouteImport.update({
   id: '/mcp',
   path: '/mcp',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProfileRoute = ProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ServiceCentreRoute = ServiceCentreRouteImport.update({
@@ -86,6 +99,11 @@ const AdminTechniciansRoute = AdminTechniciansRouteImport.update({
 const AuthConfirmRoute = AuthConfirmRouteImport.update({
   id: '/auth/confirm',
   path: '/auth/confirm',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthResetPasswordRoute = AuthResetPasswordRouteImport.update({
+  id: '/auth/reset-password',
+  path: '/auth/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FarmerIndexRoute = FarmerIndexRouteImport.update({
@@ -148,13 +166,16 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/farmer': typeof FarmerRouteWithChildren
+  '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/mcp': typeof McpRoute
+  '/profile': typeof ProfileRoute
   '/service-centre': typeof ServiceCentreRoute
   '/technician': typeof TechnicianRouteWithChildren
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin/technicians': typeof AdminTechniciansRoute
   '/auth/confirm': typeof AuthConfirmRoute
+  '/auth/reset-password': typeof AuthResetPasswordRoute
   '/farmer/report-breakdown': typeof FarmerReportBreakdownRoute
   '/register/farmer': typeof RegisterFarmerRoute
   '/register/technician': typeof RegisterTechnicianRoute
@@ -170,12 +191,15 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/mcp': typeof McpRoute
+  '/profile': typeof ProfileRoute
   '/service-centre': typeof ServiceCentreRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin/technicians': typeof AdminTechniciansRoute
   '/auth/confirm': typeof AuthConfirmRoute
+  '/auth/reset-password': typeof AuthResetPasswordRoute
   '/farmer/report-breakdown': typeof FarmerReportBreakdownRoute
   '/register/farmer': typeof RegisterFarmerRoute
   '/register/technician': typeof RegisterTechnicianRoute
@@ -194,13 +218,16 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/farmer': typeof FarmerRouteWithChildren
+  '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/mcp': typeof McpRoute
+  '/profile': typeof ProfileRoute
   '/service-centre': typeof ServiceCentreRoute
   '/technician': typeof TechnicianRouteWithChildren
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin/technicians': typeof AdminTechniciansRoute
   '/auth/confirm': typeof AuthConfirmRoute
+  '/auth/reset-password': typeof AuthResetPasswordRoute
   '/farmer/report-breakdown': typeof FarmerReportBreakdownRoute
   '/register/farmer': typeof RegisterFarmerRoute
   '/register/technician': typeof RegisterTechnicianRoute
@@ -220,13 +247,16 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/farmer'
+    | '/forgot-password'
     | '/login'
     | '/mcp'
+    | '/profile'
     | '/service-centre'
     | '/technician'
     | '/.well-known/oauth-protected-resource'
     | '/admin/technicians'
     | '/auth/confirm'
+    | '/auth/reset-password'
     | '/farmer/report-breakdown'
     | '/register/farmer'
     | '/register/technician'
@@ -242,12 +272,15 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/forgot-password'
     | '/login'
     | '/mcp'
+    | '/profile'
     | '/service-centre'
     | '/.well-known/oauth-protected-resource'
     | '/admin/technicians'
     | '/auth/confirm'
+    | '/auth/reset-password'
     | '/farmer/report-breakdown'
     | '/register/farmer'
     | '/register/technician'
@@ -265,13 +298,16 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/farmer'
+    | '/forgot-password'
     | '/login'
     | '/mcp'
+    | '/profile'
     | '/service-centre'
     | '/technician'
     | '/.well-known/oauth-protected-resource'
     | '/admin/technicians'
     | '/auth/confirm'
+    | '/auth/reset-password'
     | '/farmer/report-breakdown'
     | '/register/farmer'
     | '/register/technician'
@@ -290,12 +326,15 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
   FarmerRoute: typeof FarmerRouteWithChildren
+  ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
   McpRoute: typeof McpRoute
+  ProfileRoute: typeof ProfileRoute
   ServiceCentreRoute: typeof ServiceCentreRoute
   TechnicianRoute: typeof TechnicianRouteWithChildren
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   AuthConfirmRoute: typeof AuthConfirmRoute
+  AuthResetPasswordRoute: typeof AuthResetPasswordRoute
   RegisterFarmerRoute: typeof RegisterFarmerRoute
   RegisterTechnicianRoute: typeof RegisterTechnicianRoute
 }
@@ -323,6 +362,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FarmerRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/forgot-password': {
+      id: '/forgot-password'
+      path: '/forgot-password'
+      fullPath: '/forgot-password'
+      preLoaderRoute: typeof ForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -335,6 +381,13 @@ declare module '@tanstack/react-router' {
       path: '/mcp'
       fullPath: '/mcp'
       preLoaderRoute: typeof McpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/profile': {
+      id: '/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof ProfileRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/service-centre': {
@@ -377,6 +430,13 @@ declare module '@tanstack/react-router' {
       path: '/auth/confirm'
       fullPath: '/auth/confirm'
       preLoaderRoute: typeof AuthConfirmRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth/reset-password': {
+      id: '/auth/reset-password'
+      path: '/auth/reset-password'
+      fullPath: '/auth/reset-password'
+      preLoaderRoute: typeof AuthResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/farmer/': {
@@ -512,13 +572,16 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
   FarmerRoute: FarmerRouteWithChildren,
+  ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,
   McpRoute: McpRoute,
+  ProfileRoute: ProfileRoute,
   ServiceCentreRoute: ServiceCentreRoute,
   TechnicianRoute: TechnicianRouteWithChildren,
   Char91DotwellKnownChar93OauthProtectedResourceRoute:
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
   AuthConfirmRoute: AuthConfirmRoute,
+  AuthResetPasswordRoute: AuthResetPasswordRoute,
   RegisterFarmerRoute: RegisterFarmerRoute,
   RegisterTechnicianRoute: RegisterTechnicianRoute,
 }

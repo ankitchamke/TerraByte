@@ -1,9 +1,9 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, CheckCircle2, Loader2, PackageSearch, ShieldCheck } from "lucide-react";
+import { CheckCircle2, Loader2, PackageSearch, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AssessmentCard, QuoteTable, TechCard, Timeline } from "@/components/repair-parts";
-import { btn, CallButton, Card, ClickableImage, formatEtaDateTime, input, Label, StatusPill, Stepper } from "@/components/tb";
+import { btn, CallButton, Card, ClickableImage, ContextualBack, formatEtaDateTime, input, Label, StatusPill, Stepper } from "@/components/tb";
 import {
   cancelRepairRequest,
   getRepairRequestById,
@@ -29,7 +29,16 @@ import { meta } from "@/lib/seo";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 
+interface RepairHubSearch {
+  from?: "equipment";
+  equipmentId?: string;
+}
+
 export const Route = createFileRoute("/farmer/repair/$id")({
+  validateSearch: (s: Record<string, unknown>): RepairHubSearch => ({
+    from: s["from"] === "equipment" ? "equipment" : undefined,
+    equipmentId: typeof s["equipmentId"] === "string" ? (s["equipmentId"] as string) : undefined,
+  }),
   head: () => meta("Repair Hub", "Live status of your machine's repair."),
   component: RepairHub,
 });
@@ -72,6 +81,11 @@ function formatTechCardData(t: VerifiedTechnicianWithProfile): Technician {
 
 function RepairHub() {
   const { id } = Route.useParams();
+  const { from, equipmentId } = Route.useSearch();
+  const backTarget =
+    from === "equipment" && equipmentId
+      ? { to: `/farmer/equipment/${equipmentId}`, label: "Machine Record" }
+      : { to: "/farmer", label: "Home" };
   const navigate = useNavigate();
   const [r, setR] = useState<RepairRequestDetail | null>(null);
   const [quotes, setQuotes] = useState<QuoteDetail[]>([]);
@@ -196,12 +210,7 @@ function RepairHub() {
   if (loading) {
     return (
       <div className="space-y-5">
-        <Link
-          to="/farmer"
-          className="inline-flex h-10 items-center gap-1 text-sm font-semibold text-muted-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" /> Home
-        </Link>
+        <ContextualBack to={backTarget.to} label={backTarget.label} />
         <div className="py-12 text-center text-muted-foreground">Loading repair details…</div>
       </div>
     );
@@ -210,12 +219,7 @@ function RepairHub() {
   if (error) {
     return (
       <div className="space-y-5">
-        <Link
-          to="/farmer"
-          className="inline-flex h-10 items-center gap-1 text-sm font-semibold text-muted-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" /> Home
-        </Link>
+        <ContextualBack to={backTarget.to} label={backTarget.label} />
         <Card className="text-destructive">
           <p>Failed to load repair: {error}</p>
           <button onClick={() => void loadData()} className={cn(btn.ghost, "mt-3")}>
@@ -229,16 +233,11 @@ function RepairHub() {
   if (!r) {
     return (
       <div className="space-y-5">
-        <Link
-          to="/farmer"
-          className="inline-flex h-10 items-center gap-1 text-sm font-semibold text-muted-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" /> Home
-        </Link>
+        <ContextualBack to={backTarget.to} label={backTarget.label} />
         <Card>
           <p>Repair not found.</p>
-          <Link to="/farmer" className="mt-2 inline-block font-semibold text-primary">
-            Go home
+          <Link to={backTarget.to as any} className="mt-2 inline-block font-semibold text-primary">
+            Go to {backTarget.label.toLowerCase()}
           </Link>
         </Card>
       </div>
@@ -353,12 +352,7 @@ function RepairHub() {
 
   return (
     <div className="space-y-5">
-      <Link
-        to="/farmer"
-        className="inline-flex h-10 items-center gap-1 text-sm font-semibold text-muted-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" /> Home
-      </Link>
+      <ContextualBack to={backTarget.to} label={backTarget.label} />
       <div>
         <p className="font-mono text-sm text-muted-foreground">
           {r.job_number || r.id} · reported {ago(new Date(r.created_at).getTime())} ago
@@ -700,7 +694,12 @@ function RepairHub() {
               Handover confirmed. Saved to the machine's permanent service history.
             </p>
             {e && (
-              <Link to="/farmer/equipment/$id" params={{ id: e.id }} className={cn(btn.ghost, "w-full")}>
+              <Link
+                to="/farmer/equipment/$id"
+                params={{ id: e.id }}
+                search={{ from: "repair", repairId: r.id }}
+                className={cn(btn.ghost, "w-full")}
+              >
                 View service history
               </Link>
             )}

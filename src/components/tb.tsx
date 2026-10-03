@@ -1,6 +1,6 @@
 import { Link, useNavigate, useLocation } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, Bell, Check, LogOut, Phone, RotateCcw, Tractor, WifiOff, Wrench, Radio } from "lucide-react";
+import { ArrowLeft, Bell, Check, LogOut, Phone, RotateCcw, Tractor, User, WifiOff, Wrench, Radio } from "lucide-react";
 import { actions, ago, FARMER_LABEL, resetDemo, STAFF_LABEL, useTB, type Repair, type RepairStatus, type Role } from "@/lib/tb-store";
 import { homeFor, signOut, useAuth, type AppRole } from "@/lib/auth";
 import {
@@ -274,6 +274,14 @@ export function Shell({ role, children, wide }: { role: Role; children: ReactNod
             </button>
           )}
           <div className="ml-auto flex items-center gap-1">
+            <Link
+              to="/profile"
+              aria-label="Profile settings"
+              title="Profile settings"
+              className="grid h-11 w-11 place-items-center rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <User className="h-5 w-5" />
+            </Link>
             <div className="relative" ref={notifRef}>
               <button
                 type="button"
@@ -463,3 +471,23 @@ export const btn = {
   amber: "inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-accent px-5 font-semibold text-accent-foreground hover:bg-accent/90",
 };
 export const input = "w-full rounded-xl border-2 border-input bg-background px-3 py-3 text-base outline-none focus:border-primary";
+
+export interface ContextualBackProps {
+  to: string;
+  label: string;
+  className?: string;
+}
+
+export function ContextualBack({ to, label, className }: ContextualBackProps) {
+  return (
+    <Link
+      to={to as any}
+      className={cn(
+        "inline-flex h-10 items-center gap-1 text-sm font-semibold text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-lg transition-colors",
+        className
+      )}
+    >
+      <ArrowLeft className="h-4 w-4" /> {label}
+    </Link>
+  );
+}

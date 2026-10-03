@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { meta } from "@/lib/seo";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+import { ContextualBack } from "@/components/tb";
 
 export const Route = createFileRoute("/admin/technicians")({
   head: () => meta("Technician accounts", "Review and approve technician accounts for the TerraByte network."),
@@ -69,6 +70,7 @@ function Technicians() {
 
   return (
     <div className="space-y-6">
+      <ContextualBack to="/admin" label="Pipeline" />
       <div>
         <p className="font-mono text-xs uppercase tracking-widest text-muted-foreground">Account verification</p>
         <h1 className="text-3xl font-bold">Technician accounts</h1>

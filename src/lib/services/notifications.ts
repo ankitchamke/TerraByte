@@ -15,19 +15,30 @@ export interface GetNotificationsOptions {
   unreadOnly?: boolean;
   limit?: number;
 }
+let cachedProfile: { auth_user_id: string; id: string; role: string; expiresAt: number } | null = null;
 
 /**
  * Resolves the authenticated user's profile ID and role.
- * Ensures caller identity is verified against Supabase Auth.
+ * Uses cached profile / active session when available to prevent waterfall latency.
  */
 async function getAuthenticatedProfile(): Promise<{ id: string; role: string }> {
   const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+  const sessionUser = session?.user;
 
-  if (authError || !user) {
+  if (sessionUser && cachedProfile && cachedProfile.auth_user_id === sessionUser.id && Date.now() < cachedProfile.expiresAt) {
+    return { id: cachedProfile.id, role: cachedProfile.role };
+  }
+
+  const user = sessionUser || (await supabase.auth.getUser()).data.user;
+
+  if (!user) {
     throw new Error("Authentication required: Please sign in to access notifications.");
+  }
+
+  if (cachedProfile && cachedProfile.auth_user_id === user.id && Date.now() < cachedProfile.expiresAt) {
+    return { id: cachedProfile.id, role: cachedProfile.role };
   }
 
   const { data: profile, error: profileError } = await supabase
@@ -39,6 +50,13 @@ async function getAuthenticatedProfile(): Promise<{ id: string; role: string }> 
   if (profileError || !profile) {
     throw new Error("User profile not found. Please ensure your profile is initialized.");
   }
+
+  cachedProfile = {
+    auth_user_id: user.id,
+    id: profile.id,
+    role: profile.role,
+    expiresAt: Date.now() + 60_000,
+  };
 
   return profile;
 }

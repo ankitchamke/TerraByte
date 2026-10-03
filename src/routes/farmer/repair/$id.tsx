@@ -361,7 +361,7 @@ function RepairHub() {
           {e?.make || "Equipment"} {e?.model || ""}
         </h1>
         <div className="mt-2">
-          <StatusPill r={{ status: r.status, testing: r.is_testing }} audience="farmer" />
+          <StatusPill r={{ status: r.status, testing: r.is_testing, technicianId: r.technician_id }} audience="farmer" />
         </div>
       </div>
 

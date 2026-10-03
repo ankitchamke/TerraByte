@@ -6,7 +6,7 @@
 2. **Current Baseline As Source of Truth**: The active TanStack Start codebase and native Supabase Auth setup represent the permanent application baseline.
 3. **No Clerk**: Clerk is permanently excluded. All identity, authorization, and database logic are built on Supabase.
 4. **No Destructive Operations**: As the repository is connected to Lovable, published Git history is never rewritten (no force pushing, rebasing, or amending).
-5. **Clear State Separation**: All documentation and code strictly distinguish between live Supabase data and mock/local store data.
+5. **Clear State Separation**: All documentation and code strictly distinguish between live Supabase data and mock/local store data. Supabase is the live source of truth.
 
 ---
 
@@ -14,143 +14,91 @@
 
 ```mermaid
 flowchart TD
-    P0["PHASE 0: Baseline Audit<br/>(STATUS: COMPLETE)"] --> P1["PHASE 1: Codebase Cleanup + Documentation Reset<br/>(STATUS: CURRENT / COMPLETED)"]
-    P1 --> P2["PHASE 2: Domain Database + Storage Foundation<br/>(STATUS: NEXT)"]
-    P2 --> P3["PHASE 3: Farmer Live Workflow"]
-    P3 --> P4["PHASE 4: Technician Live Workflow"]
-    P4 --> P5["PHASE 5: Service Centre Live Operations"]
-    P5 --> P6["PHASE 6: End-to-End Repair Lifecycle"]
-    P6 --> P7["PHASE 7: Realtime + Notifications"]
-    P7 --> P8["PHASE 8: AI / Gemini Diagnostics"]
-    P8 --> P9["PHASE 9: Testing, Security & Production Deployment"]
+    P1["PHASE 1: Codebase Cleanup + Doc Reset<br/>(STATUS: COMPLETE)"] --> P2["PHASE 2: Domain Database Foundation<br/>(STATUS: COMPLETE)"]
+    P2 --> P3["PHASE 3: Core Repair & Quote Workflows<br/>(STATUS: COMPLETE)"]
+    P3 --> P4["PHASE 4: Operations & Notifications<br/>(STATUS: COMPLETE)"]
+    P4 --> P51["PHASE 5.1: Product Polish & Account Lifecycle<br/>(STATUS: COMPLETE — Commit a6ff2de)"]
+    P51 --> P52["PHASE 5.2: Demo/Data Hygiene & Baseline Reset<br/>(STATUS: IN PROGRESS)"]
+    P52 --> P53["PHASE 5.3: End-to-End Hardening & Realtime"]
+    P53 --> P54["PHASE 5.4: Gemini Multimodal Diagnostics"]
 ```
 
 ---
 
 ## Phase Breakdown
 
-### PHASE 0 — Baseline Codebase Audit
-- **Status**: **COMPLETE**
-- **Objective**: Conduct comprehensive inspection of the fresh Lovable project post-reset.
-- **Completed Deliverables**:
-  1. Identified active framework (TanStack Start, React 19, Vite 8, Tailwind CSS 4, `@lovable.dev/mcp-js`).
-  2. Verified active Supabase project (`fmnzoovazqpyaebqmqyo`) and confirmed 100% absence of Clerk in application runtime.
-  3. Audited active migrations (`20261001100255`, `20261001100308`, `20261001100632`) creating `profiles`, `technician_profiles`, and role enforcement triggers.
-  4. Cataloged obsolete files (`src/lib/supabase.ts`, `src/types/database.ts`, stale 2026-09-30 migrations, `.env.local`).
-
----
-
-### PHASE 1 — Codebase Cleanup + Documentation Reset
-- **Status**: **CURRENT / COMPLETED**
-- **Objective**: Purge obsolete legacy code, isolate legacy migration artifacts, clean configuration, and align the five primary documentation files to the real codebase.
+### PHASE 5.1 — Product Polish & Account Lifecycle
+- **Status**: **COMPLETE** (Committed and pushed: `a6ff2de`)
 - **Deliverables**:
-  1. Deleted obsolete unused files: `src/lib/supabase.ts` and `src/types/database.ts`.
-  2. Purged stale `.env.local` containing obsolete project keys and Clerk variables.
-  3. Cleaned legacy CLI cache in `supabase/.temp/`.
-  4. Empirically verified remote active database schema (confirmed only `profiles` and `technician_profiles` exist).
-  5. Moved legacy migrations (`20260930000001`–`20260930000005`) into `supabase/migrations_legacy_archive/` to prevent migration chain corruption.
-  6. Preserved `supabase/seed.sql` for replacement in Phase 2.
-  7. Overhauled core documentation (`PROJECT_STATE.md`, `TRD.md`, `APP_FLOW.md`, `IMPLEMENTATION_PLAN.md`, `TESTING.md`).
+  1. Proper Home experience with role-based dashboard shortcuts (`/farmer`, `/technician`, `/admin`).
+  2. Contextual back navigation preserving state across views.
+  3. Profile management (name, phone, village/workshop, brand specializations).
+  4. Password management (forgot password, recovery token flow, branded reset password email template, change password).
+  5. Permanent account deletion via atomic PostgreSQL RPC `public.delete_user_account()` with active-repair and demo-account protections.
 
 ---
 
-### PHASE 2 — Domain Database + Storage Foundation
-- **Status**: **PLANNED (NEXT)**
-- **Objective**: Establish the relational PostgreSQL schema and Supabase Storage buckets for the complete agricultural repair business domain.
-- **Prerequisites**: Phase 1 completed and verified.
-- **Key Deliverables**:
-  1. **New Migration: Domain Relational Schema**:
-     - `public.equipment`: Farmer machinery assets (`farmer_id` referencing `profiles(id)`, `type`, `make`, `model`, `year`, `serial_number`, `operating_hours`, `status`).
-     - `public.repairs` / `breakdowns`: Breakdown incidents and lifecycle status (`equipment_id`, `farmer_id`, `technician_id`, `status`, `symptoms`, `description`, `location`, `assessment`, `testing`).
-     - `public.repair_timeline`: State transition audit trail (`repair_id`, `status`, `note`, `actor_id`).
-     - `public.quotes` & `public.quote_parts`: Itemized quote formulations and parts line-items.
-     - `public.parts_holds`: Tracking records for jobs paused on `WAITING_FOR_PARTS`.
-     - `public.service_records`: Permanent maintenance ledgers bound to equipment serials.
-     - `public.notifications`: User alert records.
-  2. **Row Level Security Policies**: Granular SELECT/INSERT/UPDATE policies across all new tables for `farmer`, `technician`, and `service_centre`.
-  3. **Supabase Storage Setup**: Provision buckets (`equipment-photos`, `breakdown-photos`, `repair-photos`) with authenticated upload and public read RLS.
-  4. **TypeScript Typings Generation**: Regenerate `src/integrations/supabase/types.ts` via Supabase CLI.
-  5. **Realistic Regional Seed Script**: Create replacement `supabase/seed.sql` populated with Nashik agricultural equipment, workshops, and sample repairs linked to seed user accounts.
+### PHASE 5.2 — Demo / Data Hygiene & Baseline Reset
+- **Status**: **IN PROGRESS**
+- **Objective**: Implement a safe, atomic, deterministic "Reset Demo" capability for evaluation personas, isolate demo farmer data, and enforce Nagpur geography.
 
----
+#### Completed Deliverables
+1. **Canonical Demo Reset RPC (`public.reset_demo_data()`)**:
+   - Zero client parameters; security definer with explicit `search_path`.
+   - Dual-key backend authorization (`auth.uid()` mapped to designated evaluation email set AND `demo_code IS NOT NULL`).
+   - Clean deletion of accumulated non-seed demo records (`repairs`, `equipment`, `service_history`, `notifications`).
+   - Atomic upsert of canonical baseline fixtures (`f1`, `f2`, `f3`, `t1`, `t2`, `t3`, `t4`, `t5`, `admin`, `TB-8841`, `TB-8902`, `TB-8898`).
+   - Preservation of TB-4489 fixture for future Phase 5.5 demonstration.
+   - Strict isolation: real user rows and foreign keys are never altered or removed.
+2. **Secure Demo Authorization**:
+   - Dedicated client service [`src/lib/services/demo.ts`](file:///d:/Projects/TerraByte/src/lib/services/demo.ts) validating the 5 designated accounts.
+   - Unauthorized attempts return safe translated error messages (`42501` mapped to `"Demo reset is not available for this account."`).
+3. **Frontend Reset Demo Action & Confirmation Dialog**:
+   - `RotateCcw` reset button in Shell header visible **only** to the 5 designated demo accounts.
+   - Accessible Radix `AlertDialog` confirmation modal with destructive action styling, spinner during execution, and >=44px mobile touch targets.
+4. **Post-Reset State Synchronization**:
+   - Deterministic 7-step sequence: RPC call $\rightarrow$ `resetDemo()` store sync $\rightarrow$ `refreshProfile()` $\rightarrow$ `fetchNotifications()` $\rightarrow$ `router.invalidate()` $\rightarrow$ route component remount $\rightarrow$ success toast.
 
-### PHASE 3 — Farmer Live Workflow Integration
-- **Status**: **PLANNED**
-- **Objective**: Connect the Farmer Portal to live Supabase queries and mutations using TanStack Query.
-- **Prerequisites**: Phase 2 completed.
-- **Key Deliverables**:
-  1. Replace `tb-store` in `/farmer/` with live Supabase queries for farmer fleet and active repair jobs.
-  2. Wire `/farmer/equipment/*` to fetch real equipment details and immutable service history records.
-  3. Wire `/farmer/report-breakdown` to upload breakdown photos to Supabase Storage and insert real tickets into `public.repairs`.
-  4. Wire `/farmer/repair/$id` to display live repair status, photo evidence, and enable quote approval/revision mutations.
-
----
-
-### PHASE 4 — Technician Live Workflow Integration
-- **Status**: **PLANNED**
-- **Objective**: Connect the Technician Portal to live Supabase queries and mutations.
-- **Prerequisites**: Phase 3 completed.
-- **Key Deliverables**:
-  1. Wire `/technician/` job feed to query real unassigned or assigned repairs matching technician specialization.
-  2. Wire `/technician/job/$id` to:
-     - Accept/decline jobs with live status updates.
-     - Draft and submit itemized quotes into `public.quotes` and `public.quote_parts`.
-     - Trigger `WAITING_FOR_PARTS` status and record parts hold details.
-     - Complete repairs with load-test verification and maintenance notes.
-  3. Update technician operational profile (availability toggle, brands, skills) via Supabase mutations.
-
----
-
-### PHASE 5 — Service Centre Live Operations
-- **Status**: **PLANNED**
-- **Objective**: Connect the Service Centre / Admin Portal to live operational data.
-- **Prerequisites**: Phase 4 completed.
-- **Key Deliverables**:
-  1. Wire `/admin/` dashboard to aggregate live repair tickets, identify SLA breaches (>30m unassigned), and track regional parts delays.
-  2. Wire `/admin/repair/$id` to manually assign or reassign repair orders to verified technicians.
-  3. Fully retire `src/lib/tb-store.ts` from all production views.
-
----
-
-### PHASE 6 — End-to-End Repair Lifecycle Validation
-- **Status**: **PLANNED**
-- **Objective**: Conduct comprehensive multi-user simulation across the complete 7-step repair state machine.
-- **Prerequisites**: Phase 5 completed.
-- **Key Deliverables**:
-  1. Execute full unbroken lifecycle: Farmer Breakdown $\rightarrow$ Service Centre Triage $\rightarrow$ Tech Assignment $\rightarrow$ On-Site Quote $\rightarrow$ Farmer Approval $\rightarrow$ Parts Hold $\rightarrow$ Resumption $\rightarrow$ Completion $\rightarrow$ Permanent Service History.
-  2. Validate quote revision and cancellation alternate paths.
-  3. Implement **Quick Demo Login** on `/login` (`[ Farmer Demo ]`, `[ Technician Demo ]`, `[ Service Centre Demo ]`) that autofills real Supabase credentials into the form.
-
----
-
-### PHASE 7 — Realtime Subscriptions & In-App Notifications
-- **Status**: **PLANNED**
-- **Objective**: Enable instant status synchronization without page refreshes.
-- **Prerequisites**: Phase 6 completed.
-- **Key Deliverables**:
-  1. Enable Supabase Realtime replication on `repairs` and `notifications`.
-  2. Wire client listeners so farmer screens update instantly when technician updates status or sends quotes.
-  3. Realtime notifications dropdown in the header shell.
-
----
-
-### PHASE 8 — AI Diagnostic Integration (Google Gemini API)
-- **Status**: **PLANNED**
-- **Objective**: Elevate the preliminary diagnostic assessment from deterministic rules to generative multimodal AI.
-- **Prerequisites**: Phase 7 completed.
-- **Key Deliverables**:
-  1. Integrate Google Gemini 2.0 API via a secure backend handler / Supabase Edge Function.
-  2. Analyze farmer symptoms, text description, and breakdown photos to output structured JSON: suspected mechanical fault, severity, required parts categories, and immediate safety advice.
-  3. Maintain deterministic rule engine (`src/lib/assessment.ts`) as a resilient offline fallback.
-
----
-
-### PHASE 9 — Hardening, Security Audit & Production Deployment
-- **Status**: **PLANNED**
-- **Objective**: Finalize security hardening, accessibility, and production deployment.
-- **Prerequisites**: Phase 8 completed.
-- **Key Deliverables**:
-  1. Complete RLS penetration testing (verifying farmers cannot inspect other fleets; technicians cannot edit unassigned jobs).
-  2. Automated test suite execution across all critical user journeys.
-  3. Production build optimization and deployment to Vercel with clean headers and SPA routing.
-  4. Final demo presentation package.
+#### Pending Deliverables
+1. **Farmer Demo Data Isolation Correction**:
+   - Disconnected `FarmerHome` from mock `tb-store` active repairs.
+   - Wired live Supabase queries via `getFarmerRepairRequests()` and `getFarmerEquipment()`.
+   - Added explicit `.eq("farmer_id", profile.id)` filters in services.
+   - Bound `RoleGuard` `actions.login` to dynamic farmer identity (`demo_code || id`).
+   - *Status*: Implemented in codebase, pending manual testing verification.
+2. **Nagpur Geography Cleanup**:
+   - Updated Service Centre identity to `"Nagpur Service Centre"` and `"Nagpur Central Command"`.
+   - Updated all demo profile villages and repair locations to Nagpur agricultural talukas (Katol, Saoner, Umred).
+   - Re-applied updated `reset_demo_data()` RPC to linked remote database.
+   - *Status*: Implemented in codebase and remote DB, pending manual testing verification.
+3. **Completed-Repair & Action-Needed Classification Correction**:
+   - Excluded `COMPLETED` and `CANCELLED` tickets from farmer home active repairs card stack.
+   - Reserved "Action needed" styling strictly for genuine pending actions (`QUOTE_PENDING`, `QUOTE_REVISED`).
+   - Solved scalability: farmers with multiple completed repairs only see genuine active work; completed records stay in Service History.
+   - *Status*: Implemented in codebase, pending manual testing verification.
+4. **Dashboard Loading Performance Remediation**:
+   - Implemented session-check fast path and 60-second in-memory profile cache in `getAuthenticatedProfile()` across services to eliminate redundant auth/profile network roundtrips.
+   - Enabled `getFarmerEquipment(farmerId)` and `getFarmerRepairRequests(farmerId)` to accept already-resolved `profile.id` directly.
+   - Concurrentized independent section loading in `FarmerHome`.
+   - Rendered stable header immediately in Service Centre dashboard and removed completed repairs from open triage queue.
+   - *Status*: Implemented in codebase, pending manual testing verification.
+5. **Startup Waterfall & Farmer Query Optimization**:
+   - In-flight promise deduplication on `loadProfile()` in `auth.ts` preventing double auth network roundtrips during initial app mount.
+   - Session-check fast path and profile caching in `notifications.ts`.
+   - Database-level active-only filtering in `getFarmerRepairRequests(farmerId, { activeOnly: true })` using `.not("status", "in", '("COMPLETED","CANCELLED")')`, cutting 90% of data transfer for farmers with extensive service history.
+   - *Status*: Implemented in codebase, pending manual testing verification.
+6. **TB-4545 Unassigned Request Action State**:
+   - Accurately represented repair lifecycle: newly reported breakdown tickets with `status === "REQUESTED"` and `technician_id === null` classified as `needsAction = true`.
+   - Updated `StatusPill` to render *"Send request to technician"* with accent tone when `audience === "farmer"` and technician is unassigned.
+   - Updated Farmer Home card CTA button to *"Send request to technician"*.
+   - *Status*: Implemented in codebase, pending manual testing verification.
+7. **Explicit Real vs Demo Identity (`DemoTag`)**:
+   - Gated `DemoTag` strictly to `isDesignatedDemoAccount(email)` to guarantee real accounts (such as Ankit Chamke) never render the `"DEMO DATA"` badge.
+   - Preserved `"DEMO DATA"` badge visibility strictly for the 5 canonical demo evaluation personas.
+   - *Status*: Implemented in codebase, pending manual testing verification.
+8. **Final Manual Verification**:
+   - Execute complete verification test matrix in [`TESTING.md`](file:///d:/Projects/TerraByte/TESTING.md).
+9. **Final Regression & Pre-Commit Audit**:
+   - Clean build verification (`npm run build`) and git diff inspection.
+10. **Phase 5.2 Commit & Push**:
+   - Single atomic commit for Phase 5.2 once manual verification passes.

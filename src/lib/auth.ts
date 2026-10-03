@@ -10,6 +10,7 @@ export interface Profile {
   village: string | null;
   role: AppRole;
   is_verified: boolean;
+  demo_code?: string | null;
 }
 
 export interface AuthState {
@@ -30,33 +31,42 @@ const set = (p: Partial<AuthState>) => {
   listeners.forEach((l) => l());
 };
 
-async function loadProfile(userId: string, email: string | null, emailConfirmed: boolean = false) {
-  // Query profiles matching auth_user_id or id, with email as fallback
-  const orFilter = email
-    ? `auth_user_id.eq.${userId},id.eq.${userId},email.eq.${email}`
-    : `auth_user_id.eq.${userId},id.eq.${userId}`;
+let inflightProfilePromise: Promise<void> | null = null;
 
-  const { data: profileRow, error } = await supabase
-    .from("profiles")
-    .select("id, auth_user_id, full_name, phone, village, role, email")
-    .or(orFilter)
-    .maybeSingle();
+async function loadProfile(userId: string, email: string | null, emailConfirmed: boolean = false): Promise<void> {
+  // If identical profile load is already in-flight, reuse it
+  if (inflightProfilePromise && state.userId === userId) {
+    return inflightProfilePromise;
+  }
 
-  if (error) {
-    set({ ready: true, userId, email, emailConfirmed, profile: null, profileError: error.message });
-    return;
-  }
-  if (!profileRow) {
-    set({
-      ready: true,
-      userId,
-      email,
-      emailConfirmed,
-      profile: null,
-      profileError: "We couldn't find an account profile for this login. Please contact the service centre to finish setting up your account.",
-    });
-    return;
-  }
+  inflightProfilePromise = (async () => {
+    try {
+      // Query profiles matching auth_user_id or id, with email as fallback
+      const orFilter = email
+        ? `auth_user_id.eq.${userId},id.eq.${userId},email.eq.${email}`
+        : `auth_user_id.eq.${userId},id.eq.${userId}`;
+
+      const { data: profileRow, error } = await supabase
+        .from("profiles")
+        .select("id, auth_user_id, full_name, phone, village, role, email, demo_code")
+        .or(orFilter)
+        .maybeSingle();
+
+      if (error) {
+        set({ ready: true, userId, email, emailConfirmed, profile: null, profileError: error.message });
+        return;
+      }
+      if (!profileRow) {
+        set({
+          ready: true,
+          userId,
+          email,
+          emailConfirmed,
+          profile: null,
+          profileError: "We couldn't find an account profile for this login. Please contact the service centre to finish setting up your account.",
+        });
+        return;
+      }
 
   // If the profile exists but auth_user_id wasn't linked yet, link it
   if (!profileRow.auth_user_id && userId) {
@@ -84,9 +94,15 @@ async function loadProfile(userId: string, email: string | null, emailConfirmed:
     village: profileRow.village,
     role,
     is_verified: isVerified,
+    demo_code: profileRow.demo_code ?? null,
   };
 
   set({ ready: true, userId, email, emailConfirmed, profile, profileError: null });
+    } finally {
+      inflightProfilePromise = null;
+    }
+  })();
+  return inflightProfilePromise;
 }
 
 let started = false;

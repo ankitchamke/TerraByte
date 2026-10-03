@@ -10,17 +10,17 @@
 INSERT INTO public.profiles (id, role, full_name, phone, village, demo_code)
 VALUES
   -- Farmers
-  ('00000000-0000-0000-0001-000000000001', 'farmer', 'Balasaheb Patil', '+91 98220 11111', 'Pimpalgaon, Nashik', 'f1'),
-  ('00000000-0000-0000-0001-000000000002', 'farmer', 'Suresh Jadhav', '+91 98220 22222', 'Sinnar, Nashik', 'f2'),
-  ('00000000-0000-0000-0001-000000000003', 'farmer', 'Anil Pawar', '+91 98220 33333', 'Niphad, Nashik', 'f3'),
+  ('00000000-0000-0000-0001-000000000001', 'farmer', 'Balasaheb Patil', '+91 98220 11111', 'Katol, Nagpur', 'f1'),
+  ('00000000-0000-0000-0001-000000000002', 'farmer', 'Suresh Jadhav', '+91 98220 22222', 'Saoner, Nagpur', 'f2'),
+  ('00000000-0000-0000-0001-000000000003', 'farmer', 'Anil Pawar', '+91 98220 33333', 'Umred, Nagpur', 'f3'),
   -- Technicians
-  ('00000000-0000-0000-0002-000000000001', 'technician', 'Ramesh Kumar', '+91 90110 00001', 'Green Earth Mobile Repairs, Nashik', 't1'),
-  ('00000000-0000-0000-0002-000000000002', 'technician', 'Vikas Shinde', '+91 90110 00002', 'Shinde Agro Works, Nashik', 't2'),
-  ('00000000-0000-0000-0002-000000000003', 'technician', 'Imran Shaikh', '+91 90110 00003', 'Deccan Tractor Clinic, Nashik', 't3'),
-  ('00000000-0000-0000-0002-000000000004', 'technician', 'Prakash More', '+91 90110 00004', 'More Harvester Service, Nashik', 't4'),
-  ('00000000-0000-0000-0002-000000000005', 'technician', 'Sachin Gaikwad', '+91 90110 00005', 'Gaikwad Pump & Motor, Nashik', 't5'),
+  ('00000000-0000-0000-0002-000000000001', 'technician', 'Ramesh Kumar', '+91 90110 00001', 'Green Earth Mobile Repairs, Nagpur', 't1'),
+  ('00000000-0000-0000-0002-000000000002', 'technician', 'Vikas Shinde', '+91 90110 00002', 'Shinde Agro Works, Nagpur', 't2'),
+  ('00000000-0000-0000-0002-000000000003', 'technician', 'Imran Shaikh', '+91 90110 00003', 'Deccan Tractor Clinic, Nagpur', 't3'),
+  ('00000000-0000-0000-0002-000000000004', 'technician', 'Prakash More', '+91 90110 00004', 'More Harvester Service, Nagpur', 't4'),
+  ('00000000-0000-0000-0002-000000000005', 'technician', 'Sachin Gaikwad', '+91 90110 00005', 'Gaikwad Pump & Motor, Nagpur', 't5'),
   -- Service Centre Admin
-  ('00000000-0000-0000-0003-000000000001', 'admin', 'Nashik Service Centre', '+91 1800 200 1234', 'Nashik Central Command', 'admin')
+  ('00000000-0000-0000-0003-000000000001', 'admin', 'Nagpur Service Centre', '+91 1800 200 1234', 'Nagpur Central Command', 'admin')
 ON CONFLICT (id) DO UPDATE SET
   role = EXCLUDED.role,
   full_name = EXCLUDED.full_name,
@@ -212,7 +212,7 @@ VALUES
     ARRAY['Loss of power', 'Black smoke'],
     'Tractor lost pulling power in field, heavy black smoke coming from exhaust and engine is sputtering under load.',
     ARRAY[]::text[],
-    'Pimpalgaon, Nashik',
+    'Katol, Nagpur',
     '{
       "system": "Fuel injection / filtration",
       "possibleIssue": "Fuel injector clog or air filter blockage",
@@ -247,7 +247,7 @@ VALUES
     ARRAY['Hydraulic lift failure'],
     'Hydraulic arms dropping under load. Plough won''t stay raised.',
     ARRAY[]::text[],
-    'Sinnar, Nashik',
+    'Saoner, Nagpur',
     '{
       "system": "Hydraulics",
       "possibleIssue": "Worn lift cylinder seals or low hydraulic oil / pump pressure",
@@ -275,7 +275,7 @@ VALUES
     ARRAY['Engine won''t start', 'Electrical/battery issue'],
     'Starter clicks but engine doesn''t crank. Battery was fine yesterday.',
     ARRAY[]::text[],
-    'Niphad, Nashik',
+    'Umred, Nagpur',
     '{
       "system": "Electrical / starting circuit",
       "possibleIssue": "Weak battery, corroded terminals or starter motor fault",

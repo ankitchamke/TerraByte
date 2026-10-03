@@ -66,9 +66,9 @@ export const quoteTotals = (q: Quote) => {
 function seed(): TBState {
   const now = Date.now();
   const farmers: Farmer[] = [
-    { id: "f1", name: "Balasaheb Patil", village: "Pimpalgaon, Nashik", phone: "+91 98220 11111" },
-    { id: "f2", name: "Suresh Jadhav", village: "Sinnar, Nashik", phone: "+91 98220 22222" },
-    { id: "f3", name: "Anil Pawar", village: "Niphad, Nashik", phone: "+91 98220 33333" },
+    { id: "f1", name: "Balasaheb Patil", village: "Katol, Nagpur", phone: "+91 98220 11111" },
+    { id: "f2", name: "Suresh Jadhav", village: "Saoner, Nagpur", phone: "+91 98220 22222" },
+    { id: "f3", name: "Anil Pawar", village: "Umred, Nagpur", phone: "+91 98220 33333" },
   ];
   const equipment: Equipment[] = [
     { id: "e1", farmerId: "f1", type: "Tractor", make: "Mahindra", model: "575 DI", year: 2021, serial: "MH575-21-0048821", hours: 1420, status: "In Repair" },
@@ -88,7 +88,7 @@ function seed(): TBState {
   const repairs: Repair[] = [
     {
       id: "TB-8841", equipmentId: "e1", farmerId: "f1", technicianId: "t1", status: "WAITING_FOR_PARTS", testing: false,
-      symptoms: ["Loss of power", "Black smoke"], location: "Pimpalgaon, Nashik",
+      symptoms: ["Loss of power", "Black smoke"], location: "Katol, Nagpur",
       description: "Tractor lost pulling power in field, heavy black smoke coming from exhaust and engine is sputtering under load.",
       photos: [], assessment: assess(["Loss of power", "Black smoke"], ""), createdAt: r1Created, statusSince: now - 3 * HR,
       declinedBy: [],
@@ -109,7 +109,7 @@ function seed(): TBState {
     },
     {
       id: "TB-8902", equipmentId: "e4", farmerId: "f2", technicianId: "t2", status: "QUOTE_PENDING", testing: false,
-      symptoms: ["Hydraulic lift failure"], location: "Sinnar, Nashik",
+      symptoms: ["Hydraulic lift failure"], location: "Saoner, Nagpur",
       description: "Hydraulic arms dropping under load. Plough won't stay raised.",
       photos: [], assessment: assess(["Hydraulic lift failure"], "hydraulic arms dropping"), createdAt: now - 4 * HR, statusSince: now - 70 * MIN,
       declinedBy: [],
@@ -125,7 +125,7 @@ function seed(): TBState {
     },
     {
       id: "TB-8898", equipmentId: "e5", farmerId: "f3", technicianId: null, status: "REQUESTED", testing: false,
-      symptoms: ["Engine won't start", "Electrical/battery issue"], location: "Niphad, Nashik",
+      symptoms: ["Engine won't start", "Electrical/battery issue"], location: "Umred, Nagpur",
       description: "Starter clicks but engine doesn't crank. Battery was fine yesterday.",
       photos: [], assessment: assess(["Engine won't start", "Electrical/battery issue"], ""), createdAt: now - 28 * MIN, statusSince: now - 28 * MIN,
       declinedBy: [], notes: [], timeline: [{ status: "REQUESTED", at: now - 28 * MIN, by: "farmer" }],

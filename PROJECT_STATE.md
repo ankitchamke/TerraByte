@@ -2,90 +2,80 @@
 
 ## 1. Current Phase
 
-- **Current Phase**: **PHASE 1 — COMPLETE** (Codebase Cleanup + Documentation Reset)
-- **Next Phase**: **PHASE 2 — NEXT** (Domain Database + Storage Foundation)
-- **Branch**: `phase-2-recovery` (connected to Lovable; no destructive Git history operations)
+- **Current Phase**: **PHASE 5.2 — IN PROGRESS** (Demo & Data Hygiene / Baseline Reset)
+- **Previous Completed Phase**: **PHASE 5.1 — COMPLETE** (Product Polish: Home Experience, Contextual Back Navigation, Profile Management, Password Management, Branded Reset Email, Account Deletion RPC & UI — Commit `a6ff2de`)
+- **Branch**: `phase-5` (connected to Lovable; no destructive Git history operations)
 
 ---
 
 ## 2. Current Project Status
 
-TerraByte is an end-to-end digital agricultural equipment repair ecosystem designed to coordinate the complete journey from machinery breakdown to verified repair and back into the field.
+TerraByte is an end-to-end digital agricultural equipment repair ecosystem designed to coordinate the complete journey from machinery breakdown to verified repair and back into the field in Nagpur, Maharashtra (Vidarbha region).
 
-Following the application code baseline reset with the fresh Lovable-generated TanStack Start codebase, Phase 0 (Baseline Audit) and Phase 1 (Codebase Cleanup + Documentation Reset) have established a clean, verified engineering foundation.
+### Completed Work
 
-### Already Working
+- **Phase 1 — Codebase Cleanup & Documentation Reset**: Clean baseline established on Supabase Auth & PostgreSQL.
+- **Phase 2 — Domain Database Foundation & Security Hardening**: PostgreSQL schema with RLS across `profiles`, `technician_profiles`, `equipment`, `repair_requests`, `quotes`, `quote_items`, `repair_notes`, `repair_timeline`, `service_history`, and `notifications`.
+- **Phase 3 — Core Repair & Quotation Workflows**: Breakdown reporting, technician assignment matching, itemized quotes, approval/rejection lifecycle, parts hold pauses, testing stages, and completion verification.
+- **Phase 4 — Operational Experience & Notifications**: Role-specific notification queues, real-time toast alerts, technician verification workflow, and service centre command dispatch.
+- **Phase 5.1 — Product Polish & Account Lifecycle**:
+  - Unified Home experience (`/`) with contextual role entry points.
+  - Contextual back navigation preserving state across views.
+  - Profile management (name, phone, village/workshop, brand specializations).
+  - Password management (forgot password, recovery tokens, branded reset email template, change password).
+  - Permanent account deletion via atomic PostgreSQL RPC `public.delete_user_account()` with active-repair and demo-account protections.
+- **Phase 5.2 — Demo & Data Hygiene (In Progress)**:
+  - **Backend Reset Demo RPC**: Secure `public.reset_demo_data()` PostgreSQL RPC with dual-key authorization (`email` in designated set + `demo_code IS NOT NULL`), atomic transaction, TB-4489 fixture preservation, and deterministic fixture restoration.
+  - **Frontend Reset Demo Integration**: `Shell` header button (`RotateCcw`) strictly gated to the 5 designated demo accounts, accessible responsive `AlertDialog` confirmation dialog with loading states, safe error handling, and 7-step post-reset state synchronization.
 
-- **Frontend UI & Styling**: Fully responsive, high-contrast mobile/desktop UI built with React 19, Vite 8, Tailwind CSS 4, and Lucide React icons across all views.
-- **Client & Server Routing**: TanStack Router with 14 active routes spanning Farmer, Technician, Service Centre (Admin), Auth, and MCP interfaces.
-- **Supabase Authentication**: Native Supabase Auth (`supabase.auth.signUp()`, `supabase.auth.signInWithPassword()`, `supabase.auth.signOut()`, and auto-restored sessions via `onAuthStateChange`).
-- **Profile Provisioning**: Automated PostgreSQL trigger (`on_auth_user_created`) on `auth.users` that populates `public.profiles` (and `public.technician_profiles`) immediately on user registration.
-- **Role-Based Architecture**: Hardened PostgreSQL `app_role` enum (`'farmer'`, `'technician'`, `'service_centre'`) protected against client tampering via `guard_profile_privileges()` trigger.
-- **Technician Verification Gate**: Unverified technicians (`is_verified = false`) are held at `/technician/pending`. Service Centre dispatchers can review credentials and approve or revoke access live via `/admin/technicians`.
-- **Row Level Security (RLS)**: Enforced on identity tables (`profiles`, `technician_profiles`), guaranteeing users can only read/edit their own data while `service_centre` staff maintain administrative visibility.
-- **Assistive Assessment Engine**: Deterministic preliminary diagnostic rule engine ([`src/lib/assessment.ts`](file:///d:/Projects/TerraByte/src/lib/assessment.ts)) mapping symptoms to likely affected mechanical systems, parts categories, urgency, and safety advice.
-- **Technician Matching Engine**: Multi-factor scoring algorithm ([`src/lib/matching.ts`](file:///d:/Projects/TerraByte/src/lib/matching.ts)) ranking technicians by brand specialization, system expertise, current availability, and travel ETA.
-- **Model Context Protocol (MCP)**: Server endpoint ([`src/routes/mcp.ts`](file:///d:/Projects/TerraByte/src/routes/mcp.ts)) exposing diagnostic and matching tools (`list_symptoms`, `assess_breakdown`, `match_technicians`) via `@lovable.dev/mcp-js`.
+### Current Discovered Issues Under Remediation
 
-### Not Yet Live
+1. **Farmer Demo Data Isolation**:
+   - *Issue*: Multiple farmer demo accounts (`farmer.nagpur@terrabyte.demo`, `farmer2.nagpur@terrabyte.demo`, `farmer3.nagpur@terrabyte.demo`) and real users were rendering the same demo machine and active repair (`TB-8841` on `Mahindra 575 DI`).
+   - *Root Cause*: `src/routes/farmer/index.tsx` was reading active repairs from local mock state `tb-store` with hardcoded fallback `"f1"`, and service getters lacked explicit `farmer_id` filtering.
+   - *Resolution*: Connected `FarmerHome` directly to live Supabase queries via `getFarmerRepairRequests()` and `getFarmerEquipment()`, scoped service queries strictly to authenticated `profile.id`, and bound `RoleGuard` session to dynamic farmer identity.
+2. **Service Centre Geography Inconsistency**:
+   - *Issue*: Service Centre header rendered `"Nashik Service Centre"` while the dashboard indicated `"NAGPUR DISTRICT · LIVE"`.
+   - *Root Cause*: Seed profile and database RPC fixtures still contained legacy Nashik strings for the admin profile, technicians, and repair locations.
+   - *Resolution*: Synchronized all demo fixtures, admin profile (`"Nagpur Service Centre"`, `"Nagpur Central Command"`), and repair locations to Nagpur agricultural talukas (Katol, Saoner, Umred).
+3. **Completed-Repair / "Action Needed" Classification**:
+   - *Issue*: Real farmer accounts with completed and verified repairs (e.g. `TB-2334`, `TB-7630`, `TB-3272`) displayed them as large orange "Action needed" cards on the farmer home screen.
+   - *Root Cause*: `FarmerHome` checked `!(r.status === "COMPLETED" && r.verified_at)` to filter active repairs, and `(r.status === "COMPLETED" && !r.verified_at)` to mark `needsAction`. Because `verified_at` was `null` in Supabase (the real lifecycle auto-commits permanent service records upon technician completion without a separate manual handover verification mutation), all completed repairs were indefinitely treated as active and flagged as "Action needed".
+   - *Resolution*: Updated `FarmerHome` to strictly filter out `COMPLETED` and `CANCELLED` tickets from the active repairs card stack (`r.status !== "CANCELLED" && r.status !== "COMPLETED"`). Reserved "Action needed" exclusively for tickets awaiting real farmer input (`QUOTE_PENDING`, `QUOTE_REVISED`). Historical completed repairs remain fully accessible via Service History, machine records, and direct repair links without cluttering the active workspace.
+4. **Dashboard Loading Performance & Latency Remediation**:
+   - *Issue*: Farmer dashboard showed sequential loading states ("Checking active repairs...", then "Loading machines..."), and Service Centre dashboard blocked the entire screen on "Loading repair operations..." for too long. Even after initial decoupling, real accounts with many tickets experienced latency.
+   - *Root Cause*:
+     1. Startup promise race in `auth.ts`: Both `onAuthStateChange` and `getSession()` triggered concurrent `loadProfile()` calls, doubling initial network roundtrips.
+     2. Profile resolution in `notifications.ts`: Lacked session fast-path and profile cache in `getAuthenticatedProfile()`.
+     3. Over-fetching in `repair-requests.ts`: `getFarmerRepairRequests()` loaded ALL historical repairs (15 rows for Ankit Chamke with joins across `equipment` and `technician_profiles`), transferring unnecessary rows only to discard them in frontend memory.
+   - *Resolution*: Added in-flight promise deduplication to `loadProfile()` in `auth.ts`; implemented session fast-path and 60-second caching in `notifications.ts`; added optional `{ activeOnly: true }` parameter to `getFarmerRepairRequests()` using database-level `.not("status", "in", '("COMPLETED","CANCELLED")')`. Perceived load time slashed by eliminating 90% of row transfers and halving startup auth roundtrips.
+5. **TB-4545 Repair Action State ("Send Request to Technician")**:
+   - *Issue*: On real farmer account Ankit Chamke, `TB-4545` was displayed as an active repair with status pill *"Finding Your Technician"* and technician *"Not yet assigned"*, even though the farmer had never dispatched or requested a technician.
+   - *Root Cause*: `TB-4545` was in status `REQUESTED` with `technician_id = null` and a single timeline entry ("Breakdown reported"). In `src/routes/farmer/index.tsx`, `needsAction` only checked `QUOTE_PENDING` and `QUOTE_REVISED`. Status `REQUESTED` fell through to default label `"Finding Your Technician"`, falsely implying an automatic dispatch process was underway.
+   - *Resolution*: Updated `src/components/tb.tsx` `StatusPill` to accept `technicianId`. When `audience === "farmer"` and `status === "REQUESTED"` with `!technicianId`, `StatusPill` renders *"Send request to technician"* with accent tone (`bg-accent/25 text-accent-foreground`). Updated `FarmerHome` (`src/routes/farmer/index.tsx`) to flag `r.status === "REQUESTED" && !r.technician_id` as `needsAction = true` (orange border and header) and set the CTA button to *"Send request to technician"*.
+6. **Explicit Real vs Demo Identity Presentation (`DemoTag`)**:
+   - *Issue*: Real farmer Ankit Chamke displayed a `"DEMO DATA"` badge near the dashboard header.
+   - *Root Cause*: `DemoTag` in `src/components/tb.tsx` was hardcoded to unconditionally render `<span>Demo data</span>` regardless of the logged-in user's identity.
+   - *Resolution*: Updated `DemoTag` to check `const { email } = useAuth(); if (!isDesignatedDemoAccount(email)) return null;`. The `"DEMO DATA"` badge now displays strictly and exclusively for the 5 canonical demo accounts (`farmer.nagpur@terrabyte.demo`, `farmer2.nagpur@terrabyte.demo`, `farmer3.nagpur@terrabyte.demo`, `tech.nagpur@terrabyte.demo`, `admin.nagpur@terrabyte.demo`). Real accounts like Ankit Chamke never render demo tags.
 
-- **Equipment Database**: Machinery fleet data (`equipment` table) is not yet migrated to the new Supabase schema.
-- **Repair Incident Database**: Incident lifecycle tickets (`repairs` / `breakdowns`) and timeline audits are not yet live in PostgreSQL.
-- **Quote & Parts Database**: Itemized repair quotations (`quotes`, `quote_parts`) and parts-on-hold tracking are not yet live in PostgreSQL.
-- **Permanent Service History**: Completed service records bound to machine serial/chassis numbers are not yet live in PostgreSQL.
-- **Notifications System**: In-app role-based alerts and broadcast feeds are not yet persisted in PostgreSQL.
-- **Business-Domain Storage Buckets**: Supabase Storage buckets for machine photos, breakdown evidence, and repair completion photos with RLS are not yet created.
-- **Live Domain Workflow**: UI pages still read from and write to the local simulated store rather than executing live Supabase mutations.
+### Checkpoint Status
 
-### Current Limitation
-
-- **Local Store Execution**: While authentication, user registration, role resolution, and technician verification run on live Supabase PostgreSQL, the core business workflows (reporting breakdowns, dispatching requests, drafting quotes, and updating repair steps) currently utilize the in-memory/localStorage store ([`src/lib/tb-store.ts`](file:///d:/Projects/TerraByte/src/lib/tb-store.ts)). This limitation will be systematically replaced by live Supabase queries and mutations in Phases 2 through 6.
+- The five core architecture documents (`PROJECT_STATE.md`, `IMPLEMENTATION_PLAN.md`, `APP_FLOW.md`, `TESTING.md`, `TRD.md`) are synchronized at this Phase 5.2 checkpoint.
+- **No commit or push** will be executed until manual testing across isolation, classification, lifecycle state accuracy, and performance is fully verified.
+- Phase 5.2 remains **IN PROGRESS**.
 
 ---
 
 ## 3. Locked Technical Decisions
 
-1. **Product Purpose**: TerraByte is a One-Stop Agricultural Equipment Repair Coordination Ecosystem.
-2. **Core Outcome**: **REDUCE THE TIME BETWEEN EQUIPMENT BREAKDOWN AND GETTING BACK TO WORK.**
-3. **No IoT/Hardware Mandate**: Pure software-first solution. Operates via mobile web without requiring custom OBD dongles or IoT sensors.
-4. **Visual & UI Baseline**: Preserve the current high-contrast palette (`soil`, `primary`, `accent`, `warning`), typography (`Bricolage Grotesque`, `IBM Plex Sans`), and layout structure.
-5. **Locked Tech Stack**:
-   - **Frontend**: TanStack Start v1 + React 19 + Vite 8 + Tailwind CSS 4 + TanStack Router v1 + TanStack React Query v5.
-   - **Backend**: Supabase (PostgreSQL 17, Supabase Auth, Supabase Storage, Row Level Security).
-   - **AI Layer**: Google Gemini API (server-side, planned for Phase 8; deterministic rules serve as offline fallback).
-   - **Protocol**: Model Context Protocol (MCP) via `@lovable.dev/mcp-js`.
-6. **Authentication Architecture (Supabase Auth ONLY)**:
-   - **Clerk is completely rejected and excluded** from the codebase and architecture.
-   - All identity, registration, session persistence, and credential verification are managed by **Supabase Auth**.
-   - No phone SMS OTP (eliminates high carrier costs and SMS gateway setup overhead). Standard email + password authentication is the production baseline.
-7. **Role Provisioning & Authorization Discipline**:
-   - **Farmer**: Public signup $\rightarrow$ automatically assigned role `'farmer'` with `is_verified = true`.
-   - **Technician**: Public registration $\rightarrow$ creates profile with role `'technician'` and status `is_verified = false`. Strictly blocked from taking jobs until approved by the Service Centre.
-   - **Service Centre / Admin**: **No public registration**. Admin accounts are provisioned exclusively by system administrators or designated seed setup.
-   - **Zero Client Elevation**: Postgres database triggers block client requests from modifying `role` or `is_verified`.
-8. **Target Regional Geography**: Demo data, crop contexts, machine brands, and regional terminology are anchored in **Nashik, Maharashtra** (onion, grape, sugarcane, wheat belts; Mahindra, John Deere, Kubota, Swaraj equipment).
-9. **Transparent Demo Markers**: All simulated demo data must be explicitly tagged (`DEMO DATA`).
-10. **Phased Discipline**: One phase at a time. Strict approval gate before beginning each phase.
-
----
-
-## 4. Planned Demo Login Feature (Future Minor Enhancement)
-
-To enable seamless review and demonstration during hackathon evaluations, a **Quick Demo Login** component will be added to the `/login` screen in a future iteration:
-- Three 1-click action buttons: `[ Farmer Demo ]`, `[ Technician Demo ]`, `[ Service Centre Demo ]`.
-- **Strict Implementation Rule**: These buttons will **autofill real credentials** into the form fields and trigger the normal `supabase.auth.signInWithPassword()` API call.
-- **Zero Auth Bypass**: It must never mock or bypass the real Supabase session exchange.
-- **Prerequisite**: Demo accounts must be provisioned and verified in the active Supabase project before enabling this UI helper.
-
----
-
-## 5. Phase History & Milestones
-
-- **2026-10-01 (Phase 0 — Baseline Audit)**: Inspected repository post-Lovable reset. Audited 17 key architectural items. Confirmed pure Supabase stack and identified legacy files (`src/lib/supabase.ts`, `src/types/database.ts`, stale migrations, old documentation).
-- **2026-10-01 (Phase 1 — Codebase Cleanup + Documentation Reset)**:
-  - Safely deleted confirmed obsolete files: `src/lib/supabase.ts`, `src/types/database.ts`.
-  - Removed stale `.env.local` and `supabase/.temp/*` cache containing obsolete project ref and Clerk key.
-  - Empirically verified remote database `fmnzoovazqpyaebqmqyo` contains only `profiles` and `technician_profiles`.
-  - Safely moved legacy Clerk-era migrations (`20260930000001`–`20260930000005`) into `supabase/migrations_legacy_archive/` to keep the active migration chain clean.
-  - Retained `supabase/seed.sql` for replacement in Phase 2.
-  - Overhauled core documentation suite (`PROJECT_STATE.md`, `TRD.md`, `APP_FLOW.md`, `IMPLEMENTATION_PLAN.md`, `TESTING.md`) to reflect current codebase reality.
+1. **Target Regional Geography**: Demo data, crop contexts, machine brands, and regional terminology are strictly anchored in **Nagpur, Maharashtra** (Vidarbha region: cotton, soybean, orange belts; Katol, Saoner, Umred talukas; Mahindra, John Deere, Kubota, Swaraj equipment).
+2. **Backend as Source of Truth**: Live Supabase PostgreSQL is the sole source of truth for persisted workflows. Local mock store state (`tb-store.ts`) must never overwrite authenticated live user data.
+3. **Data Scoping Discipline**: Every data query must resolve caller identity through authenticated `auth.uid()` $\rightarrow$ `profiles` row $\rightarrow$ `profile.id`, strictly scoped to the authenticated user.
+4. **Demo Account Authorization**: Reset Demo capabilities are strictly restricted on the backend via dual-key authorization to the 5 designated evaluation personas:
+   - `farmer.nagpur@terrabyte.demo`
+   - `farmer2.nagpur@terrabyte.demo`
+   - `farmer3.nagpur@terrabyte.demo`
+   - `tech.nagpur@terrabyte.demo`
+   - `admin.nagpur@terrabyte.demo`
+5. **Real User Isolation**: Real user data is strictly isolated by RLS and cannot be modified or cleared by demo reset operations.
+6. **Assistive AI Only**: Machine diagnostics use rule-based reasoning with transparent markers. AI provides decision support; farmers and technicians retain final operational authority.

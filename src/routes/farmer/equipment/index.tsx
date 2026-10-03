@@ -54,16 +54,22 @@ function EquipmentList() {
       setEq(equipmentData);
 
       // Load service record counts for these equipment items
-      const { data: recsData } = await supabase
-        .from("service_history")
-        .select("equipment_id");
+      if (equipmentData.length > 0) {
+        const eqIds = equipmentData.map((item) => item.id);
+        const { data: recsData } = await supabase
+          .from("service_history")
+          .select("equipment_id")
+          .in("equipment_id", eqIds);
 
-      if (recsData) {
-        const counts: Record<string, number> = {};
-        for (const item of recsData) {
-          counts[item.equipment_id] = (counts[item.equipment_id] || 0) + 1;
+        if (recsData) {
+          const counts: Record<string, number> = {};
+          for (const item of recsData) {
+            counts[item.equipment_id] = (counts[item.equipment_id] || 0) + 1;
+          }
+          setServiceCounts(counts);
         }
-        setServiceCounts(counts);
+      } else {
+        setServiceCounts({});
       }
     } catch (err: any) {
       console.error("Failed to load equipment:", err);

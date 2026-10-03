@@ -33,18 +33,30 @@ export interface RepairRequestDetail extends RepairRequestWithEquipment {
   repair_timeline: RepairTimelineWithActor[];
 }
 
+let cachedProfile: { auth_user_id: string; id: string; role: string; expiresAt: number } | null = null;
+
 /**
  * Resolves the authenticated user's profile ID and role.
- * Ensures caller identity is verified against Supabase Auth.
+ * Uses cached profile / active session when available to prevent waterfall latency.
  */
 async function getAuthenticatedProfile(): Promise<{ id: string; role: string }> {
   const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+  const sessionUser = session?.user;
 
-  if (authError || !user) {
+  if (sessionUser && cachedProfile && cachedProfile.auth_user_id === sessionUser.id && Date.now() < cachedProfile.expiresAt) {
+    return { id: cachedProfile.id, role: cachedProfile.role };
+  }
+
+  const user = sessionUser || (await supabase.auth.getUser()).data.user;
+
+  if (!user) {
     throw new Error("Authentication required: Please sign in to manage repair requests.");
+  }
+
+  if (cachedProfile && cachedProfile.auth_user_id === user.id && Date.now() < cachedProfile.expiresAt) {
+    return { id: cachedProfile.id, role: cachedProfile.role };
   }
 
   const { data: profile, error: profileError } = await supabase
@@ -56,6 +68,13 @@ async function getAuthenticatedProfile(): Promise<{ id: string; role: string }> 
   if (profileError || !profile) {
     throw new Error("User profile not found. Please ensure your profile is initialized.");
   }
+
+  cachedProfile = {
+    auth_user_id: user.id,
+    id: profile.id,
+    role: profile.role,
+    expiresAt: Date.now() + 60_000,
+  };
 
   return profile;
 }
@@ -200,14 +219,24 @@ export async function createRepairRequest(input: CreateRepairRequestInput): Prom
 /**
  * Fetches all repair request tickets for the authenticated farmer with joined equipment details.
  * Protected by PostgreSQL RLS: Only the farmer's own repair requests are returned.
+ * Accepts optional farmerId to bypass profile resolution waterfall when already known.
  */
-export async function getFarmerRepairRequests(): Promise<RepairRequestWithEquipment[]> {
-  await getAuthenticatedProfile();
+export async function getFarmerRepairRequests(
+  farmerId?: string,
+  options?: { activeOnly?: boolean }
+): Promise<RepairRequestWithEquipment[]> {
+  const resolvedFarmerId = farmerId || (await getAuthenticatedProfile()).id;
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("repair_requests")
     .select("*, equipment(*), technician:technician_id(id, full_name, phone, village)")
-    .order("created_at", { ascending: false });
+    .eq("farmer_id", resolvedFarmerId);
+
+  if (options?.activeOnly) {
+    query = query.not("status", "in", '("COMPLETED","CANCELLED")');
+  }
+
+  const { data, error } = await query.order("created_at", { ascending: false });
 
   if (error) {
     throw new Error(`Failed to load repair requests: ${error.message}`);

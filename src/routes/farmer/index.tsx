@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { btn, Card, DemoTag, Label, StatusPill } from "@/components/tb";
 import { useAuth } from "@/lib/auth";
 import { getFarmerEquipment, type EquipmentRow } from "@/lib/services/equipment";
-import { isActive, useTB } from "@/lib/tb-store";
+import { getFarmerRepairRequests, type RepairRequestWithEquipment } from "@/lib/services/repair-requests";
 import { meta } from "@/lib/seo";
 import { cn } from "@/lib/utils";
 
@@ -15,33 +15,56 @@ export const Route = createFileRoute("/farmer/")({
 
 function FarmerHome() {
   const { profile } = useAuth();
-  const s = useTB();
-  const fid = s.session?.userId ?? "f1";
-  const active = s.repairs.filter((r) => r.farmerId === fid && isActive(r));
-
+  const farmerId = profile?.id;
+  const [repairs, setRepairs] = useState<RepairRequestWithEquipment[]>([]);
+  const [loadingRepairs, setLoadingRepairs] = useState(true);
   const [equipment, setEquipment] = useState<EquipmentRow[]>([]);
   const [loadingEquipment, setLoadingEquipment] = useState(true);
 
   useEffect(() => {
     let mounted = true;
-    getFarmerEquipment()
-      .then((data) => {
-        if (mounted) setEquipment(data);
+
+    // Load equipment and repair requests concurrently without blocking waterfalls
+    getFarmerEquipment(farmerId)
+      .then((eqData) => {
+        if (!mounted) return;
+        setEquipment(eqData);
+        setLoadingEquipment(false);
       })
       .catch((err) => {
         console.error("Failed to load farmer equipment:", err);
-      })
-      .finally(() => {
-        if (mounted) setLoadingEquipment(false);
+        if (!mounted) return;
+        setEquipment([]);
+        setLoadingEquipment(false);
       });
+
+    getFarmerRepairRequests(farmerId, { activeOnly: true })
+      .then((repData) => {
+        if (!mounted) return;
+        setRepairs(repData);
+        setLoadingRepairs(false);
+      })
+      .catch((err) => {
+        console.error("Failed to load farmer repairs:", err);
+        if (!mounted) return;
+        setRepairs([]);
+        setLoadingRepairs(false);
+      });
+
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [farmerId]);
 
   const farmerName = profile?.full_name?.trim()
     ? profile.full_name.trim().split(" ")[0]
     : "Farmer";
+
+  // Prioritize genuinely active repairs currently moving through the workflow.
+  // Completed repairs with confirmed handover belong in Service History and machine records.
+  const active = repairs.filter(
+    (r) => r.status !== "CANCELLED" && r.status !== "COMPLETED"
+  );
 
   return (
     <div className="space-y-6">
@@ -53,91 +76,102 @@ function FarmerHome() {
         <DemoTag />
       </div>
 
-      {active.map((r) => {
-        const e = s.equipment.find((x) => x.id === r.equipmentId) ?? {
-          make: "Equipment",
-          model: "",
-        };
-        const t = s.technicians.find((x) => x.id === r.technicianId);
-        const paused = r.status === "WAITING_FOR_PARTS";
-        const needsAction =
-          r.status === "QUOTE_PENDING" ||
-          (r.status === "COMPLETED" && !r.verifiedAt) ||
-          (r.status === "REQUESTED" && !r.technicianId);
-        return (
-          <Link
-            key={r.id}
-            to="/farmer/repair/$id"
-            params={{ id: r.id }}
-            className={cn(
-              "block overflow-hidden rounded-2xl border-2 bg-card",
-              paused
-                ? "border-warning"
-                : needsAction
-                  ? "border-accent"
-                  : "border-primary/40"
-            )}
-          >
-            <div
+      {loadingRepairs ? (
+        <div className="py-6 text-center text-sm text-muted-foreground">Checking active repairs…</div>
+      ) : (
+        active.map((r) => {
+          const paused = r.status === "WAITING_FOR_PARTS";
+          const isUnassignedRequest = r.status === "REQUESTED" && !r.technician_id;
+          const needsAction =
+            r.status === "QUOTE_PENDING" ||
+            r.status === "QUOTE_REVISED" ||
+            isUnassignedRequest;
+          const assessment = (r.assessment && typeof r.assessment === "object" ? r.assessment : {}) as any;
+          const partsHold = (r.parts_hold && typeof r.parts_hold === "object" ? r.parts_hold : null) as any;
+
+          return (
+            <Link
+              key={r.id}
+              to="/farmer/repair/$id"
+              params={{ id: r.job_number || r.id }}
               className={cn(
-                "flex items-center gap-2 px-5 py-2 text-sm font-semibold",
+                "block overflow-hidden rounded-2xl border-2 bg-card",
                 paused
-                  ? "bg-warning text-warning-foreground"
+                  ? "border-warning"
                   : needsAction
-                    ? "bg-accent text-accent-foreground"
-                    : "bg-primary text-primary-foreground"
+                    ? "border-accent"
+                    : "border-primary/40"
               )}
             >
-              {paused ? <AlertTriangle className="h-4 w-4" /> : <Clock className="h-4 w-4" />}
-              {needsAction ? "Action needed" : "Active repair"} ·{" "}
-              <span className="font-mono">{r.id}</span>
-            </div>
-            <div className="p-5">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h2 className="text-2xl font-bold">
-                    {e.make} {e.model}
-                  </h2>
-                  <p className="text-sm text-muted-foreground">{r.assessment.system}</p>
-                </div>
-                <StatusPill r={r} audience="farmer" />
+              <div
+                className={cn(
+                  "flex items-center gap-2 px-5 py-2 text-sm font-semibold",
+                  paused
+                    ? "bg-warning text-warning-foreground"
+                    : needsAction
+                      ? "bg-accent text-accent-foreground"
+                      : "bg-primary text-primary-foreground"
+                )}
+              >
+                {paused ? <AlertTriangle className="h-4 w-4" /> : <Clock className="h-4 w-4" />}
+                {needsAction ? "Action needed" : "Active repair"} ·{" "}
+                <span className="font-mono">{r.job_number || r.id}</span>
               </div>
-              {paused && r.parts && (
-                <p className="mt-3 rounded-xl bg-warning/15 p-3 text-sm">
-                  <b>Waiting for:</b> {r.parts.part}
-                  <br />
-                  <b>Arrives:</b> {r.parts.eta}
-                </p>
-              )}
-              <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <Label>Technician</Label>
-                  <p className="font-semibold">{t?.name ?? "Not yet assigned"}</p>
+              <div className="p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h2 className="text-2xl font-bold">
+                      {r.equipment?.make || "Equipment"} {r.equipment?.model || ""}
+                    </h2>
+                    <p className="text-sm text-muted-foreground">{assessment.system || "Inspection required"}</p>
+                  </div>
+                  <StatusPill
+                    r={{
+                      status: r.status,
+                      testing: Boolean(r.is_testing),
+                      technicianId: r.technician_id,
+                    }}
+                    audience="farmer"
+                  />
                 </div>
-                <div>
-                  <Label>Expected ready</Label>
-                  <p className="font-semibold">
-                    {r.parts?.revisedCompletion ??
-                      r.quote?.eta ??
-                      (t ? `Arrival ~${t.etaMin} min` : "—")}
+                {paused && partsHold && (
+                  <p className="mt-3 rounded-xl bg-warning/15 p-3 text-sm">
+                    <b>Waiting for:</b> {partsHold.part || "Required part"}
+                    <br />
+                    <b>Arrives:</b> {partsHold.eta || partsHold.revisedCompletion || "Pending supplier"}
                   </p>
+                )}
+                <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <Label>Technician</Label>
+                    <p className="font-semibold">{r.technician?.full_name ?? "Not yet assigned"}</p>
+                  </div>
+                  <div>
+                    <Label>Expected ready</Label>
+                    <p className="font-semibold">
+                      {partsHold?.revisedCompletion ??
+                        partsHold?.eta ??
+                        (r.technician ? "In progress" : "—")}
+                    </p>
+                  </div>
                 </div>
+                <span className={cn(btn.primary, "mt-4 w-full")}>
+                  {isUnassignedRequest ? "Send request to technician" : "View Repair"}{" "}
+                  <ChevronRight className="h-4 w-4" />
+                </span>
               </div>
-              <span className={cn(btn.primary, "mt-4 w-full")}>
-                View Repair <ChevronRight className="h-4 w-4" />
-              </span>
-            </div>
-          </Link>
-        );
-      })}
+            </Link>
+          );
+        })
+      )}
 
       <Link
         to="/farmer/report-breakdown"
-        className={cn(btn.urgent, "w-full", active.length === 0 ? "h-24 text-xl" : "")}
+        className={cn(btn.urgent, "w-full", !loadingRepairs && active.length === 0 ? "h-24 text-xl" : "")}
       >
         <AlertTriangle className="h-6 w-6" /> Report Equipment Breakdown
       </Link>
-      {active.length === 0 && (
+      {!loadingRepairs && active.length === 0 && (
         <p className="-mt-3 text-center text-sm text-muted-foreground">
           All machines running. Takes under 2 minutes if something breaks.
         </p>

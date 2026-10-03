@@ -81,29 +81,8 @@ function Admin() {
     return () => clearInterval(i);
   }, []);
 
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <div className="py-12 text-center text-muted-foreground">Loading repair operations…</div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="space-y-6">
-        <Card className="text-destructive">
-          <p>Failed to load operations data: {error}</p>
-          <button onClick={() => void loadData()} className="mt-3 inline-block font-semibold underline">
-            Retry
-          </button>
-        </Card>
-      </div>
-    );
-  }
-
   const open = repairs.filter(
-    (r) => r.status !== "CANCELLED" && !(r.status === "COMPLETED" && r.verified_at)
+    (r) => r.status !== "CANCELLED" && r.status !== "COMPLETED"
   );
   const exceptions = open.filter(checkOverdue);
 
@@ -166,7 +145,19 @@ function Admin() {
           <DemoTag />
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+
+      {loading ? (
+        <div className="py-12 text-center text-muted-foreground">Loading repair operations…</div>
+      ) : error ? (
+        <Card className="text-destructive">
+          <p>Failed to load operations data: {error}</p>
+          <button onClick={() => void loadData()} className="mt-3 inline-block font-semibold underline">
+            Retry
+          </button>
+        </Card>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {metrics.map((m) => (
           <div key={m.k} className="rounded-2xl border border-border bg-card p-4">
             <p className="text-xs text-muted-foreground">{m.k}</p>
@@ -370,6 +361,8 @@ function Admin() {
           </tbody>
         </table>
       </div>
-    </div>
+    </>
+  )}
+</div>
   );
 }

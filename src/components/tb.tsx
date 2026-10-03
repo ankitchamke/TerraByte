@@ -1,14 +1,39 @@
-import { Link, useNavigate, useLocation } from "@tanstack/react-router";
+import { Link, useNavigate, useLocation, useRouter } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, Bell, Check, LogOut, Phone, RotateCcw, Tractor, User, WifiOff, Wrench, Radio } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowLeft,
+  Bell,
+  Check,
+  Loader2,
+  LogOut,
+  Phone,
+  RotateCcw,
+  Tractor,
+  User,
+  WifiOff,
+  Wrench,
+  Radio,
+} from "lucide-react";
+import { toast } from "sonner";
 import { actions, ago, FARMER_LABEL, resetDemo, STAFF_LABEL, useTB, type Repair, type RepairStatus, type Role } from "@/lib/tb-store";
-import { homeFor, signOut, useAuth, type AppRole } from "@/lib/auth";
+import { homeFor, refreshProfile, signOut, useAuth, type AppRole } from "@/lib/auth";
 import {
   getNotificationsForCurrentUser,
   markNotificationAsRead,
   markAllNotificationsAsRead,
   type NotificationRow,
 } from "@/lib/services/notifications";
+import { isDesignatedDemoAccount, resetDemoData } from "@/lib/services/demo";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 export { ImageLightbox, ClickableImage } from "./image-lightbox";
@@ -62,9 +87,9 @@ export function RoleGuard({ role, children, allowUnverified }: { role: Role; chi
 
   useEffect(() => {
     if (ok && sessionRole !== role && (!isPending || profile?.is_verified)) {
-      actions.login(role, PERSONA[role]);
+      actions.login(role, profile?.demo_code || profile?.id || PERSONA[role]);
     }
-  }, [ok, sessionRole, role, isPending, profile?.is_verified]);
+  }, [ok, sessionRole, role, isPending, profile?.is_verified, profile?.demo_code, profile?.id]);
 
   useEffect(() => {
     if (target && target !== loc.pathname) {
@@ -83,7 +108,19 @@ export function RoleGuard({ role, children, allowUnverified }: { role: Role; chi
 
 
 export function DemoTag({ className }: { className?: string }) {
-  return <span className={cn("inline-flex items-center rounded-sm border border-dashed border-current px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider opacity-70", className)}>Demo data</span>;
+  const { email } = useAuth();
+  if (!isDesignatedDemoAccount(email)) return null;
+
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center rounded-sm border border-dashed border-current px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider opacity-70",
+        className
+      )}
+    >
+      Demo data
+    </span>
+  );
 }
 
 export function Shell({ role, children, wide }: { role: Role; children: ReactNode; wide?: boolean }) {
@@ -91,8 +128,53 @@ export function Shell({ role, children, wide }: { role: Role; children: ReactNod
   const { profile, email, userId } = useAuth();
   const online = useOnline();
   const nav = useNavigate();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const notifRef = useRef<HTMLDivElement>(null);
+
+  // Demo account detection and reset state
+  const isDemo = Boolean(userId && isDesignatedDemoAccount(email));
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [resetKey, setResetKey] = useState(0);
+
+  const handleExecuteReset = async () => {
+    if (resetBusy) return;
+    setResetBusy(true);
+    setResetError(null);
+
+    try {
+      // 1. Call secure PostgreSQL RPC with ZERO parameters
+      await resetDemoData();
+
+      // 2. Synchronize in-memory / localStorage demo store
+      resetDemo();
+
+      // 3. Refresh authenticated profile from database
+      await refreshProfile();
+
+      // 4. Refresh shell notifications
+      await fetchNotifications();
+
+      // 5. Invalidate TanStack router cache
+      await router.invalidate();
+
+      // 6. Remount child route components so data hooks reload clean DB state
+      setResetKey((prev) => prev + 1);
+
+      // 7. Close modal and show success toast
+      setResetDialogOpen(false);
+      toast.success("Demo environment reset to baseline.");
+    } catch (err: any) {
+      console.error("[TerraByte] Demo reset failed:", err);
+      const friendlyMsg = err?.message || "Failed to reset demo data. Please try again.";
+      setResetError(friendlyMsg);
+      toast.error(friendlyMsg);
+    } finally {
+      setResetBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -379,7 +461,20 @@ export function Shell({ role, children, wide }: { role: Role; children: ReactNod
                 </div>
               )}
             </div>
-            <button aria-label="Reset demo data" title="Reset demo data" onClick={() => { if (confirm("Reset all demo data?")) resetDemo(); }} className="grid h-11 w-11 place-items-center rounded-lg hover:bg-muted"><RotateCcw className="h-5 w-5" /></button>
+            {isDemo && (
+              <button
+                type="button"
+                aria-label="Reset demo data"
+                title="Reset demo data"
+                onClick={() => {
+                  setResetError(null);
+                  setResetDialogOpen(true);
+                }}
+                className="grid h-11 w-11 place-items-center rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <RotateCcw className="h-5 w-5" />
+              </button>
+            )}
             <button
               aria-label="Sign out"
               title="Sign out"
@@ -396,7 +491,88 @@ export function Shell({ role, children, wide }: { role: Role; children: ReactNod
           </div>
         </div>
       </header>
-      <main className={cn("mx-auto px-4 pb-24 pt-6", wide ? "max-w-7xl" : "max-w-3xl")}>{children}</main>
+
+      {/* Confirmation Dialog for Demo Reset */}
+      {isDemo && (
+        <AlertDialog
+          open={resetDialogOpen}
+          onOpenChange={(nextOpen) => {
+            if (!resetBusy) {
+              setResetDialogOpen(nextOpen);
+              if (!nextOpen) setResetError(null);
+            }
+          }}
+        >
+          <AlertDialogContent className="w-[calc(100vw-2rem)] max-w-md rounded-2xl p-5 sm:p-6 bg-card border-border shadow-xl space-y-4">
+            <AlertDialogHeader className="space-y-3 text-left">
+              <div className="flex items-center gap-3">
+                <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-destructive/10 text-destructive">
+                  <RotateCcw className="h-5 w-5" />
+                </div>
+                <div>
+                  <AlertDialogTitle className="font-display text-lg font-bold text-foreground">
+                    Reset demo data?
+                  </AlertDialogTitle>
+                  <p className="text-xs text-muted-foreground">TerraByte Demonstration Environment</p>
+                </div>
+              </div>
+              <AlertDialogDescription className="text-xs text-muted-foreground space-y-2 pt-1 text-left leading-relaxed">
+                <span className="block">
+                  This will restore demo equipment, repairs, quotes, and timeline to their original baseline.
+                </span>
+                <span className="block">
+                  Any newly created demo records will be removed. Real user data is not affected.
+                </span>
+                <span className="block font-medium text-foreground">
+                  Your demo account and password will remain active.
+                </span>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+
+            {resetError && (
+              <div className="flex items-center gap-2 rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-xs font-semibold text-destructive">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <span>{resetError}</span>
+              </div>
+            )}
+
+            <AlertDialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2 sm:space-x-2 pt-2">
+              <AlertDialogCancel
+                disabled={resetBusy}
+                onClick={() => {
+                  setResetDialogOpen(false);
+                  setResetError(null);
+                }}
+                className="h-11 sm:h-9 px-4 text-xs font-semibold w-full sm:w-auto min-h-[44px] sm:min-h-0"
+              >
+                Cancel
+              </AlertDialogCancel>
+              <button
+                type="button"
+                disabled={resetBusy}
+                onClick={handleExecuteReset}
+                className={cn(
+                  "inline-flex items-center justify-center gap-2 rounded-lg bg-destructive px-4 py-2 text-xs font-semibold text-destructive-foreground hover:bg-destructive/90 transition-colors disabled:opacity-50 h-11 sm:h-9 w-full sm:w-auto min-h-[44px] sm:min-h-0"
+                )}
+              >
+                {resetBusy ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <span>Resetting Demo…</span>
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    <span>Reset Demo Data</span>
+                  </>
+                )}
+              </button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+
+      <main key={resetKey} className={cn("mx-auto px-4 pb-24 pt-6", wide ? "max-w-7xl" : "max-w-3xl")}>{children}</main>
     </div>
   );
 }
@@ -411,10 +587,39 @@ const TONE: Record<RepairStatus, string> = {
   COMPLETED: "bg-success/15 text-success border-success/30",
   CANCELLED: "bg-muted text-muted-foreground border-border",
 };
-export function StatusPill({ r, audience }: { r: Pick<Repair, "status" | "testing">; audience: "farmer" | "staff" }) {
-  const label = r.testing && r.status === "IN_PROGRESS" ? (audience === "farmer" ? "Testing Your Machine" : "Testing") : (audience === "farmer" ? FARMER_LABEL : STAFF_LABEL)[r.status];
-  return <span className={cn("inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold", TONE[r.status])}>
-    <span className="h-1.5 w-1.5 rounded-full bg-current" />{label}</span>;
+export function StatusPill({
+  r,
+  audience,
+}: {
+  r: Pick<Repair, "status" | "testing"> & { technicianId?: string | null; technician_id?: string | null };
+  audience: "farmer" | "staff";
+}) {
+  const techAssigned = r.technicianId || r.technician_id;
+  const isUnassignedRequest = audience === "farmer" && r.status === "REQUESTED" && !techAssigned;
+
+  let label: string;
+  let toneClass = TONE[r.status];
+
+  if (isUnassignedRequest) {
+    label = "Send request to technician";
+    toneClass = "bg-accent/25 text-accent-foreground border-accent/50";
+  } else if (r.testing && r.status === "IN_PROGRESS") {
+    label = audience === "farmer" ? "Testing Your Machine" : "Testing";
+  } else {
+    label = (audience === "farmer" ? FARMER_LABEL : STAFF_LABEL)[r.status];
+  }
+
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold",
+        toneClass
+      )}
+    >
+      <span className="h-1.5 w-1.5 rounded-full bg-current" />
+      {label}
+    </span>
+  );
 }
 
 export const STEPS = ["Request Sent", "Technician Assigned", "Quote Ready", "Quote Approved", "Repair in Progress", "Testing", "Repaired"];

@@ -114,16 +114,20 @@ stateDiagram-v2
     COMPLETED --> [*]: Service record committed
 ```
 
-| Step | State | Action Trigger | Farmer Visibility |
+| Step | State (`repair_status`) | Action Trigger / Actor | Semantic Farmer Visibility |
 | :---: | :--- | :--- | :--- |
-| **1** | `REQUESTED` | Farmer submits breakdown report | "Request Sent" |
-| **2** | `ACCEPTED` | Technician accepts ticket | "Technician Assigned" |
-| **3** | `QUOTE_PENDING` | Technician compiles and sends quote | "Quote Ready (Action Needed)" |
-| **4** | `QUOTE_REVISED` | Farmer requests change / Tech updates | "Revised Quote" |
-| **5** | `IN_PROGRESS` | Farmer approves quote | "Repair in Progress" |
-| **--**| `WAITING_FOR_PARTS` | Technician logs missing part delay | "Paused (Waiting for Parts)" |
-| **6** | `IN_PROGRESS (Testing)` | Technician verifies fix under load | "Testing Your Machine" |
-| **7** | `COMPLETED` | Technician signs off; Farmer verifies | "Repaired & Verified" |
+| **1a** | `REQUESTED` (`technician_id == null`) | Farmer logs breakdown report | **Action Needed** · *"Send request to technician"* |
+| **1b** | `REQUESTED` (request dispatched) | Farmer submits tech request | **Active Repair** · *"Finding Your Technician"* |
+| **2** | `ACCEPTED` | Technician accepts ticket | **Active Repair** · *"Technician Assigned"* |
+| **3** | `QUOTE_PENDING` | Technician compiles quote | **Action Needed** · *"Quote Ready"* |
+| **4** | `QUOTE_REVISED` | Farmer requests revision | **Action Needed** · *"Revised Quote"* |
+| **5** | `IN_PROGRESS` | Farmer approves quote | **Active Repair** · *"Repair in Progress"* |
+| **--**| `WAITING_FOR_PARTS` | Technician logs missing part delay | **Paused** · *"Waiting for Parts"* |
+| **6** | `IN_PROGRESS (Testing)` | Technician verifies fix under load | **Active Repair** · *"Testing Your Machine"* |
+| **7** | `COMPLETED` | Technician signs off; Farmer verifies | **Service History** · *"Repaired & Verified"* |
+
+> [!IMPORTANT]
+> **Lifecycle Semantic Guardrail**: The UI must NEVER falsely display *"Finding Your Technician"* until the farmer has actually initiated the technician request. A newly reported breakdown (`status = 'REQUESTED'`, `technician_id = null`) is an **Action Needed** state requiring farmer technician selection/dispatch.
 
 ### 5.2 Preliminary Diagnostic Assessment vs. Confirmed Diagnosis Boundary
 
@@ -148,11 +152,30 @@ To streamline hackathon and evaluator testing:
 - **Behavior**: Clicking a button injects the pre-configured credentials into the email and password fields on `/login` and immediately submits the form through standard `supabase.auth.signInWithPassword()`.
 - **Constraint**: Must use real, active Supabase accounts; zero mocking or bypass of authentication tokens.
 
+### 5.5 Data Scoping, Persisted State & Performance Architecture
+
+TerraByte enforces rigorous data boundary isolation and presentation integrity between personas and storage tiers:
+- **Authenticated Identity Scoping**: All farmer-facing business data (equipment, active repair requests, service records, itemized quotes) must be queried strictly scoped to the authenticated user's `profile.id` resolved from `auth.uid()`. Endpoints and UI hooks must never query unscoped equipment or fallback to arbitrary hardcoded demo IDs (`f1`).
+- **Database as Sole Source of Truth**: The live Supabase PostgreSQL database is the definitive source of truth for all business operations, tickets, and user assets. Client-side mock state (`tb-store.ts`) must never overwrite, intercept, or substitute for live farmer database queries, nor may mock data be used as a shortcut for perceived performance.
+- **Explicit Demo Identity Handling**:
+  - The system enforces a strict, explicit distinction between canonical demo evaluation personas and real registered users.
+  - The `"DEMO DATA"` badge (`DemoTag`) and the Reset Demo capability (`public.reset_demo_data()`) are restricted strictly to the 5 designated demo accounts: `farmer.nagpur@terrabyte.demo`, `farmer2.nagpur@terrabyte.demo`, `farmer3.nagpur@terrabyte.demo`, `tech.nagpur@terrabyte.demo`, and `admin.nagpur@terrabyte.demo`.
+  - Real user accounts (such as `Ankit Chamke`) are never classified as demo accounts, never render `"DEMO DATA"` badges, and are protected from demo reset operations.
+- **Performance Principle: Independent Data Must Not Block Rendering**:
+  - Independent domain data (equipment fleet vs active repairs vs notifications) must load concurrently and render progressively.
+  - Startup authentication waterfall is minimized through in-flight promise deduplication on `loadProfile()`, preventing redundant initial profile network calls.
+  - Queries are optimized at the PostgreSQL level: `getFarmerRepairRequests` accepts `{ activeOnly: true }` to filter out completed/cancelled rows via `.not("status", "in", '("COMPLETED","CANCELLED")')`, eliminating 90% of data transfer for experienced farmers with extensive service histories.
+  - Secondary or background operations (such as notification fetching or service history audits) must never block primary page usability.
+- **Persisted Repair State Determines Presentation**:
+  - The farmer home page strictly prioritizes genuinely active repairs and genuine pending farmer actions (`QUOTE_PENDING`, `QUOTE_REVISED`, and unassigned requested tickets).
+  - Completed, verified repairs whose handover has been confirmed and committed to `service_history` are historical records. They belong in permanent equipment service history and machine logbooks, not in the active workspace or action-needed stack.
+- **Demo Reset Isolation**: Reset operations (`public.reset_demo_data()`) are restricted via dual-key authorization to designated evaluation accounts, leaving registered real users and their associated records untouched.
+
 ---
 
-## 6. Target Regional Context (Nashik, Maharashtra)
+## 6. Target Regional Context (Nagpur, Maharashtra)
 
-All seed data, demonstrations, and crop calendars are anchored in the agricultural heartland of **Nashik District, Maharashtra**:
-- **Key Agrarian Hubs**: Pimpalgaon Baswant (onion & tomato wholesale market), Niphad (wheat & sugarcane), Sinnar (dryland bajra & pulses), Dindori (table & wine grapes).
-- **Core Equipment Models**: Mahindra 575 DI, Mahindra Yuvo, John Deere 5050D, Swaraj 744 FE, Kubota DC-68G combine harvester, Kirloskar 5HP agricultural pumpsets.
-- **Language & Cultural Context**: Professional English primary UI with Marathi regional terminology ("Namaskar", taluka parts distributors, seasonal mandi windows).
+All seed data, demonstrations, and crop calendars are anchored in the agricultural heartland of **Nagpur District, Maharashtra (Vidarbha region)**:
+- **Key Agrarian Hubs**: Katol (citrus & orange belt, power tiller farming), Saoner (cotton & soybean processing and heavy tractor aggregation), Umred (chili, pulses, and paddy mechanization).
+- **Core Equipment Models**: Mahindra 575 DI, Swaraj 744 FE, Mahindra Yuvo 575, VST Shakti 130 DI power tiller, John Deere W70 combine harvester, Kirloskar 5HP agricultural pumpsets.
+- **Language & Cultural Context**: Professional English primary UI with Marathi regional terminology ("Namaskar", taluka parts distributors, Vidarbha mandi harvest seasons).

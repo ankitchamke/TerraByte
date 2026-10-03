@@ -53,6 +53,7 @@ function EquipmentDetail() {
     id: string;
     status: RepairStatus;
     testing: boolean;
+    technicianId?: string | null;
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -67,7 +68,7 @@ function EquipmentDetail() {
         getServiceHistoryForEquipment(id).catch(() => []),
         supabase
           .from("repair_requests")
-          .select("id, job_number, status, is_testing")
+          .select("id, job_number, status, is_testing, technician_id")
           .eq("equipment_id", id)
           .not("status", "in", '("COMPLETED","CANCELLED")')
           .maybeSingle(),
@@ -81,6 +82,7 @@ function EquipmentDetail() {
           id: activeRepairRes.data.job_number || activeRepairRes.data.id,
           status: activeRepairRes.data.status as RepairStatus,
           testing: activeRepairRes.data.is_testing,
+          technicianId: activeRepairRes.data.technician_id,
         });
       } else {
         setActiveRepair(null);

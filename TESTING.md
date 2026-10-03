@@ -35,7 +35,26 @@ This document specifies the verification criteria and test matrix for TerraByte.
 
 ---
 
-## 3. Planned Domain Verification Tests (Phases 3–8)
+## 3. Phase 5.2 Demo & Data Hygiene Verification Matrix (Pending Manual Execution)
+
+| Test ID | Test Scenario | Persona / Setup | Action | Expected Result | Actual Result | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :---: |
+| **P5.2-01** | Real Ankit account does NOT show Demo Data | Real account Ankit Chamke (`3f26b42a-c626-45a0-b6a5-82c861b0d8f1`) | Log in and view `/farmer` dashboard and Shell header | `DemoTag` returns `null`; zero occurrences of `"DEMO DATA"` badge; header renders cleanly with name "Ankit". | Pending manual test run | **PENDING MANUAL EXECUTION** |
+| **P5.2-02** | Demo farmer accounts DO show Demo Data | Designated demo accounts (`farmer.nagpur@terrabyte.demo`, `farmer2...`, `farmer3...`, `tech...`, `admin...`) | Log in to each demo account and inspect header | Header prominently renders `"DEMO DATA"` badge with dashed border next to persona name. | Pending manual test run | **PENDING MANUAL EXECUTION** |
+| **P5.2-03** | Newly reported repair with no technician request shows Action Needed | Real farmer account with newly reported ticket `TB-4545` (`status: REQUESTED`, `technician_id: null`) | View `/farmer` home page | Ticket is styled as an action-needed item with orange/accent border and `"Action needed · TB-4545"` top banner. | Pending manual test run | **PENDING MANUAL EXECUTION** |
+| **P5.2-04** | Action says Send Request to Technician when that is the actual next step | Ticket `TB-4545` on `/farmer` home page | Inspect status pill and CTA button on card | Status pill displays *"Send request to technician"* in accent tone; card CTA button displays *"Send request to technician"*. Does NOT display *"Finding Your Technician"*. | Pending manual test run | **PENDING MANUAL EXECUTION** |
+| **P5.2-05** | Once technician-request flow actually begins, appropriate finding/request state appears | Farmer visits `/farmer/repair/TB-4545` and dispatches request to matched technician | Request sent to technician; return to `/farmer` | Status pill transitions to *"Finding Your Technician"*; header transitions from "Action needed" to "Active repair". | Pending manual test run | **PENDING MANUAL EXECUTION** |
+| **P5.2-06** | Assigned repair displays technician | Ticket with assigned technician (e.g. `TB-8902` assigned to `Ramesh Kumar`) | View `/farmer` home page and repair detail | Card displays assigned technician name (*"Ramesh Kumar"*), contact action, and ETA instead of "Not yet assigned". | Pending manual test run | **PENDING MANUAL EXECUTION** |
+| **P5.2-07** | Active repair still appears correctly | Accounts with genuine active repairs (`TB-8841` WAITING_FOR_PARTS, `TB-8902` IN_PROGRESS) | View `/farmer` home page | Active repair cards render properly with correct status pills, parts hold arrival alerts, and links to repair hubs. | Pending manual test run | **PENDING MANUAL EXECUTION** |
+| **P5.2-08** | Completed repairs remain out of active/action-needed stack | Farmer accounts with completed repairs (`TB-2334`, `TB-7630`, `TB-3272`) | View `/farmer` home page | Zero completed repairs appear in the active card stack or as "Action needed"; all completed records remain accessible via `/farmer/equipment` service history. | Pending manual test run | **PENDING MANUAL EXECUTION** |
+| **P5.2-09** | Farmer Home initial load does not unnecessarily block independent sections | Any authenticated farmer | Navigate to `/farmer` and monitor network waterfall | `loadProfile()` runs once with in-flight deduplication; `getFarmerEquipment` and `getFarmerRepairRequests({ activeOnly: true })` execute concurrently; machines and repairs load independently without blocking waterfalls. | Pending manual test run | **PENDING MANUAL EXECUTION** |
+| **P5.2-10** | Service Centre remains fast after previous optimization | `admin.nagpur@terrabyte.demo` | Navigate to `/admin` | Header renders immediately; triage queue excludes completed repairs; operations load without redundant auth/profile roundtrips. | Pending manual test run | **PENDING MANUAL EXECUTION** |
+| **P5.2-11** | Real Ankit records remain untouched | Real farmer database records for Ankit Chamke | Inspect database rows in `profiles`, `equipment`, `repair_requests` | All 15 repair tickets, machine records, quotes, and timeline entries remain 100% intact without modification, deletion, or reset. | Pending manual test run | **PENDING MANUAL EXECUTION** |
+| **P5.2-12** | Demo reset/isolation remains intact | Designated demo accounts vs real users | Invoke `reset_demo_data()` from demo account | Prunes non-seed demo rows, restores canonical fixtures, preserves `TB-4489`, and leaves real accounts untouched. Direct RPC calls by real accounts are rejected with error `42501`. | Pending manual test run | **PENDING MANUAL EXECUTION** |
+
+---
+
+## 4. Planned Domain Verification Tests (Phases 3–8)
 
 The following domain tests are scheduled as the relational schema and storage are connected in subsequent phases:
 
@@ -54,11 +73,12 @@ The following domain tests are scheduled as the relational schema and storage ar
 
 ---
 
-## 4. Release Blocker Checklist
+## 5. Release Blocker Checklist
 
 No phase promotion or production deployment may occur if:
 1. Unauthenticated users can view or interact with `/farmer/*`, `/technician/*`, or `/admin/*`.
 2. Unverified technicians can access the technician job workbench before administrator approval.
 3. Non-admin users can elevate their role to `service_centre` or set `is_verified = true`.
 4. Any client request can read or modify another user's private profile.
-5. TypeScript errors (`tsc --noEmit`) or Vite build failures exist.
+5. Farmer dashboards render mock data or cross-contaminate data across different farmers.
+6. TypeScript errors (`tsc --noEmit`) or Vite build failures exist.

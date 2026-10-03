@@ -5,6 +5,7 @@ import { meta } from "@/lib/seo";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { ContextualBack } from "@/components/tb";
+import { setTechnicianVerification } from "@/lib/services/technicians";
 
 export const Route = createFileRoute("/admin/technicians")({
   head: () => meta("Technician accounts", "Review and approve technician accounts for the TerraByte network."),
@@ -56,12 +57,14 @@ function Technicians() {
 
   const setVerified = async (id: string, is_verified: boolean) => {
     setBusy(id);
-    const { error } = await supabase
-      .from("technician_profiles")
-      .update({ is_verified })
-      .or(`profile_id.eq.${id},id.eq.${id}`);
-    setBusy(null);
-    if (error) { setErr(error.message); return; }
+    try {
+      await setTechnicianVerification(id, is_verified);
+      setErr("");
+    } catch (error: any) {
+      setErr(error.message || "Failed to update technician verification.");
+    } finally {
+      setBusy(null);
+    }
     await load();
   };
 

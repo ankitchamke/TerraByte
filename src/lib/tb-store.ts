@@ -298,7 +298,7 @@ export const actions = {
       };
       const nr: Repair = { ...r, status: "COMPLETED", testing: false, statusSince: now, completion: { notes, photo, at: now }, timeline: [...r.timeline, { status: "COMPLETED", at: now, by: "technician", note: "Repair completed & tested" }] };
       const ns = { ...s, repairs: s.repairs.map((x) => (x.id === id ? nr : x)), service: [rec, ...s.service], equipment: s.equipment.map((x) => (x.id === e.id ? { ...x, status: "Operational" as const } : x)) };
-      return { ...ns, notifications: notify(ns, { role: "farmer", userId: r.farmerId, text: `${e.make} ${e.model} is repaired! Please confirm handover.`, link: `/farmer/repair/${id}` }) };
+      return { ...ns, notifications: notify(ns, { role: "farmer", userId: r.farmerId, text: `${e.make} ${e.model} is repaired and saved to service history.`, link: `/farmer/repair/${id}` }) };
     });
   },
   verify(id: string) {
@@ -335,7 +335,7 @@ export const FARMER_LABEL: Record<RepairStatus, string> = {
   REQUESTED: "Finding Your Technician",
   ACCEPTED: "Technician Assigned",
   QUOTE_PENDING: "Quote Ready for Your Review",
-  QUOTE_REVISED: "Quote Being Revised",
+  QUOTE_REVISED: "Revised Quote Ready",
   IN_PROGRESS: "Repair in Progress",
   WAITING_FOR_PARTS: "Paused: Waiting for Spare Parts",
   COMPLETED: "Repair Complete & Verified",

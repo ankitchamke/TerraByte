@@ -115,7 +115,7 @@ function getActivityAction(status: string, note?: string | null): string {
     case "TESTING_FAILED":
       return "Testing failed — returning to repair";
     case "COMPLETED":
-      return "Repair completed & ready for handover";
+      return "Repair complete & saved to service history";
     case "CANCELLED":
       return "Repair cancelled";
     case "REASSIGNED":

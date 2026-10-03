@@ -61,7 +61,7 @@ function FarmerHome() {
     : "Farmer";
 
   // Prioritize genuinely active repairs currently moving through the workflow.
-  // Completed repairs with confirmed handover belong in Service History and machine records.
+  // Completed repairs belong in Service History and machine records.
   const active = repairs.filter(
     (r) => r.status !== "CANCELLED" && r.status !== "COMPLETED"
   );

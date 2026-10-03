@@ -400,7 +400,7 @@ function Job() {
             {adaptedRepair.completion?.notes || (r.completion_details as any)?.notes || "Repair completed and verified."}
           </p>
           <p className="mt-2 text-sm text-muted-foreground">
-            {adaptedRepair.verifiedAt ? "Farmer confirmed handover." : "Awaiting farmer handover confirmation."}
+            Repair completed and recorded in equipment service history.
           </p>
         </Card>
       )}

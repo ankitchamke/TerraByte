@@ -644,7 +644,7 @@ function RepairHub() {
       {r.status === "COMPLETED" && (
         <section className="overflow-hidden rounded-2xl border-2 border-success bg-card">
           <div className="flex items-center gap-2 bg-success px-5 py-3 font-display text-lg font-bold text-primary-foreground">
-            <CheckCircle2 className="h-5 w-5" /> Repair completed / Ready for handover
+            <CheckCircle2 className="h-5 w-5" /> Repair Complete & Saved to Service History
           </div>
           <div className="space-y-4 p-5">
             {(completion?.photo_url || completion?.photo) && (
@@ -691,7 +691,7 @@ function RepairHub() {
               </p>
             )}
             <p className="rounded-xl bg-success/15 p-3 text-sm font-semibold text-success">
-              Handover confirmed. Saved to the machine's permanent service history.
+              Repair completed and saved to the machine's permanent service history.
             </p>
             {e && (
               <Link

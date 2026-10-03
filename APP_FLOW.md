@@ -99,9 +99,19 @@ flowchart TD
 2. When technician submits a quote (`QUOTE_PENDING`):
    - Farmer inspects itemized parts table (names, part specs, unit rates, supplier origin) and labour charges.
    - Farmer taps **"Approve Quote"** (work commences) or **"Request Revision"** (technician adjusts pricing).
-3. If parts are missing (`WAITING_FOR_PARTS`):
+3. If quote revision is active (`QUOTE_REVISED`):
+   - Farmer home renders ticket under **"Action needed · Revised Quote Ready"** once updated pricing is prepared.
+   - Displays technician clarification notes alongside original quote items.
+4. If parts are missing (`WAITING_FOR_PARTS`):
    - Displays warning pill with missing part details and updated arrival ETA.
-4. When technician completes testing, farmer confirms machine operation and reviews digital service log.
+5. When technician completes testing and finalizes repair (`COMPLETED`):
+   - Machinery status is updated to `Operational`.
+   - Permanent service history record is automatically generated in `service_history` bound to equipment ID.
+   - Farmer receives notification: *"Repair TB-xxxx has been completed and saved to service history."*
+   - Farmer repair detail displays *"Repair Complete & Saved to Service History"* with completed work notes, parts replaced, final amount, and link to permanent machine logbook.
+   - Technician workbench displays *"Repair completed and recorded in equipment service history."*
+   - Admin command displays *"Repair complete & saved to service history."*
+   - Contradictory claims of pending handover confirmation are eliminated.
 
 ---
 
@@ -176,8 +186,51 @@ flowchart TD
 [5. IN_PROGRESS (Testing)]
       │
       ▼
-[6. COMPLETED]
-      │
-      ▼
-[7. VERIFIED] ──► Permanent Service Record Created
+[6. COMPLETED] ──► Permanent Service Record Created & Equipment Operational
+
+---
+
+## 7. Notification & Session Lifecycle
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as User A
+    participant Shell as Shell Header (tb.tsx)
+    participant Channel as Supabase Realtime
+    participant DB as PostgreSQL public.notifications
+
+    User->>Shell: Authenticates (userId = A)
+    Shell->>DB: getNotificationsForCurrentUser({ limit: 25 })
+    DB-->>Shell: Newest 25 notifications for A
+    Shell->>Channel: Subscribes to notifications-live-A
+    Note over Shell: Unread count calculated from active 25 rows
+
+    User->>Shell: Signs out (userId = null)
+    Note over Shell: IMMEDIATELY clears notifications = [], unreadCount = 0
+    Shell->>Channel: Unsubscribes channel
+
+    actor NextUser as User B
+    NextUser->>Shell: Logs in (userId = B)
+    Note over Shell: State cleared; no leakage of A's alerts
+    Shell->>DB: getNotificationsForCurrentUser({ limit: 25 })
+    DB-->>Shell: Newest 25 notifications for B
+    Shell->>Channel: Subscribes to notifications-live-B
 ```
+
+1. **Bounded History Ingestion**: Initial and polled notification queries fetch a maximum of 25 newest records, preventing unbounded network payload degradation.
+2. **Immediate User Switch Flushing**: In-flight and local notification state is synchronously cleared when `userId` becomes null or changes, guaranteeing complete data isolation between consecutive logins in the same browser session.
+3. **Throttled Toggle Ingestion**: Opening the notification popover suppresses duplicate network fetches if data was received within the preceding 5 seconds, while honoring live Supabase Realtime push events and 15-second background fallback intervals.
+4. **Lifecycle Notification Triggers**:
+   - **Technician Verification Approval**: When Service Centre verifies an account (`/admin/technicians`), dispatches an idempotent notification to the technician with link `/technician`.
+   - **Physical Work Initiation**: When technician begins work (`startRepair`), dispatches an idempotent notification to the farmer with link `/farmer/repair/:id`.
+   - **Technician Registration Triage**: When a new technician self-registers, PostgreSQL trigger `trg_notify_admin_on_technician_registration` dispatches an alert to administrators with link `/admin/technicians`.
+5. **Popover Visual Hierarchy & Category Taxonomy**:
+   - Notifications derive category pills (`Breakdown`, `Quote`, `Parts`, `Testing`, `Repair`, `Account`, `Assignment`, `Alert`, `Notice`) with dedicated semantic icons.
+   - Unread items feature distinct background accent (`bg-primary/[0.04]`), bold typography, and an unread dot with focus ring.
+   - Actionable alerts provide an explicit "View details" chevron link directing callers to the appropriate view.
+6. **Realtime Scope Boundary**:
+   - Realtime behavior in Phase 5.3 is strictly scoped to the existing notification channel (`postgres_changes` on `public.notifications`) and 15-second polling fallback.
+   - Any broader multi-user interactive realtime/session synchronization improvements across the active application are deferred to **Phase 7 (Realtime Sync & Production Hardening)**.
+
+

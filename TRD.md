@@ -171,6 +171,39 @@ TerraByte enforces rigorous data boundary isolation and presentation integrity b
   - Completed, verified repairs whose handover has been confirmed and committed to `service_history` are historical records. They belong in permanent equipment service history and machine logbooks, not in the active workspace or action-needed stack.
 - **Demo Reset Isolation**: Reset operations (`public.reset_demo_data()`) are restricted via dual-key authorization to designated evaluation accounts, leaving registered real users and their associated records untouched.
 
+### 5.6 Notification Architecture & Product Communication Semantics
+
+TerraByte implements a high-integrity, real-time notification and communication subsystem:
+- **Supabase-Backed Persistence**: Notification state is stored exclusively in live PostgreSQL `public.notifications` rows, synchronized via Supabase Realtime websocket channels (`postgres_changes`) alongside a 15-second polling fallback. Alerts are never generated or stored in ephemeral local mock state.
+- **Recipient-Scoped Identity & RLS Enforcement**: Every notification query resolves caller profile ID and role, filtering exclusively for target records (`recipient_user_id = profile.id OR (recipient_user_id IS NULL AND recipient_role = profile.role)`). PostgreSQL RLS strictly blocks any caller from reading or updating other users' private notifications.
+- **Bounded History Ingestion & Safe Limiting**:
+  - Initial and recurring notification queries enforce a strict 25-record history limit (`options.limit = 25`), ordered newest-first by `created_at DESC`.
+  - Non-admin queries apply `.limit(25)` directly in SQL. Admin queries safely apply `.limit(Math.max(limit * 4, 100))` in SQL before operational chatter filtering, preventing unbounded database scans while guaranteeing actionable alert delivery.
+  - Redundant query suppression: opening the notification bell suppresses duplicate fetches if an update succeeded within the preceding 5 seconds.
+- **User-Switch State Isolation**: The Shell component (`src/components/tb.tsx`) enforces immediate state flushing on `userId` change or sign-out. Local notification arrays, unread counts, and popover state reset to zero before the next user's query executes, preventing any cross-user data leakage.
+- **Completion Communication Aligned with Persisted Lifecycle**:
+  - The repair completion mutation auto-commits equipment status to `Operational` and immediately writes an immutable record to `public.service_history`.
+  - Copy across all roles aligns with this persisted reality:
+    - Farmer detail: *"Repair Complete & Saved to Service History"*
+    - Technician workbench: *"Repair completed and recorded in equipment service history"*
+    - Admin command: *"Repair complete & saved to service history"*
+    - Completion alert: *"Repair TB-xxxx has been completed and saved to service history."*
+  - Contradictory claims of pending separate handover confirmation are eliminated from the user experience.
+- **Role-Specific Notification Lifecycle Triggers**:
+  - **Technician Verification Approval**: Admin approval on `/admin/technicians` issues an idempotent notification to the technician (*"Your technician account has been approved by the Service Centre. You can now accept repair jobs."*, deep-link `/technician`), granting access to the job workbench.
+  - **Physical Repair Commencement**: When a technician starts physical disassembly or repair work (`startRepair()`), an idempotent notification is created for the farmer (*"Technician started repair work on TB-xxxx."*, deep-link `/farmer/repair/:id`).
+  - **Technician Registration Dispatch**: When a new technician registers, database trigger `trg_notify_admin_on_technician_registration` generates an admin notification (*"New technician registration: <name> (<workshop>). Pending verification."*, deep-link `/admin/technicians`). Included in `isActionableServiceCentreNotification()` operational patterns.
+- **Copy Standardization & Punctuation Integrity**:
+  - All system notifications adhere to standard title/sentence casing, concise action-oriented tone, ticket identifier inclusion, and consistent trailing punctuation.
+- **Notification Popover Visual Hierarchy & Taxonomy**:
+  - Semantic categories (`Breakdown`, `Quote`, `Parts`, `Testing`, `Repair`, `Account`, `Assignment`, `Alert`, `Notice`) render with dedicated icons and color-coded badge pills.
+  - Visual distinction between unread (background accent `bg-primary/[0.04]`, bold text, indicator dot with focus ring) and read (subdued text, clean background) items.
+  - Actionable items provide an interactive "View details" chevron link with automatic role-appropriate route redirection.
+- **Realtime Scope Boundary**:
+  - Notification updates in Phase 5.3 operate strictly on the existing Supabase Realtime channel (`postgres_changes` on `public.notifications`) and 15-second background polling fallback.
+  - Broader multi-user interactive realtime state synchronization across boards, active forms, and technician assignments is explicitly deferred to **Phase 7 (Realtime Sync & Production Hardening)**.
+
+
 ---
 
 ## 6. Target Regional Context (Nagpur, Maharashtra)

@@ -248,7 +248,7 @@ export async function assignTechnician(input: AssignTechnicianInput): Promise<Re
     await createNotification({
       recipient_role: "technician",
       recipient_user_id: input.technician_id,
-      notification_text: `You have been assigned to repair request ${repair.job_number}`,
+      notification_text: `You have been assigned to repair request ${repair.job_number}.`,
       link_target: `/technician/job/${repair.id}`,
     });
 
@@ -355,3 +355,79 @@ export async function getVerifiedTechnicians(): Promise<VerifiedTechnicianWithPr
 
   return (data as unknown as VerifiedTechnicianWithProfile[]) ?? [];
 }
+
+/**
+ * Sets verification status for a technician profile (admin-only).
+ * When approved (isVerified = true), dispatches an idempotent notification to the technician.
+ */
+export async function setTechnicianVerification(profileId: string, isVerified: boolean): Promise<void> {
+  if (!profileId) throw new Error("Technician profile ID is required.");
+  const profile = await getAuthenticatedProfile();
+  if (profile.role !== "admin") {
+    throw new Error("Unauthorized: Only service centre administrators can update technician verification.");
+  }
+
+  const { error } = await supabase
+    .from("technician_profiles")
+    .update({ is_verified: isVerified })
+    .or(`profile_id.eq.${profileId},id.eq.${profileId}`);
+
+  if (error) {
+    throw new Error(`Failed to update technician verification: ${error.message}`);
+  }
+
+  // Idempotently notify technician upon approval
+  if (isVerified) {
+    try {
+      const { data: existing } = await supabase
+        .from("notifications")
+        .select("id")
+        .eq("recipient_user_id", profileId)
+        .ilike("notification_text", "%approved by the service centre%")
+        .limit(1);
+
+      if (!existing || existing.length === 0) {
+        await createNotification({
+          recipient_role: "technician",
+          recipient_user_id: profileId,
+          notification_text: "Your technician account has been approved by the Service Centre. You can now accept repair jobs.",
+          link_target: "/technician",
+        });
+      }
+    } catch (notifErr) {
+      console.warn("[TerraByte] Warning: Failed to send technician verification notification:", notifErr);
+    }
+  }
+}
+
+/**
+ * Idempotently notifies Service Centre administrators when a new technician registers.
+ */
+export async function notifyAdminOnTechnicianRegistration(
+  technicianName: string,
+  workshopName?: string
+): Promise<void> {
+  const name = technicianName?.trim() || "New technician";
+  const workshop = workshopName?.trim() || "Workshop";
+
+  try {
+    const { data: existing } = await supabase
+      .from("notifications")
+      .select("id")
+      .eq("recipient_role", "admin")
+      .ilike("notification_text", `%${name}%`)
+      .limit(1);
+
+    if (!existing || existing.length === 0) {
+      await createNotification({
+        recipient_role: "admin",
+        recipient_user_id: null,
+        notification_text: `New technician registration: ${name} (${workshop}). Pending verification.`,
+        link_target: "/admin/technicians",
+      });
+    }
+  } catch (notifErr) {
+    console.warn("[TerraByte] Warning: Failed to send admin notification for technician registration:", notifErr);
+  }
+}
+

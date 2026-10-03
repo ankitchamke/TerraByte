@@ -206,7 +206,7 @@ export async function createRepairRequest(input: CreateRepairRequestInput): Prom
   try {
     await createNotification({
       recipient_role: "admin",
-      notification_text: `New breakdown reported (${jobNumber}): ${input.symptoms.join(", ")}`,
+      notification_text: `New breakdown reported (${jobNumber}): ${input.symptoms.join(", ")}.`,
       link_target: `/admin/repair/${repair.id}`,
     });
   } catch (notifErr) {
@@ -653,7 +653,7 @@ export async function declineRepairRequest(repairRequestId: string, reason: stri
   try {
     await createNotification({
       recipient_role: "admin",
-      notification_text: `${repair.job_number} declined by technician (${trimmedReason}) — needs reassignment`,
+      notification_text: `Repair ${repair.job_number} declined by technician (${trimmedReason}) — needs reassignment.`,
       link_target: `/admin/repair/${repair.id}`,
     });
     await createNotification({
@@ -722,6 +722,27 @@ export async function startRepair(repairRequestId: string): Promise<RepairReques
     created_by_role: profile.role,
     created_by_id: profile.id,
   });
+
+  // Notify farmer that physical repair work has started (idempotent)
+  try {
+    const { data: existingNotif } = await supabase
+      .from("notifications")
+      .select("id")
+      .eq("recipient_user_id", repair.farmer_id)
+      .ilike("notification_text", `%started repair work on ${repair.job_number}%`)
+      .limit(1);
+
+    if (!existingNotif || existingNotif.length === 0) {
+      await createNotification({
+        recipient_role: "farmer",
+        recipient_user_id: repair.farmer_id,
+        notification_text: `Technician started repair work on ${repair.job_number}.`,
+        link_target: `/farmer/repair/${repair.id}`,
+      });
+    }
+  } catch (notifErr) {
+    console.warn("[TerraByte] Warning: Failed to send start repair notification:", notifErr);
+  }
 
   return repair;
 }
@@ -894,7 +915,7 @@ export async function updatePartsEta(repairRequestId: string, input: UpdateParts
     await createNotification({
       recipient_role: "farmer",
       recipient_user_id: repair.farmer_id,
-      notification_text: `${repair.job_number}: spare part ETA updated to ${input.eta.trim()}`,
+      notification_text: `Repair ${repair.job_number}: Spare part ETA updated to ${input.eta.trim()}.`,
       link_target: `/farmer/repair/${repair.id}`,
     });
   } catch (notifErr) {
@@ -1276,7 +1297,7 @@ export async function completeRepair(
     await createNotification({
       recipient_role: "farmer",
       recipient_user_id: repair.farmer_id,
-      notification_text: `Repair ${repair.job_number} has been completed and is ready for handover.`,
+      notification_text: `Repair ${repair.job_number} has been completed and saved to service history.`,
       link_target: `/farmer/repair/${repair.id}`,
     });
   } catch (notifErr) {

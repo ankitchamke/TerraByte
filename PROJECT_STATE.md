@@ -2,8 +2,8 @@
 
 ## 1. Current Phase
 
-- **Current Phase**: **PHASE 5.2 — IN PROGRESS** (Demo & Data Hygiene / Baseline Reset)
-- **Previous Completed Phase**: **PHASE 5.1 — COMPLETE** (Product Polish: Home Experience, Contextual Back Navigation, Profile Management, Password Management, Branded Reset Email, Account Deletion RPC & UI — Commit `a6ff2de`)
+- **Current Phase**: **PHASE 5.4 — UPCOMING** (Gemini Multimodal Diagnostics)
+- **Previous Completed Phase**: **PHASE 5.3 — COMPLETE** (Notification & Product Communication Polish)
 - **Branch**: `phase-5` (connected to Lovable; no destructive Git history operations)
 
 ---
@@ -24,9 +24,23 @@ TerraByte is an end-to-end digital agricultural equipment repair ecosystem desig
   - Profile management (name, phone, village/workshop, brand specializations).
   - Password management (forgot password, recovery tokens, branded reset email template, change password).
   - Permanent account deletion via atomic PostgreSQL RPC `public.delete_user_account()` with active-repair and demo-account protections.
-- **Phase 5.2 — Demo & Data Hygiene (In Progress)**:
+- **Phase 5.2 — Demo & Data Hygiene**:
   - **Backend Reset Demo RPC**: Secure `public.reset_demo_data()` PostgreSQL RPC with dual-key authorization (`email` in designated set + `demo_code IS NOT NULL`), atomic transaction, TB-4489 fixture preservation, and deterministic fixture restoration.
   - **Frontend Reset Demo Integration**: `Shell` header button (`RotateCcw`) strictly gated to the 5 designated demo accounts, accessible responsive `AlertDialog` confirmation dialog with loading states, safe error handling, and 7-step post-reset state synchronization.
+  - **Farmer Data Isolation & Nagpur Geography**: Isolated active repairs and equipment directly to authenticated profile UUIDs; eliminated legacy Nashik strings across all fixtures.
+  - **Completed-Repair & Action-Needed Separation**: Excluded completed/cancelled tickets from active repair card stacks; reserved "Action needed" styling for actionable tickets (`QUOTE_PENDING`, `QUOTE_REVISED`, and unassigned `REQUESTED`).
+  - **Loading Performance & Latency Remediation**: Deduplicated startup auth promises, enabled direct profile ID injection, and added database-level active-only query filtering (`{ activeOnly: true }`).
+- **Phase 5.3 — Notification & Product Communication Polish**: **COMPLETE** (Steps 1–3 Implemented and Verified)
+  - **Quote Revised Communication Aligned**: Updated farmer label in `FARMER_LABEL` to `"Revised Quote Ready"` (replacing `"Quote Being Revised"`), establishing clear alignment with orange "Action needed" status and quote revision workflow.
+  - **Completion / Handover Communication Aligned with Persisted Lifecycle**: Unified completion messaging across farmer view (*"Repair Complete & Saved to Service History"*), technician view (*"Repair completed and recorded in equipment service history"*), admin view (*"Repair complete & saved to service history"*), and completion notification copy (*"Repair TB-xxxx has been completed and saved to service history."*). Eliminated contradictory claims of pending handover confirmation when the system auto-commits to service history upon technician completion.
+  - **Canonical Demo Technician Notification Fixture Fixed**: Reassigned seed notification fixture `c7fdc083-fce0-4a73-afb8-f63aa84faf2e` to Ramesh Kumar (`t1` / `tech.nagpur@terrabyte.demo` / `00000000-0000-0000-0002-000000000001`) on repair TB-8841 in `supabase/seed.sql` and created forward migration `20261003160000_phase5_3_demo_technician_notification_fix.sql` updating `public.reset_demo_data()`.
+  - **Notification State Clearing on User Switch / Sign-Out**: Implemented immediate local state reset (`notifications = []`, error, and popover state) in `Shell` (`src/components/tb.tsx`) on sign-out or user switch, preventing previous user notifications from ever displaying to another user.
+  - **Safe Notification Query Limiting & Duplicate Fetch Cleanup**: Bounded initial and polled notification queries to `limit: 25` with newest-first ordering; safely bounded admin SQL queries (`limit: Math.max(limit * 4, 100)`); throttled bell toggle refresh with a 5-second freshness guard to eliminate redundant queries while preserving Supabase Realtime live subscriptions and 15s fallback polling.
+  - **Technician Verification Notification**: Implemented `setTechnicianVerification()` in `src/lib/services/technicians.ts` wired to `src/routes/admin/technicians.tsx`. When an admin approves an unverified technician account, dispatches an idempotent notification to that technician (*"Your technician account has been approved by the Service Centre. You can now accept repair jobs."*, deep-link `/technician`).
+  - **Technician Started-Work Notification**: Updated `startRepair()` in `src/lib/services/repair-requests.ts` to notify the associated farmer when the technician begins disassembly/physical work (*"Technician started repair work on TB-xxxx."*, deep-link `/farmer/repair/:id`), guarded by an idempotency check against repeated clicks or saves.
+  - **New Technician Registration Admin Notification**: Added database trigger `trg_notify_admin_on_technician_registration` on `technician_profiles` insert (migration `20261003170000_phase5_3_technician_registration_notification.sql`) and helper `notifyAdminOnTechnicianRegistration()` in `src/lib/services/technicians.ts`. Notifies Service Centre admins (*"New technician registration: <name> (<workshop>). Pending verification."*, deep-link `/admin/technicians`). Expanded `isActionableServiceCentreNotification()` in `src/lib/services/notifications.ts` to include technician registration patterns in admin notification counts and queues.
+  - **Notification Copy Standardization**: Audited and standardized all notification copy across quotes, repair requests, and technician operations. Enforced consistent sentence casing, concise action-oriented tone, and proper ending punctuation across all system notifications.
+  - **Enhanced Notification Popover Visual Hierarchy**: Redesigned Shell bell popover in `src/components/tb.tsx` with semantic category pill badges and icons (`Breakdown`, `Quote`, `Parts`, `Testing`, `Repair`, `Account`, `Assignment`, `Alert`, `Notice`), distinct unread indicator dot with subtle focus ring, unread background highlight (`bg-primary/[0.04]`), and actionable "View details" cue, preserving all existing interactions.
 
 ### Current Discovered Issues Under Remediation
 
@@ -60,9 +74,9 @@ TerraByte is an end-to-end digital agricultural equipment repair ecosystem desig
 
 ### Checkpoint Status
 
-- The five core architecture documents (`PROJECT_STATE.md`, `IMPLEMENTATION_PLAN.md`, `APP_FLOW.md`, `TESTING.md`, `TRD.md`) are synchronized at this Phase 5.2 checkpoint.
-- **No commit or push** will be executed until manual testing across isolation, classification, lifecycle state accuracy, and performance is fully verified.
-- Phase 5.2 remains **IN PROGRESS**.
+- The five core architecture documents (`PROJECT_STATE.md`, `IMPLEMENTATION_PLAN.md`, `APP_FLOW.md`, `TESTING.md`, `TRD.md`) are synchronized at this Phase 5.3 completion checkpoint.
+- All implementation steps (Steps 1–3) are finished, and manual verification tests `P5.3-01` through `P5.3-22` have **PASSED**.
+- **Phase 5.3 is COMPLETE**. Working tree is verified and ready for commit on branch `phase-5`.
 
 ---
 
@@ -79,3 +93,5 @@ TerraByte is an end-to-end digital agricultural equipment repair ecosystem desig
    - `admin.nagpur@terrabyte.demo`
 5. **Real User Isolation**: Real user data is strictly isolated by RLS and cannot be modified or cleared by demo reset operations.
 6. **Assistive AI Only**: Machine diagnostics use rule-based reasoning with transparent markers. AI provides decision support; farmers and technicians retain final operational authority.
+7. **Realtime Scope Boundary**: Realtime notification delivery in Phase 5.3 is strictly scoped to the existing Supabase Realtime channel (`postgres_changes` on `public.notifications`) and 15-second background polling fallback. Broader multi-user interactive realtime state synchronization across boards, active forms, and technician assignments is explicitly deferred to **Phase 7 (Realtime Sync & Production Hardening)**.
+

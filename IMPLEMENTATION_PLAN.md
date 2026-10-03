@@ -18,8 +18,8 @@ flowchart TD
     P2 --> P3["PHASE 3: Core Repair & Quote Workflows<br/>(STATUS: COMPLETE)"]
     P3 --> P4["PHASE 4: Operations & Notifications<br/>(STATUS: COMPLETE)"]
     P4 --> P51["PHASE 5.1: Product Polish & Account Lifecycle<br/>(STATUS: COMPLETE — Commit a6ff2de)"]
-    P51 --> P52["PHASE 5.2: Demo/Data Hygiene & Baseline Reset<br/>(STATUS: IN PROGRESS)"]
-    P52 --> P53["PHASE 5.3: End-to-End Hardening & Realtime"]
+    P51 --> P52["PHASE 5.2: Demo/Data Hygiene & Baseline Reset<br/>(STATUS: COMPLETE)"]
+    P52 --> P53["PHASE 5.3: Notification & Product Communication Polish<br/>(STATUS: COMPLETE)"]
     P53 --> P54["PHASE 5.4: Gemini Multimodal Diagnostics"]
 ```
 
@@ -39,66 +39,66 @@ flowchart TD
 ---
 
 ### PHASE 5.2 — Demo / Data Hygiene & Baseline Reset
-- **Status**: **IN PROGRESS**
+- **Status**: **COMPLETE**
 - **Objective**: Implement a safe, atomic, deterministic "Reset Demo" capability for evaluation personas, isolate demo farmer data, and enforce Nagpur geography.
+- **Key Deliverables Completed**:
+  1. Canonical Demo Reset RPC (`public.reset_demo_data()`) with dual-key authorization (`email` in designated set + `demo_code IS NOT NULL`) and atomic fixture upsert.
+  2. Dedicated client authorization service (`src/lib/services/demo.ts`) gating reset strictly to 5 demo evaluation accounts.
+  3. Responsive frontend reset confirmation dialog (`AlertDialog`) with loading states and 7-step post-reset cache synchronization.
+  4. Full farmer data isolation separating real users and each demo account (`farmer`, `farmer2`, `farmer3`) to their own machines and tickets.
+  5. Nagpur geography synchronization across all fixtures, profiles, and repair locations.
+  6. Completed-repair separation from active workspace triage; reserved "Action needed" exclusively for genuine pending actions (`QUOTE_PENDING`, `QUOTE_REVISED`, unassigned `REQUESTED`).
+  7. Startup auth deduplication, session fast-path caching, and database-level active-only repair queries (`{ activeOnly: true }`).
 
-#### Completed Deliverables
-1. **Canonical Demo Reset RPC (`public.reset_demo_data()`)**:
-   - Zero client parameters; security definer with explicit `search_path`.
-   - Dual-key backend authorization (`auth.uid()` mapped to designated evaluation email set AND `demo_code IS NOT NULL`).
-   - Clean deletion of accumulated non-seed demo records (`repairs`, `equipment`, `service_history`, `notifications`).
-   - Atomic upsert of canonical baseline fixtures (`f1`, `f2`, `f3`, `t1`, `t2`, `t3`, `t4`, `t5`, `admin`, `TB-8841`, `TB-8902`, `TB-8898`).
-   - Preservation of TB-4489 fixture for future Phase 5.5 demonstration.
-   - Strict isolation: real user rows and foreign keys are never altered or removed.
-2. **Secure Demo Authorization**:
-   - Dedicated client service [`src/lib/services/demo.ts`](file:///d:/Projects/TerraByte/src/lib/services/demo.ts) validating the 5 designated accounts.
-   - Unauthorized attempts return safe translated error messages (`42501` mapped to `"Demo reset is not available for this account."`).
-3. **Frontend Reset Demo Action & Confirmation Dialog**:
-   - `RotateCcw` reset button in Shell header visible **only** to the 5 designated demo accounts.
-   - Accessible Radix `AlertDialog` confirmation modal with destructive action styling, spinner during execution, and >=44px mobile touch targets.
-4. **Post-Reset State Synchronization**:
-   - Deterministic 7-step sequence: RPC call $\rightarrow$ `resetDemo()` store sync $\rightarrow$ `refreshProfile()` $\rightarrow$ `fetchNotifications()` $\rightarrow$ `router.invalidate()` $\rightarrow$ route component remount $\rightarrow$ success toast.
+---
 
-#### Pending Deliverables
-1. **Farmer Demo Data Isolation Correction**:
-   - Disconnected `FarmerHome` from mock `tb-store` active repairs.
-   - Wired live Supabase queries via `getFarmerRepairRequests()` and `getFarmerEquipment()`.
-   - Added explicit `.eq("farmer_id", profile.id)` filters in services.
-   - Bound `RoleGuard` `actions.login` to dynamic farmer identity (`demo_code || id`).
-   - *Status*: Implemented in codebase, pending manual testing verification.
-2. **Nagpur Geography Cleanup**:
-   - Updated Service Centre identity to `"Nagpur Service Centre"` and `"Nagpur Central Command"`.
-   - Updated all demo profile villages and repair locations to Nagpur agricultural talukas (Katol, Saoner, Umred).
-   - Re-applied updated `reset_demo_data()` RPC to linked remote database.
-   - *Status*: Implemented in codebase and remote DB, pending manual testing verification.
-3. **Completed-Repair & Action-Needed Classification Correction**:
-   - Excluded `COMPLETED` and `CANCELLED` tickets from farmer home active repairs card stack.
-   - Reserved "Action needed" styling strictly for genuine pending actions (`QUOTE_PENDING`, `QUOTE_REVISED`).
-   - Solved scalability: farmers with multiple completed repairs only see genuine active work; completed records stay in Service History.
-   - *Status*: Implemented in codebase, pending manual testing verification.
-4. **Dashboard Loading Performance Remediation**:
-   - Implemented session-check fast path and 60-second in-memory profile cache in `getAuthenticatedProfile()` across services to eliminate redundant auth/profile network roundtrips.
-   - Enabled `getFarmerEquipment(farmerId)` and `getFarmerRepairRequests(farmerId)` to accept already-resolved `profile.id` directly.
-   - Concurrentized independent section loading in `FarmerHome`.
-   - Rendered stable header immediately in Service Centre dashboard and removed completed repairs from open triage queue.
-   - *Status*: Implemented in codebase, pending manual testing verification.
-5. **Startup Waterfall & Farmer Query Optimization**:
-   - In-flight promise deduplication on `loadProfile()` in `auth.ts` preventing double auth network roundtrips during initial app mount.
-   - Session-check fast path and profile caching in `notifications.ts`.
-   - Database-level active-only filtering in `getFarmerRepairRequests(farmerId, { activeOnly: true })` using `.not("status", "in", '("COMPLETED","CANCELLED")')`, cutting 90% of data transfer for farmers with extensive service history.
-   - *Status*: Implemented in codebase, pending manual testing verification.
-6. **TB-4545 Unassigned Request Action State**:
-   - Accurately represented repair lifecycle: newly reported breakdown tickets with `status === "REQUESTED"` and `technician_id === null` classified as `needsAction = true`.
-   - Updated `StatusPill` to render *"Send request to technician"* with accent tone when `audience === "farmer"` and technician is unassigned.
-   - Updated Farmer Home card CTA button to *"Send request to technician"*.
-   - *Status*: Implemented in codebase, pending manual testing verification.
-7. **Explicit Real vs Demo Identity (`DemoTag`)**:
-   - Gated `DemoTag` strictly to `isDesignatedDemoAccount(email)` to guarantee real accounts (such as Ankit Chamke) never render the `"DEMO DATA"` badge.
-   - Preserved `"DEMO DATA"` badge visibility strictly for the 5 canonical demo evaluation personas.
-   - *Status*: Implemented in codebase, pending manual testing verification.
-8. **Final Manual Verification**:
-   - Execute complete verification test matrix in [`TESTING.md`](file:///d:/Projects/TerraByte/TESTING.md).
-9. **Final Regression & Pre-Commit Audit**:
-   - Clean build verification (`npm run build`) and git diff inspection.
-10. **Phase 5.2 Commit & Push**:
-   - Single atomic commit for Phase 5.2 once manual verification passes.
+### PHASE 5.3 — Notification & Product Communication Polish
+- **Status**: **COMPLETE**
+- **Objective**: Audit and refine notification delivery, lifecycle status communication, demo technician alert fixtures, and notification state performance across all roles.
+
+#### Step 1 — Notification & Communication Audit
+- **Status**: **COMPLETE**
+- Complete end-to-end audit of notification creation, retrieval, RLS policies, unread badge calculation, real-time channels, and role-specific communication copy.
+
+#### Step 2 — Core Notification Correctness & Safe Performance Fixes
+- **Status**: **COMPLETE**
+1. **Fix QUOTE_REVISED Label Conflict**:
+   - Updated `FARMER_LABEL["QUOTE_REVISED"]` to `"Revised Quote Ready"` in `src/lib/tb-store.ts`.
+   - Resolved contradiction with orange "Action needed" status card and quote revision notification copy.
+2. **Resolve Handover / Completion Contradiction**:
+   - Aligned copy across farmer view (*"Repair Complete & Saved to Service History"*), technician view (*"Repair completed and recorded in equipment service history"*), admin view (*"Repair complete & saved to service history"*), and completion notification copy (*"Repair TB-xxxx has been completed and saved to service history."*).
+   - Accurately reflects that technician completion immediately auto-generates permanent service history without claiming a separate pending handover confirmation.
+3. **Fix Demo Technician Notification Fixture**:
+   - Reassigned seeded notification `c7fdc083-fce0-4a73-afb8-f63aa84faf2e` to Ramesh Kumar (`t1` / `00000000-0000-0000-0002-000000000001`) on repair `TB-8841` in `supabase/seed.sql`.
+   - Created forward migration `supabase/migrations/20261003160000_phase5_3_demo_technician_notification_fix.sql` updating live database row and `public.reset_demo_data()` RPC.
+4. **Clear Notification State on User Switch / Sign-Out**:
+   - Updated `Shell` in `src/components/tb.tsx` to immediately clear notifications array, error state, and popover state when `userId` becomes null or changes before loading the next user's data.
+   - Guaranteed that User A's notifications never display under User B during same-session user switching.
+5. **Safe Notification Query Limiting & Duplicate Fetch Cleanup**:
+   - Bounded initial and polled notification queries to `limit: 25` in `src/components/tb.tsx`, preserving newest entries.
+   - Added safe SQL limit bounding (`Math.max(limit * 4, 100)`) for admin notifications in `src/lib/services/notifications.ts`.
+   - Throttled bell toggle refresh with a 5-second timestamp freshness guard to eliminate redundant queries on rapid opening.
+   - Preserved Supabase Realtime live subscriptions and 15-second background fallback polling.
+
+#### Step 3 — Notification Triggers, Copy Standardization & Visual Hierarchy
+- **Status**: **COMPLETE**
+1. **Technician Verification Notification**:
+   - Implemented `setTechnicianVerification()` in `src/lib/services/technicians.ts` wired to `src/routes/admin/technicians.tsx`.
+   - Dispatches idempotent notification to technician upon admin approval (*"Your technician account has been approved by the Service Centre. You can now accept repair jobs."*, deep-link `/technician`).
+2. **Technician Started-Work Notification**:
+   - Updated `startRepair()` in `src/lib/services/repair-requests.ts` to notify the associated farmer when physical repair work begins.
+   - Enforces idempotency check preventing duplicate notifications on repeated clicks or updates (*"Technician started repair work on TB-xxxx."*, deep-link `/farmer/repair/:id`).
+3. **New Technician Registration Admin Notification**:
+   - Created forward migration `supabase/migrations/20261003170000_phase5_3_technician_registration_notification.sql` with trigger `trg_notify_admin_on_technician_registration` executing upon `technician_profiles` insert.
+   - Added service helper `notifyAdminOnTechnicianRegistration()` in `src/lib/services/technicians.ts`.
+   - Included technician registration patterns in `isActionableServiceCentreNotification()` in `src/lib/services/notifications.ts` (*"New technician registration: <name> (<workshop>). Pending verification."*, deep-link `/admin/technicians`).
+4. **Notification Copy Standardization**:
+   - Audited and standardized all notification copy across quotes, repair requests, and technician operations.
+   - Enforced consistent sentence casing, concise action-oriented tone, and proper ending punctuation across all system notifications.
+5. **Notification Popover Visual Hierarchy**:
+   - Redesigned Shell bell popover in `src/components/tb.tsx` with semantic category pill badges and icons (`Breakdown`, `Quote`, `Parts`, `Testing`, `Repair`, `Account`, `Assignment`, `Alert`, `Notice`), distinct unread indicator dot with subtle focus ring, unread background highlight (`bg-primary/[0.04]`), and actionable "View details" cue, preserving all existing interactions.
+
+> [!NOTE]
+> **Realtime Scope Boundary**: Realtime notification delivery in Phase 5.3 is strictly scoped to the existing Supabase Realtime channel (`postgres_changes` on `public.notifications`) and 15-second background polling fallback. Broad multi-user interactive realtime state synchronization across boards, active forms, and technician assignments is explicitly deferred to **Phase 7 (Realtime Sync & Production Hardening)**.
+
+

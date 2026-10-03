@@ -2,26 +2,36 @@ import { Link, useNavigate, useLocation, useRouter } from "@tanstack/react-route
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   AlertCircle,
+  AlertTriangle,
   ArrowLeft,
   Bell,
   Check,
+  CheckCircle2,
+  ChevronRight,
+  FileText,
+  Info,
   Loader2,
   LogOut,
+  Package,
   Phone,
+  Radio,
   RotateCcw,
+  ShieldCheck,
   Tractor,
   User,
+  UserCheck,
   WifiOff,
   Wrench,
-  Radio,
 } from "lucide-react";
 import { toast } from "sonner";
 import { actions, ago, FARMER_LABEL, resetDemo, STAFF_LABEL, useTB, type Repair, type RepairStatus, type Role } from "@/lib/tb-store";
 import { homeFor, refreshProfile, signOut, useAuth, type AppRole } from "@/lib/auth";
 import {
+  getNotificationCategory,
   getNotificationsForCurrentUser,
   markNotificationAsRead,
   markAllNotificationsAsRead,
+  type NotificationCategory,
   type NotificationRow,
 } from "@/lib/services/notifications";
 import { isDesignatedDemoAccount, resetDemoData } from "@/lib/services/demo";
@@ -36,6 +46,65 @@ import {
 } from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+
+function getCategoryBadgeConfig(category: NotificationCategory) {
+  switch (category) {
+    case "Breakdown":
+      return {
+        label: "Breakdown",
+        Icon: AlertTriangle,
+        badgeClass: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",
+      };
+    case "Quote":
+      return {
+        label: "Quote",
+        Icon: FileText,
+        badgeClass: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+      };
+    case "Parts":
+      return {
+        label: "Parts",
+        Icon: Package,
+        badgeClass: "border-purple-500/30 bg-purple-500/10 text-purple-700 dark:text-purple-400",
+      };
+    case "Testing":
+      return {
+        label: "Testing",
+        Icon: CheckCircle2,
+        badgeClass: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400",
+      };
+    case "Repair":
+      return {
+        label: "Repair",
+        Icon: Wrench,
+        badgeClass: "border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-400",
+      };
+    case "Account":
+      return {
+        label: "Account",
+        Icon: ShieldCheck,
+        badgeClass: "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+      };
+    case "Assignment":
+      return {
+        label: "Assignment",
+        Icon: UserCheck,
+        badgeClass: "border-teal-500/30 bg-teal-500/10 text-teal-700 dark:text-teal-400",
+      };
+    case "Alert":
+      return {
+        label: "Alert",
+        Icon: AlertCircle,
+        badgeClass: "border-destructive/30 bg-destructive/10 text-destructive",
+      };
+    default:
+      return {
+        label: "Notice",
+        Icon: Info,
+        badgeClass: "border-border bg-muted text-muted-foreground",
+      };
+  }
+}
 export { ImageLightbox, ClickableImage } from "./image-lightbox";
 export { formatEtaDateTime, toDateTimeLocalString, valueToDateTimeLocal, getEtaPresets } from "@/lib/date-utils";
 export { DateTimePicker } from "./date-time-picker";
@@ -202,18 +271,21 @@ export function Shell({ role, children, wide }: { role: Role; children: ReactNod
     };
   }, [open]);
 
-  // Task 5 / Phase 4.1.5: Real notifications for all authenticated roles
+  // Task 5 / Phase 4.1.5 & Phase 5.3: Real notifications for all authenticated roles
   const [notifications, setNotifications] = useState<NotificationRow[]>([]);
   const [loadingNotifs, setLoadingNotifs] = useState(false);
   const [notifError, setNotifError] = useState<string | null>(null);
+  const lastFetchedRef = useRef<number>(0);
 
   const fetchNotifications = useCallback(async () => {
     if (!userId) return;
     try {
       setLoadingNotifs(true);
       setNotifError(null);
-      const data = await getNotificationsForCurrentUser();
+      // Phase 5.3: Bounded notification query (limit 25) preserving newest entries
+      const data = await getNotificationsForCurrentUser({ limit: 25 });
       setNotifications(data);
+      lastFetchedRef.current = Date.now();
     } catch (err: any) {
       console.error("[TerraByte] Failed to load notifications:", err);
       setNotifError(err?.message || "Failed to load notifications");
@@ -223,7 +295,20 @@ export function Shell({ role, children, wide }: { role: Role; children: ReactNod
   }, [userId]);
 
   useEffect(() => {
-    if (!userId) return;
+    // Phase 5.3: Clear notification state immediately on user sign-out / null userId
+    if (!userId) {
+      setNotifications([]);
+      setNotifError(null);
+      setOpen(false);
+      lastFetchedRef.current = 0;
+      return;
+    }
+
+    // Phase 5.3: When switching to a new user, clear prior user's notifications immediately
+    // so previous user's alerts never display under new user
+    setNotifications([]);
+    setNotifError(null);
+    lastFetchedRef.current = 0;
 
     void fetchNotifications();
 
@@ -267,13 +352,9 @@ export function Shell({ role, children, wide }: { role: Role; children: ReactNod
     const nextOpen = !open;
     setOpen(nextOpen);
 
-    if (nextOpen && userId) {
-      try {
-        const fresh = await getNotificationsForCurrentUser();
-        setNotifications(fresh);
-      } catch (err: any) {
-        console.warn("[TerraByte] Failed to refresh notifications:", err);
-      }
+    // Phase 5.3: Avoid redundant duplicate fetch if notifications were fetched within the last 5 seconds
+    if (nextOpen && userId && Date.now() - lastFetchedRef.current > 5000) {
+      void fetchNotifications();
     }
   };
 
@@ -379,31 +460,49 @@ export function Shell({ role, children, wide }: { role: Role; children: ReactNod
                 )}
               </button>
               {open && (
-                <div className="absolute right-0 top-12 z-50 w-80 max-w-[90vw] overflow-hidden rounded-xl border border-border bg-popover shadow-xl">
-                  <div className="flex items-center justify-between border-b border-border px-4 py-2 text-sm font-semibold">
-                    <span>Notifications</span>
+                <div className="absolute right-0 top-12 z-50 w-80 sm:w-96 max-w-[92vw] overflow-hidden rounded-2xl border border-border bg-popover shadow-2xl">
+                  <div className="flex items-center justify-between border-b border-border bg-muted/40 px-4 py-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-foreground">Notifications</span>
+                      {unreadCount > 0 && (
+                        <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-bold text-primary">
+                          {unreadCount} unread
+                        </span>
+                      )}
+                    </div>
                     {unreadCount > 0 && (
                       <button
                         type="button"
                         onClick={handleMarkAllAsRead}
-                        className="text-xs font-normal text-primary hover:underline"
+                        className="text-xs font-medium text-primary hover:underline transition-colors"
                       >
                         Mark all as read
                       </button>
                     )}
                   </div>
-                  <div className="max-h-96 overflow-y-auto">
+                  <div className="max-h-96 overflow-y-auto divide-y divide-border/60">
                     {loadingNotifs && notifications.length === 0 && (
-                      <p className="p-4 text-sm text-muted-foreground">Loading notifications…</p>
+                      <div className="flex items-center justify-center gap-2 p-6 text-xs text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        <span>Loading notifications…</span>
+                      </div>
                     )}
                     {notifError && notifications.length === 0 && (
-                      <p className="p-4 text-sm text-destructive">{notifError}</p>
+                      <p className="p-4 text-xs text-destructive">{notifError}</p>
                     )}
                     {!loadingNotifs && !notifError && notifications.length === 0 && (
-                      <p className="p-4 text-sm text-muted-foreground">Nothing yet.</p>
+                      <div className="p-8 text-center">
+                        <div className="mx-auto mb-2 grid h-10 w-10 place-items-center rounded-full bg-muted text-muted-foreground">
+                          <Bell className="h-5 w-5 opacity-60" />
+                        </div>
+                        <p className="text-sm font-semibold text-foreground">No notifications</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">You're all caught up.</p>
+                      </div>
                     )}
                     {notifications.map((n) => {
                       const isActionable = Boolean(n.link_target);
+                      const category = getNotificationCategory(n.notification_text);
+                      const cat = getCategoryBadgeConfig(category);
                       return (
                         <div
                           key={n.id}
@@ -427,33 +526,51 @@ export function Shell({ role, children, wide }: { role: Role; children: ReactNod
                             }
                           }}
                           className={cn(
-                            "block w-full border-b border-border px-4 py-3 text-left text-sm last:border-0 transition-colors",
-                            isActionable
-                              ? "cursor-pointer hover:bg-muted"
-                              : "cursor-default bg-muted/20"
+                            "relative block w-full p-3.5 text-left transition-colors",
+                            isActionable ? "cursor-pointer hover:bg-muted/60" : "cursor-default",
+                            !n.is_read
+                              ? "bg-primary/[0.04]"
+                              : "bg-transparent opacity-85 hover:opacity-100"
                           )}
                         >
-                          <div className="flex items-start justify-between gap-2">
+                          <div className="mb-1.5 flex items-center justify-between gap-2">
                             <span
                               className={cn(
-                                "block",
-                                !n.is_read ? "font-semibold text-foreground" : "text-muted-foreground"
+                                "inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold tracking-wider uppercase",
+                                cat.badgeClass
                               )}
                             >
-                              {n.notification_text}
+                              <cat.Icon className="h-3 w-3" />
+                              {cat.label}
                             </span>
-                            {!n.is_read && (
-                              <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-destructive" />
-                            )}
-                          </div>
-                          <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
-                            <span>{ago(new Date(n.created_at).getTime())} ago</span>
-                            {!isActionable && (
-                              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                                System Notice
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+                                {ago(new Date(n.created_at).getTime())} ago
                               </span>
-                            )}
+                              {!n.is_read && (
+                                <span
+                                  className="h-2 w-2 shrink-0 rounded-full bg-primary ring-2 ring-primary/20"
+                                  title="Unread"
+                                />
+                              )}
+                            </div>
                           </div>
+                          <p
+                            className={cn(
+                              "text-xs leading-relaxed",
+                              !n.is_read
+                                ? "font-semibold text-foreground"
+                                : "font-normal text-muted-foreground"
+                            )}
+                          >
+                            {n.notification_text}
+                          </p>
+                          {isActionable && (
+                            <div className="mt-2 flex items-center gap-1 text-[11px] font-medium text-primary">
+                              <span>View details</span>
+                              <ChevronRight className="h-3 w-3" />
+                            </div>
+                          )}
                         </div>
                       );
                     })}

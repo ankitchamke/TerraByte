@@ -498,9 +498,9 @@ VALUES
   ),
   (
     'technician',
-    '00000000-0000-0000-0002-000000000002', -- Vikas Shinde
-    'Quote for TB-8902 sent to Suresh Jadhav',
-    '/technician/job/TB-8902',
+    '00000000-0000-0000-0002-000000000001', -- Ramesh Kumar
+    'Repair TB-8841 paused: waiting for Bosch injector nozzle (ETA tomorrow 9:30 AM)',
+    '/technician/job/TB-8841',
     true,
     NOW() - interval '70 minutes'
   ),

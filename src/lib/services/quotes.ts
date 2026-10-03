@@ -807,19 +807,19 @@ export async function rejectQuote(
       await createNotification({
         recipient_role: "technician",
         recipient_user_id: quote.technician_id,
-        notification_text: `Farmer requested changes to quote for repair ${repair.job_number}: ${notifSummary}`,
+        notification_text: `Farmer requested changes to quote for repair ${repair.job_number}: ${notifSummary.endsWith(".") ? notifSummary : `${notifSummary}.`}`,
         link_target: `/technician/job/${repair.id}`,
       });
     } else {
       await createNotification({
         recipient_role: "technician",
         recipient_user_id: quote.technician_id,
-        notification_text: `Quote rejected by farmer for repair ${repair.job_number}`,
+        notification_text: `Quote rejected by farmer for repair ${repair.job_number}.`,
         link_target: `/technician/job/${repair.id}`,
       });
       await createNotification({
         recipient_role: "admin",
-        notification_text: `Quote rejected by farmer for repair ${repair.job_number}`,
+        notification_text: `Quote rejected by farmer for repair ${repair.job_number}.`,
         link_target: `/admin/repair/${repair.id}`,
       });
     }

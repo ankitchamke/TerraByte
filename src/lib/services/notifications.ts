@@ -122,6 +122,7 @@ export function isActionableServiceCentreNotification(text: string): boolean {
     "ready for handover",
     "handover confirmation",
     "confirmed handover",
+    "saved to service history",
     "signed off",
   ];
   for (const pattern of chatterPatterns) {
@@ -142,8 +143,55 @@ export function isActionableServiceCentreNotification(text: string): boolean {
     "exception",
     "quote rejected by farmer",
     "rejected by farmer",
+    "new technician registration",
+    "technician registration",
+    "pending verification",
   ];
   return operationalPatterns.some((pattern) => t.includes(pattern));
+}
+
+export type NotificationCategory =
+  | "Breakdown"
+  | "Quote"
+  | "Parts"
+  | "Testing"
+  | "Repair"
+  | "Account"
+  | "Assignment"
+  | "Alert"
+  | "Notice";
+
+/**
+ * Derives a human-readable operational category for a notification based on its content.
+ * Used for visual pill badging and semantic icons in the notification bell popover.
+ */
+export function getNotificationCategory(text: string): NotificationCategory {
+  if (!text) return "Notice";
+  const t = text.toLowerCase();
+  if (t.includes("breakdown")) return "Breakdown";
+  if (t.includes("quote")) return "Quote";
+  if (t.includes("spare part") || t.includes("parts") || t.includes("eta")) return "Parts";
+  if (t.includes("testing") || t.includes("tested")) return "Testing";
+  if (
+    t.includes("approved by the service centre") ||
+    t.includes("technician registration") ||
+    t.includes("technician account") ||
+    t.includes("verification")
+  ) {
+    return "Account";
+  }
+  if (t.includes("assigned")) return "Assignment";
+  if (t.includes("cancelled") || t.includes("declined") || t.includes("rejected")) return "Alert";
+  if (
+    t.includes("repair") ||
+    t.includes("resumed") ||
+    t.includes("started repair") ||
+    t.includes("completed") ||
+    t.includes("service history")
+  ) {
+    return "Repair";
+  }
+  return "Notice";
 }
 
 /**
@@ -174,6 +222,9 @@ export async function getNotificationsForCurrentUser(
   // For non-admin, apply limit directly in SQL query
   if (options?.limit && options.limit > 0 && profile.role !== "admin") {
     query = query.limit(options.limit);
+  } else if (options?.limit && options.limit > 0 && profile.role === "admin") {
+    // For admin, bound query safely to allow chatter filtering without unbounded scans
+    query = query.limit(Math.max(options.limit * 4, 100));
   }
 
   const { data, error } = await query;

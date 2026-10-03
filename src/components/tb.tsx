@@ -1,6 +1,6 @@
 import { Link, useNavigate, useLocation } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Bell, Check, LogOut, Phone, RotateCcw, Tractor, WifiOff, Wrench, Radio } from "lucide-react";
+import { ArrowLeft, Bell, Check, LogOut, Phone, RotateCcw, Tractor, WifiOff, Wrench, Radio } from "lucide-react";
 import { actions, ago, FARMER_LABEL, resetDemo, STAFF_LABEL, useTB, type Repair, type RepairStatus, type Role } from "@/lib/tb-store";
 import { homeFor, signOut, useAuth, type AppRole } from "@/lib/auth";
 import {
@@ -260,6 +260,19 @@ export function Shell({ role, children, wide }: { role: Role; children: ReactNod
               <span className="block truncate text-xs text-muted-foreground">{who}</span>
             </span>
           </Link>
+          {typeof window !== "undefined" && sessionStorage.getItem("tb_demo_origin") === "home" && (
+            <button
+              type="button"
+              onClick={() => {
+                sessionStorage.removeItem("tb_demo_origin");
+                actions.logout();
+                void signOut().then(() => nav({ to: "/" }));
+              }}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1 text-xs font-semibold text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" /> Back to Home
+            </button>
+          )}
           <div className="ml-auto flex items-center gap-1">
             <div className="relative" ref={notifRef}>
               <button
@@ -359,7 +372,19 @@ export function Shell({ role, children, wide }: { role: Role; children: ReactNod
               )}
             </div>
             <button aria-label="Reset demo data" title="Reset demo data" onClick={() => { if (confirm("Reset all demo data?")) resetDemo(); }} className="grid h-11 w-11 place-items-center rounded-lg hover:bg-muted"><RotateCcw className="h-5 w-5" /></button>
-            <button aria-label="Sign out" title="Sign out" onClick={() => { actions.logout(); void signOut().then(() => nav({ to: "/login" })); }} className="grid h-11 w-11 place-items-center rounded-lg hover:bg-muted"><LogOut className="h-5 w-5" /></button>
+            <button
+              aria-label="Sign out"
+              title="Sign out"
+              onClick={() => {
+                const isDemoOrigin = typeof window !== "undefined" && sessionStorage.getItem("tb_demo_origin") === "home";
+                if (typeof window !== "undefined") sessionStorage.removeItem("tb_demo_origin");
+                actions.logout();
+                void signOut().then(() => nav({ to: isDemoOrigin ? "/" : "/login" }));
+              }}
+              className="grid h-11 w-11 place-items-center rounded-lg hover:bg-muted"
+            >
+              <LogOut className="h-5 w-5" />
+            </button>
           </div>
         </div>
       </header>

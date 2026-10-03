@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { ArrowRight } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AuthLayout, Field, FormError } from "@/components/auth-ui";
 import { homeFor, signOut, useAuth } from "@/lib/auth";
@@ -112,6 +112,12 @@ function Login() {
 
   return (
     <AuthLayout>
+      <Link
+        to="/"
+        className="mb-4 inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" /> Back to Home
+      </Link>
       <h2 className="font-display text-3xl font-bold">Sign in</h2>
       <p className="mt-1 text-muted-foreground">Farmers, technicians and service centre staff all sign in here.</p>
 

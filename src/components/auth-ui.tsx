@@ -8,7 +8,7 @@ export function AuthLayout({ children }: { children: ReactNode }) {
     <div className="grid min-h-screen lg:grid-cols-[1.1fr_1fr]">
       <div className="relative flex flex-col justify-between overflow-hidden bg-soil p-8 text-soil-foreground lg:p-14">
         <div className="pointer-events-none absolute inset-0 opacity-[0.07]" style={{ backgroundImage: "repeating-linear-gradient(115deg, currentColor 0 2px, transparent 2px 22px)" }} />
-        <Link to="/login" className="relative flex items-center gap-2">
+        <Link to="/" className="relative flex items-center gap-2 hover:opacity-90 transition-opacity">
           <span className="grid h-10 w-10 place-items-center rounded-lg bg-accent text-accent-foreground"><Tractor className="h-5 w-5" /></span>
           <span className="font-display text-2xl font-bold">TerraByte</span>
         </Link>

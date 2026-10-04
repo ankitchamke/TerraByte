@@ -143,6 +143,23 @@ This document specifies the verification criteria and test matrix for TerraByte.
 
 ---
 
+### Phase 5.6 — Handover & Completion Verification Suite
+
+| Test ID | Test Case | Target State / Persona | Action / Steps | Expected Result | Verification Method | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :---: |
+| **P5.6-01** | E2E Completion Lifecycle | Ramesh Kumar (`tech.nagpur@terrabyte.demo`) on canonical `TB-8841` | Resume parts (`WAITING_FOR_PARTS` $\rightarrow$ `IN_PROGRESS`), start testing (`TESTING`), complete repair | Status advances through lifecycle to `COMPLETED`; `is_testing` set to `false`; equipment restored to `Operational`. | E2E script & database verification | **PASS** |
+| **P5.6-02** | Technician Completion CTA & Sign-off Copy | Authenticated Technician on `/technician/job/:id` | Inspect completion action and modal | CTA displays `"Complete & sign off"`; modal states: *"Final sign-off on completed repair. This marks the equipment as Operational, saves the repair to permanent service history, and notifies the farmer and Service Centre."* No handover confusion. | Component & route audit | **PASS** |
+| **P5.6-03** | Admin Completion Notification | Nagpur Service Centre (`admin.nagpur@terrabyte.demo`) upon repair completion | Complete repair as technician; query admin notifications | Admin receives notification: *"Repair TB-8841 completed & verified by technician. Ready for review."* with category `Repair` and link `/admin/repair/:id`. | End-to-end notification verification | **PASS** |
+| **P5.6-04** | Farmer Completion Notification & View | Balasaheb Patil (`farmer.nagpur@terrabyte.demo`) upon completion | Inspect farmer notifications and repair hub | Farmer receives *"Repair TB-8841 has been completed and saved to service history."*; repair hub renders *"Repair Complete & Saved to Service History"* with link to machine logbook. | Manual & service verification | **PASS** |
+| **P5.6-05** | Service History Creation & Idempotency | Canonical completed repair `TB-8841` | Inspect `service_history` table after completion; verify idempotency guard | Immutable record created with invoice `INV-TB-8841`, itemized parts, labour, grand total ₹3,450; `createServiceHistoryFromRepair()` checks existing record; exactly 1 record created (0 duplicates). | Database query & service audit | **PASS** |
+| **P5.6-06** | Admin Dashboard: Completed Filter Separation | Service Centre Admin on `/admin` | Switch between `Active` queue and `Completed` tab | Completed repairs cleanly excluded from active operational queue and metrics; listed in dedicated `"Completed"` filter with live count and 1-click open link. | UI route verification | **PASS** |
+| **P5.6-07** | Admin Dashboard: Cancelled Filter Discoverability | Service Centre Admin on `/admin` | Switch to `Cancelled` tab | Cancelled repairs cleanly excluded from active queue; listed in dedicated `"Cancelled"` filter with live count, Job ID, machine, farmer, and 1-click open link. | UI route verification | **PASS** |
+| **P5.6-08** | Closed-State Controls on Admin Repair Detail | Service Centre Admin on `/admin/repair/:id` for COMPLETED / CANCELLED | Inspect detail page for closed repair | Reassignment and dispatch controls are hidden/disabled; prominent **Completion Details** card renders completion timestamp, test verification status, final work notes, and equipment status. | Route audit & DOM inspection | **PASS** |
+| **P5.6-09** | Farmer Testing Copy Refinement | Farmer on `/farmer/repair/:id` during testing | Inspect testing banner on repair hub | Banner reads: *"The technician is testing your machine under operational load as the final verification before completing the repair and saving it to service history."* Misleading "before handover" phrasing eliminated. | Component inspection | **PASS** |
+| **P5.6-10** | Demo Reset Baseline & Isolation | Admin executes `resetDemoData()` | Reset demo environment; verify canonical fixtures and real users | `TB-8841` restores to `WAITING_FOR_PARTS` (`completion_details: null`, equipment `In Repair`); `TB-8902` $\rightarrow$ `QUOTE_PENDING`; `TB-8898` $\rightarrow$ `REQUESTED`; `TB-4489` $\rightarrow$ `QUOTE_REVISED` (Quote v1 intact); real user Ankit Chamke (`TB-4545` and 16 repairs) completely untouched. | Reset execution & DB verification | **PASS** |
+
+---
+
 ## 6. Planned Domain Verification Tests (Phases 3–8)
 
 The following domain tests are scheduled as the relational schema and storage are connected in subsequent phases:

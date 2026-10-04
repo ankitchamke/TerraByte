@@ -80,13 +80,13 @@ TerraByte strictly adheres to a native Supabase Auth architecture:
 - **T-REQ-03 (On-Site Job Workbench)**: Access farmer contact details, field location, and issue notes.
 - **T-REQ-04 (Itemized Quote Formulator)**: Formulate quotes with line-item parts (name, specification, quantity, unit price, distributor source), labour description/charge, and expected completion time.
 - **T-REQ-05 (Parts Hold Mechanism)**: Place a job in `WAITING_FOR_PARTS` status by specifying the missing part, procurement vendor/delay reason, and revised delivery schedule.
-- **T-REQ-06 (Testing Run & Sign-Off)**: Advance repair to `IN_PROGRESS (Testing)` upon mechanical fix, perform field test run, record final completion notes/photos, and mark job as `COMPLETED`.
+- **T-REQ-06 (Testing Run & Sign-Off)**: Advance repair to `IN_PROGRESS (Testing)` upon mechanical fix, perform field test run under operational load, record final completion notes, and execute "Complete & sign off", auto-generating permanent service record, restoring equipment to Operational, and notifying farmer and Service Centre.
 - **T-REQ-07 (Technician Profile Management)**: Maintain workshop name, brands serviced, technical skills, and live availability status.
 
 ### 4.4 Service Centre / Admin Requirements
 
-- **A-REQ-01 (Operations Dispatch Board)**: Central overview of active repairs across the district, highlighting unassigned breakdowns, active repairs, and stalled jobs.
-- **A-REQ-02 (Triage & Manual Assignment)**: Inspect new breakdown tickets and assign them to optimal technicians based on brand/skill match scoring.
+- **A-REQ-01 (Operations Dispatch Board)**: Central overview of repair pipeline across the district, highlighting active repairs, exceptions, with dedicated Completed and Cancelled tabs isolating closed records from active operational triage.
+- **A-REQ-02 (Triage & Manual Assignment)**: Inspect new breakdown tickets and assign them to optimal technicians based on brand/skill match scoring; suppress reassignment when repairs are closed.
 - **A-REQ-03 (Parts Procurement Oversight)**: Track jobs on `WAITING_FOR_PARTS` hold, assisting rural workshops with taluka/district distributor fulfillment.
 - **A-REQ-04 (Technician Verification Portal)**: Review registered technician workshop credentials, contact details, and approve (`is_verified = true`) or revoke account access.
 - **A-REQ-05 (Fleet Management & Audit)**: Maintain registry of regional farm equipment and review historical service records.
@@ -118,7 +118,7 @@ stateDiagram-v2
     WAITING_FOR_PARTS --> CANCELLATION_REQUESTED: Farmer requests cancellation
     CANCELLATION_REQUESTED --> CANCELLED: Admin approves cancellation
     CANCELLATION_REQUESTED --> ACCEPTED: Admin rejects cancellation (reverts to previous status)
-    COMPLETED --> [*]: Service record committed
+    COMPLETED --> [*]: Service record committed, Equipment Operational, Farmer & Admin notified
 ```
 
 | Step | State (`repair_status`) | Action Trigger / Actor | Semantic Farmer Visibility |
@@ -127,11 +127,11 @@ stateDiagram-v2
 | **1b** | `REQUESTED` (request dispatched) | Farmer submits tech request | **Active Repair** · *"Finding Your Technician"* |
 | **2** | `ACCEPTED` | Technician accepts ticket | **Active Repair** · *"Technician Assigned"* |
 | **3** | `QUOTE_PENDING` | Technician compiles quote | **Action Needed** · *"Quote Ready"* |
-| **4** | `QUOTE_REVISED` | Farmer requests revision | **Action Needed** · *"Revised Quote"* |
+| **4** | `QUOTE_REVISED` | Farmer requests revision | **Action Needed** · *"Revised Quote Ready"* |
 | **5** | `IN_PROGRESS` | Farmer approves quote | **Active Repair** · *"Repair in Progress"* |
 | **--**| `WAITING_FOR_PARTS` | Technician logs missing part delay | **Paused** · *"Waiting for Parts"* |
-| **6** | `IN_PROGRESS (Testing)` | Technician verifies fix under load | **Active Repair** · *"Testing Your Machine"* |
-| **7** | `COMPLETED` | Technician signs off; Farmer verifies | **Service History** · *"Repaired & Verified"* |
+| **6** | `IN_PROGRESS (Testing)` | Technician verifies fix under load | **Active Repair** · *"Testing in Progress"* |
+| **7** | `COMPLETED` | Technician completes & signs off | **Service History** · *"Repair Complete & Saved to Service History"* |
 | **--**| `CANCELLATION_REQUESTED` | Farmer submits cancellation on assigned ticket | **Under Review** · *"Cancellation Pending Review"* |
 | **--**| `CANCELLED` | Immediate (if unassigned) or Admin approved | **Closed** · *"Repair Cancelled"* |
 

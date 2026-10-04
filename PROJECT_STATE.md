@@ -2,12 +2,14 @@
 
 ## 1. Current Phase
 
-- **Current Phase**: **PHASE 5.5 — IN PROGRESS** (Communication & Quote Revision Workflow)
-  - **Step 1 — Database Foundation & Canonical Demo Fixture Completion**: **COMPLETE** (Forward migration `20261005100000_phase5_5_communication_foundation.sql` deployed and verified; canonical Quote v1 fixture for `TB-4489` added to `public.reset_demo_data()` with ₹2,800 itemized breakdown; `public.repair_messages` table created with performance indexes, anti-spoofing RLS, realtime publication, and disposable demo message cleanup)
-  - **Step 2 — Ticket-Scoped Messaging Service Layer & State Machine**: **COMPLETE** (`src/lib/services/repair-messages.ts` and `src/lib/services/quotes.ts` enhanced with version diffing, chronological quote retrieval, counter-part validation, and action ownership helpers)
-  - **Step 3 — Quote Revision UX, Comparison & Farmer–Technician Communication**: **COMPLETE** (`<QuoteComparison />` component built with line item diffs and preserved callouts; `<RepairChat />` real-time ticket discussion thread built and embedded in technician, farmer, and admin repair routes; technician job route QuoteBuilder updated with universal explanation and Quote v1 card; farmer repair hub updated with waiting state and revised quote review; admin exception copy corrected; zero build errors)
-  - **Step 4 — Final Verification & Review**: IN PROGRESS
-- **Previous Completed Phase**: **PHASE 5.4 — COMPLETE** (Cancellation Approval Workflow — Baseline Commit `d39d821`)
+- **Current Phase**: **PHASE 5 — COMPLETE** (All Subphases 5.1 through 5.6 Verified & Closed)
+  - **Phase 5.1 — Product Polish & Account Lifecycle**: **COMPLETE** (Commit `a6ff2de`)
+  - **Phase 5.2 — Demo & Data Hygiene**: **COMPLETE**
+  - **Phase 5.3 — Notification & Product Communication Polish**: **COMPLETE**
+  - **Phase 5.4 — Cancellation Approval Workflow**: **COMPLETE** (Commit `d39d821`)
+  - **Phase 5.5 — Communication & Quote Revision Workflow**: **COMPLETE** (Ticket-scoped messaging, Quote v1/v2 comparison, canonical `TB-4489` Quote v1 fixture)
+  - **Phase 5.6 — Handover & Completion Polish**: **COMPLETE** (Admin completion notification, completed/cancelled dashboard separation, closed-state controls, technician "Complete & sign off", farmer copy alignment, end-to-end verification on canonical `TB-8841`, clean demo reset)
+- **Next Phase**: **PHASE 6 — Assistive Multimodal Diagnostics / Production Polish** (Note: Phase 7 remains reserved for broader realtime/session synchronization and production hardening)
 - **Branch**: `phase-5` (connected to Lovable; no destructive Git history operations)
 
 ---
@@ -57,12 +59,12 @@ TerraByte is an end-to-end digital agricultural equipment repair ecosystem desig
   - **Technician Work-Hold UI & Cancellation Awareness**: Enhanced technician dashboard (`src/routes/technician/index.tsx`) with an isolated `"On hold · Cancellation pending"` section, amber hold styling, animated pulse dot, and reason preview, preventing jobs under cancellation review from appearing as normal actionable jobs. Added a prominent **Cancellation Request Under Review** work-hold banner on `/technician/job/:id` detailing reason, note, timestamp, previous status, and work-hold instructions while locking active progression actions (quotes, parts, testing, completion). Added a dedicated **Repair Cancelled** closed banner with admin resolution notes, and an informative **Cancellation Request Declined · Work Resumed** notice when previous status is restored, maintaining full context and assignment history.
   - **Type Synchronization**: Synchronized TypeScript definitions in `src/integrations/supabase/types.ts`, `src/lib/tb-store.ts`, `src/components/tb.tsx`, and `src/lib/services/repair-requests.ts`.
 
-- **Phase 5.5 — Communication & Quote Revision Workflow**: **IN PROGRESS** (Step 1 Implemented)
+- **Phase 5.5 — Communication & Quote Revision Workflow**: **COMPLETE** (Steps 1–4 Complete & Verified)
   - **Step 1 — Database Foundation & Canonical Demo Fixture Completion**: **COMPLETE**
     - Created forward migration `supabase/migrations/20261005100000_phase5_5_communication_foundation.sql`.
     - Added `public.repair_messages` table for ticket-scoped farmer/technician/admin messaging with `id`, `repair_request_id`, `sender_id`, `recipient_id`, `message_text`, `created_at`, and `is_read`.
     - Configured performance indexes on `(repair_request_id, created_at ASC)` and partial index on `(recipient_id, is_read) WHERE is_read = false`.
-    - Hardened RLS policies for `repair_messages`: SELECT for ticket participants and admins, INSERT with strict caller anti-spoofing (`sender_id = current_profile_id()`) and ticket participation validation, UPDATE strictly for recipient read receipts, and DELETE restricted to administrative moderation.
+    - Hardened RLS policies for `repair_messages`: SELECT for ticket participants and admins, INSERT with caller anti-spoofing (`sender_id = current_profile_id()`) and ticket participation validation, UPDATE strictly for recipient read receipts, and DELETE restricted to administrative moderation.
     - Added idempotent Supabase Realtime publication hook for `public.repair_messages`.
     - Updated `public.reset_demo_data()` to clean disposable test messages and extra test quotes while leaving real user records untouched, and restored canonical Quote v1 fixture for `TB-4489` (status `REVISED`, total ₹2,800: Rotavator seal kit ₹1,400 + EP-90 Gearbox Oil ₹600 + Labour ₹800).
     - Synchronized TypeScript definitions in `src/integrations/supabase/types.ts`.
@@ -70,12 +72,37 @@ TerraByte is an end-to-end digital agricultural equipment repair ecosystem desig
     - Created `src/lib/services/repair-messages.ts` supporting `getRepairMessages()`, `sendRepairMessage()`, `markMessagesAsRead()`, and `getUnreadMessageCount()` with anti-spoofing validation, bounded text limits, counterpart verification, and recipient notifications.
     - Fixed `reviseQuote()` in `src/lib/services/quotes.ts` to strictly preserve the farmer's original `clarification_note` on `repair_requests` while storing technician explanations separately in `repair_timeline` audit events.
     - Added `QuoteVersionDetail` and `getQuoteVersions()` to retrieve historical quote versions with line items, totals, timestamps, farmer revision requests, and technician revision explanations across all supported revision reasons.
-    - Added `compareQuoteVersions()` pure diff calculation helper for future multi-version UI comparison.
+    - Added `compareQuoteVersions()` pure diff calculation helper for multi-version UI comparison.
     - Added `getRepairActionOwnership()` in `src/lib/services/repair-requests.ts` accurately modeling `QUOTE_REVISED` as technician action required and farmer waiting.
     - Corrected inverted `FARMER_LABEL.QUOTE_REVISED` in `src/lib/tb-store.ts` to `"Revision Requested · Awaiting Technician"` and `STAFF_LABEL.QUOTE_REVISED` to `"Quote revision requested"`.
-  - **Step 3 — Farmer–Technician Communication UI & Notification Wiring**: PENDING
-  - **Step 4 — Quote Revision Flow & Version Comparison UI**: PENDING
-  - **Step 5 — End-to-End Verification**: PENDING
+  - **Step 3 — Quote Revision UX, Comparison & Ticket-Scoped Communication**: **COMPLETE**
+    - Built `<QuoteComparison />` component (`src/components/quote-comparison.tsx`) rendering summary KPI diff cards, line-by-line item changes (`+ Added`, `- Removed`, `Modified`, `Unchanged`), and distinct farmer revision request / technician explanation callout boxes.
+    - Built `<RepairChat />` ticket communication component (`src/components/repair-chat.tsx`) with real-time Supabase Realtime channel, automatic read receipts, role badges (`Farmer`, `Tech`, `Service Centre`), and bounded composer.
+    - Integrated `<QuoteComparison />` and `<RepairChat />` across technician job route (`src/routes/technician/job/$id.tsx`), farmer repair hub (`src/routes/farmer/repair/$id.tsx`), and admin repair detail (`src/routes/admin/repair/$id.tsx`).
+    - Made technician explanation input universal across all revision reasons; displayed Quote v1 card in technician QuoteBuilder during revision.
+    - Replaced outdated exception text on `/admin` and `/admin/repair/:id` with accurate quote revision workflow copy.
+  - **Step 4 — Final Verification & Review**: **COMPLETE** (Verification suite P5.5-01 through P5.5-14 passed).
+
+- **Phase 5.6 — Handover & Completion Polish**: **COMPLETE** (Steps 1–5 Complete & Verified)
+  - **Step 1 — Lifecycle Audit**: Comprehensive audit established canonical completion lifecycle: `IN_PROGRESS` $\rightarrow$ `TESTING` $\rightarrow$ `COMPLETED` $\rightarrow$ Permanent Service History. Identified absence of a persisted `HANDOVER_PENDING` state and mapped all terminology, notifications, and controls.
+  - **Step 2 — Service Layer & Admin Completion Notification**:
+    - Updated `completeRepair()` in `src/lib/services/repair-requests.ts` to dispatch an actionable notification to Service Centre admins (*"Repair TB-xxxx completed & verified by technician. Ready for review."*, link `/admin/repair/:id`, category `Repair`).
+    - Updated `getNotificationCategory()` in `src/lib/services/notifications.ts` to map completion notices with `"completed & verified"` to category `Repair`.
+    - Idempotency verified: `createServiceHistoryFromRepair()` checks for existing record and produces exactly 0 duplicates.
+  - **Step 3 — Admin Workbench & Dashboard Completion Polish**:
+    - Enhanced Service Centre operations dashboard (`src/routes/admin/index.tsx`) with dedicated `"Completed"` and `"Cancelled"` filter tabs, listing closed jobs while excluding them from active operational queue and metrics.
+    - Enhanced Admin repair detail (`src/routes/admin/repair/$id.tsx`): rendered dedicated **Completion Details** card displaying completion timestamp, testing verification status, final work notes, and equipment status.
+    - Suppressed/hid all technician reassignment and dispatch controls when repair status is `COMPLETED` or `CANCELLED`.
+  - **Step 4 — Technician + Farmer Completion UX**:
+    - Technician CTA renamed from *"Complete & hand over"* to *"Complete & sign off"*.
+    - Updated technician completion modal to clarify that sign-off saves the repair to permanent service history and marks equipment `Operational`.
+    - Farmer repair hub testing copy refined to clarify that testing under operational load is the final verification before completing the repair and saving it to service history, eliminating misleading "before handover" phrasing.
+  - **Step 5 — Final End-to-End Verification & Phase 5 Closeout**:
+    - Executed live completion lifecycle on canonical demo repair `TB-8841` (`WAITING_FOR_PARTS` $\rightarrow$ `IN_PROGRESS` $\rightarrow$ `TESTING` $\rightarrow$ `COMPLETED`).
+    - Verified technician CTA `"Complete & sign off"`, equipment transition to `Operational`, creation of immutable `service_history` record (`INV-TB-8841`), farmer notification, and admin notification (*"Repair TB-8841 completed & verified by technician. Ready for review."*).
+    - Reset demo baseline via `resetDemoData()` as admin: verified pristine restoration of `TB-8841` (`WAITING_FOR_PARTS`, `completion_details: null`, equipment `In Repair`), `TB-8902` (`QUOTE_PENDING`), `TB-8898` (`REQUESTED`), `TB-4489` (`QUOTE_REVISED`).
+    - Verified `TB-4489` Quote v1 fixture intact; real user account Ankit Chamke (`TB-4545` and 16 repairs) completely isolated and untouched.
+    - Static audit, regression audit (5.1–5.6), and `npm run build` all passed cleanly.
 
 ### Current Discovered Issues Under Remediation
 
@@ -109,8 +136,8 @@ TerraByte is an end-to-end digital agricultural equipment repair ecosystem desig
 
 ### Checkpoint Status
 
-- The five core architecture documents (`PROJECT_STATE.md`, `IMPLEMENTATION_PLAN.md`, `APP_FLOW.md`, `TESTING.md`, `TRD.md`) are synchronized at this Phase 5.4 Step 5 checkpoint.
-- **Phase 5.4 is IN PROGRESS**. Steps 1 through 5 are implemented and verified with clean builds (`npm run build`). Verification tests `P5.4-01` through `P5.4-30` are fully verified.
+- The five core architecture documents (`PROJECT_STATE.md`, `IMPLEMENTATION_PLAN.md`, `APP_FLOW.md`, `TESTING.md`, `TRD.md`) are synchronized at this Phase 5.6 Step 5 checkpoint.
+- **PHASE 5 IS COMPLETE**. Subphases 5.1 through 5.6 are fully implemented and verified with clean builds (`npm run build`). All verification suites are complete and passing.
 - Working tree is verified on branch `phase-5`.
 
 ---

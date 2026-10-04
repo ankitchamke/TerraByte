@@ -32,12 +32,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ago, STAFF_LABEL, useTB, type Quote, type Repair } from "@/lib/tb-store";
+import { ago, inr, quoteTotals, STAFF_LABEL, useTB, type Quote, type Repair } from "@/lib/tb-store";
 import { useAuth } from "@/lib/auth";
 import type { Assessment } from "@/lib/assessment";
 import { meta } from "@/lib/seo";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
+import {
+  getServiceHistoryForRepair,
+  type ServiceHistoryRow,
+} from "@/lib/services/service-history";
 import {
   approveCancellation,
   cancelRepairRequest,
@@ -186,6 +190,7 @@ function AdminRepair() {
   const [quotes, setQuotes] = useState<QuoteDetail[]>([]);
   const [quoteVersions, setQuoteVersions] = useState<QuoteVersionDetail[]>([]);
   const [techMatches, setTechMatches] = useState<ScoredTechnicianMatch[]>([]);
+  const [serviceRecord, setServiceRecord] = useState<ServiceHistoryRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [eta, setEta] = useState("");
@@ -223,16 +228,20 @@ function AdminRepair() {
           setEta(ph["eta"] || "");
         }
 
-        // Concurrently fetch quotes, quote versions, and eligible technicians
-        const [quotesData, eligibleData, versionsData] = await Promise.all([
+        // Concurrently fetch quotes, quote versions, eligible technicians, and service history (if completed)
+        const [quotesData, eligibleData, versionsData, shData] = await Promise.all([
           getQuotesForRepair(realRepair.id).catch(() => []),
           getEligibleTechnicians(realRepair.id).catch(() => []),
           getQuoteVersions(realRepair.id).catch(() => []),
+          realRepair.status === "COMPLETED"
+            ? getServiceHistoryForRepair(realRepair.id).catch(() => null)
+            : Promise.resolve(null),
         ]);
 
         setQuotes(quotesData);
         setQuoteVersions(versionsData);
         setTechMatches(eligibleData);
+        setServiceRecord(shData);
         return;
       }
 
@@ -240,6 +249,30 @@ function AdminRepair() {
       const mockRepair = s.repairs.find((x) => x.id === id || (x as any).jobNumber === id);
       if (mockRepair) {
         setEta(mockRepair.parts?.eta ?? "");
+        const mockSh = s.service.find((x) => x.repairId === id || x.repairId === mockRepair.id);
+        if (mockSh) {
+          setServiceRecord({
+            id: mockSh.id,
+            equipment_id: mockSh.equipmentId,
+            repair_request_id: mockSh.repairId || mockRepair.id,
+            service_date: new Date(mockSh.date).toISOString(),
+            operating_hours: mockSh.hours,
+            service_type: mockSh.type,
+            issue_description: mockSh.issue,
+            parts_replaced: mockSh.parts,
+            labour_cost: mockSh.labour,
+            total_cost: mockSh.total,
+            technician_name: mockSh.technician,
+            workshop_name: mockSh.workshop,
+            technician_notes: mockSh.notes,
+            maintenance_advice: mockSh.advice,
+            downtime_hours: mockSh.downtimeH,
+            invoice_reference: mockSh.invoice,
+            created_at: new Date(mockSh.date).toISOString(),
+          });
+        } else {
+          setServiceRecord(null);
+        }
         return;
       }
 
@@ -250,7 +283,7 @@ function AdminRepair() {
     } finally {
       setLoading(false);
     }
-  }, [id, s.repairs]);
+  }, [id, s.repairs, s.service]);
 
   useEffect(() => {
     void loadData();
@@ -348,6 +381,39 @@ function AdminRepair() {
   const viewQuote: Quote | undefined = isReal
     ? (activeQuote ? toQuoteView(activeQuote) : undefined)
     : mockR?.quote;
+
+  // Completion details extraction
+  const completionDetails = isReal
+    ? (r.completion_details as {
+        notes?: string;
+        photo?: string | null;
+        photo_url?: string | null;
+        tested?: boolean;
+        completed_at?: string;
+      } | null)
+    : mockR?.completion
+    ? {
+        notes: mockR.completion.notes,
+        photo: mockR.completion.photo || null,
+        photo_url: mockR.completion.photo || null,
+        tested: true,
+        completed_at: new Date(mockR.completion.at).toISOString(),
+      }
+    : null;
+
+  const completionNotes = completionDetails?.notes;
+  const completionProofPhoto = completionDetails?.photo_url || completionDetails?.photo;
+  const completionTested = completionDetails?.tested ?? (status === "COMPLETED");
+  const completionAt = completionDetails?.completed_at || (status === "COMPLETED" ? statusSince : null);
+
+  const partsReplacedList: string[] =
+    serviceRecord?.parts_replaced &&
+    Array.isArray(serviceRecord.parts_replaced) &&
+    serviceRecord.parts_replaced.length > 0
+      ? (serviceRecord.parts_replaced as string[])
+      : viewQuote?.parts
+      ? viewQuote.parts.map((p) => (p.qty > 1 ? `${p.name} ×${p.qty}` : p.name))
+      : [];
 
   // Parts Hold
   const partsHold = isReal
@@ -677,6 +743,116 @@ function AdminRepair() {
         </section>
       )}
 
+      {status === "COMPLETED" && (
+        <section className="overflow-hidden rounded-2xl border-2 border-success bg-card shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-success px-5 py-3.5 font-display text-lg font-bold text-success-foreground">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-5 w-5 shrink-0" />
+              <span>Repair Completed & Verified</span>
+            </div>
+            <span className="rounded-full bg-success-foreground/15 px-2.5 py-0.5 text-xs font-mono font-semibold text-success-foreground">
+              Equipment Operational
+            </span>
+          </div>
+
+          <div className="space-y-4 p-5">
+            <p className="text-sm text-foreground">
+              Work on this repair ticket has been finalized, tested under operational load, and signed off by the technician. Machinery has been returned to operational status and recorded in permanent service history.
+            </p>
+
+            {/* Proof Photo (if present) */}
+            {completionProofPhoto && (
+              <div>
+                <Label>Completion Verification Photo</Label>
+                <div className="mt-1">
+                  <ClickableImage
+                    src={completionProofPhoto}
+                    alt="Completion verification photo"
+                    className="max-h-64 w-full max-w-md rounded-xl border border-border shadow-xs"
+                    thumbnailClassName="max-h-64 w-full max-w-md object-cover rounded-xl"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="grid gap-4 rounded-xl border border-success/30 bg-success/5 p-4 sm:grid-cols-2 text-sm">
+              <div>
+                <Label>Work Notes</Label>
+                <p className="text-foreground font-medium whitespace-pre-wrap">
+                  {completionNotes || "Repairs finalized and verified."}
+                </p>
+              </div>
+
+              <div>
+                <Label>Operational Testing</Label>
+                <p className="flex items-center gap-1.5 font-semibold text-success">
+                  <CheckCircle2 className="h-4 w-4 shrink-0" />
+                  {completionTested ? "Tested under operational load (Passed)" : "Verified & operational"}
+                </p>
+              </div>
+
+              <div>
+                <Label>Completion Timestamp</Label>
+                <p className="font-semibold text-foreground">
+                  {completionAt ? formatActivityDate(completionAt) : ago(new Date(statusSince).getTime()) + " ago"}
+                </p>
+              </div>
+
+              <div>
+                <Label>Signing Technician</Label>
+                <p className="font-medium text-foreground">
+                  {technicianName ? (
+                    <span>{technicianName}</span>
+                  ) : (
+                    <span className="text-muted-foreground italic">Authorized Technician</span>
+                  )}
+                </p>
+              </div>
+
+              <div>
+                <Label>Invoice Reference</Label>
+                <p className="font-mono font-bold text-foreground">
+                  {serviceRecord?.invoice_reference || `INV-${jobNumber}`}
+                </p>
+              </div>
+
+              <div>
+                <Label>Labour & Total Amount</Label>
+                <p className="font-semibold text-foreground">
+                  Labour: {inr(serviceRecord?.labour_cost ?? viewQuote?.labour ?? 0)} · Total:{" "}
+                  <span className="font-display text-base font-bold text-foreground">
+                    {inr(serviceRecord?.total_cost ?? (viewQuote ? quoteTotals(viewQuote).total : 0))}
+                  </span>
+                </p>
+              </div>
+
+              {partsReplacedList.length > 0 && (
+                <div className="sm:col-span-2 pt-2 border-t border-success/20">
+                  <Label>Parts Replaced</Label>
+                  <p className="text-foreground font-medium">
+                    {partsReplacedList.join(", ")}
+                  </p>
+                </div>
+              )}
+
+              <div className="sm:col-span-2 pt-2 border-t border-success/20 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <Label>Permanent Service History</Label>
+                  <p className="font-mono text-xs text-muted-foreground">
+                    {serviceRecord?.id
+                      ? `Record ID: ${serviceRecord.id}`
+                      : "Permanent equipment service record recorded upon completion."}
+                  </p>
+                </div>
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-success">
+                  <CheckCircle2 className="h-3.5 w-3.5" /> Immutable record locked
+                </span>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
       {isReal && r.cancellation_admin_response && status !== "CANCELLED" && status !== "CANCELLATION_REQUESTED" && (
         <div className="rounded-xl border border-info/30 bg-info/10 p-4 text-sm space-y-1">
           <p className="font-semibold text-info flex items-center gap-1.5">
@@ -710,7 +886,7 @@ function AdminRepair() {
             </p>
           )}
         </div>
-      ) : od ? (
+      ) : status !== "COMPLETED" && status !== "CANCELLED" && od ? (
         <p className="flex items-center gap-2 rounded-xl border-2 border-destructive bg-destructive/5 p-3 font-semibold text-destructive">
           <AlertOctagon className="h-5 w-5 shrink-0" /> Exception: in "{status.toLowerCase().replace(/_/g, " ")}" for{" "}
           {ago(new Date(statusSince).getTime())} — intervene.
@@ -720,58 +896,60 @@ function AdminRepair() {
       <div className="grid gap-5 lg:grid-cols-[1.3fr_1fr]">
         <div className="space-y-5">
           {/* Dispatch / Reassignment */}
-          <Card>
-            <h2 className="mb-3 text-lg font-bold">
-              {technicianName ? "Reassign technician" : "Dispatch technician"}
-            </h2>
-            <p className="mb-3 text-sm">
-              Current: <b>{technicianName ?? "Unassigned"}</b>
-              {isReal && r.declined_by && r.declined_by.length > 0 && (
-                <span className="text-muted-foreground">
-                  {" "}· declined by {r.declined_by.length} {r.declined_by.length === 1 ? "technician" : "technicians"}
-                </span>
-              )}
-            </p>
+          {status !== "COMPLETED" && status !== "CANCELLED" && (
+            <Card>
+              <h2 className="mb-3 text-lg font-bold">
+                {technicianName ? "Reassign technician" : "Dispatch technician"}
+              </h2>
+              <p className="mb-3 text-sm">
+                Current: <b>{technicianName ?? "Unassigned"}</b>
+                {isReal && r.declined_by && r.declined_by.length > 0 && (
+                  <span className="text-muted-foreground">
+                    {" "}· declined by {r.declined_by.length} {r.declined_by.length === 1 ? "technician" : "technicians"}
+                  </span>
+                )}
+              </p>
 
-            <div className="space-y-2">
-              {techMatches.length > 0 ? (
-                techMatches
-                  .filter((m) => m.technician.profile_id !== r.technician_id)
-                  .map((m) => (
-                    <div
-                      key={m.technician.profile_id}
-                      className="flex items-center gap-3 rounded-xl border border-border p-3"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="font-semibold">
-                          {m.technician.profile?.full_name}{" "}
-                          <span className="font-mono text-xs text-muted-foreground">score {m.score}</span>
-                        </p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {m.reasons.join(" · ") || "Verified technician"} ·{" "}
-                          {m.technician.profile?.village || "Nagpur"} · ~{m.technician.eta_minutes ?? 45} min
-                        </p>
-                      </div>
-                      <button
-                        disabled={assigning === m.technician.profile_id}
-                        onClick={() =>
-                          void handleAssign(m.technician.profile_id, m.technician.profile?.full_name || "technician")
-                        }
-                        className="h-10 shrink-0 rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              <div className="space-y-2">
+                {techMatches.length > 0 ? (
+                  techMatches
+                    .filter((m) => m.technician.profile_id !== r.technician_id)
+                    .map((m) => (
+                      <div
+                        key={m.technician.profile_id}
+                        className="flex items-center gap-3 rounded-xl border border-border p-3"
                       >
-                        {assigning === m.technician.profile_id ? "Assigning…" : "Assign"}
-                      </button>
-                    </div>
-                  ))
-              ) : (
-                <p className="text-sm text-muted-foreground italic py-1">
-                  {status === "REQUESTED"
-                    ? "Searching for eligible verified technicians in district…"
-                    : "Technician assigned."}
-                </p>
-              )}
-            </div>
-          </Card>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold">
+                            {m.technician.profile?.full_name}{" "}
+                            <span className="font-mono text-xs text-muted-foreground">score {m.score}</span>
+                          </p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {m.reasons.join(" · ") || "Verified technician"} ·{" "}
+                            {m.technician.profile?.village || "Nagpur"} · ~{m.technician.eta_minutes ?? 45} min
+                          </p>
+                        </div>
+                        <button
+                          disabled={assigning === m.technician.profile_id}
+                          onClick={() =>
+                            void handleAssign(m.technician.profile_id, m.technician.profile?.full_name || "technician")
+                          }
+                          className="h-10 shrink-0 rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                        >
+                          {assigning === m.technician.profile_id ? "Assigning…" : "Assign"}
+                        </button>
+                      </div>
+                    ))
+                ) : (
+                  <p className="text-sm text-muted-foreground italic py-1">
+                    {status === "REQUESTED"
+                      ? "Searching for eligible verified technicians in district…"
+                      : "Technician assigned."}
+                  </p>
+                )}
+              </div>
+            </Card>
+          )}
 
           {/* Parts Blocker Card */}
           {partsHold && status === "WAITING_FOR_PARTS" && (

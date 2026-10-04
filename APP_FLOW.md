@@ -105,12 +105,14 @@ flowchart TD
 4. If parts are missing (`WAITING_FOR_PARTS`):
    - Displays warning pill with missing part details and updated arrival ETA.
 5. When technician completes testing and finalizes repair (`COMPLETED`):
+   - Technician performs final test run under operational load and taps **"Complete & sign off"**.
    - Machinery status is updated to `Operational`.
-   - Permanent service history record is automatically generated in `service_history` bound to equipment ID.
+   - Permanent service history record is automatically generated in `service_history` bound to equipment ID (idempotent; 0 duplicates).
    - Farmer receives notification: *"Repair TB-xxxx has been completed and saved to service history."*
+   - Service Centre admin receives actionable notification: *"Repair TB-xxxx completed & verified by technician. Ready for review."* (category `Repair`, link `/admin/repair/:id`).
    - Farmer repair detail displays *"Repair Complete & Saved to Service History"* with completed work notes, parts replaced, final amount, and link to permanent machine logbook.
-   - Technician workbench displays *"Repair completed and recorded in equipment service history."*
-   - Admin command displays *"Repair complete & saved to service history."*
+   - Technician workbench displays *"Repair completed and recorded in equipment service history."* with no further operational actions offered.
+   - Admin workbench displays **Completion Details** card and hides reassignment actions.
    - Contradictory claims of pending handover confirmation are eliminated.
 
 ---
@@ -208,7 +210,7 @@ flowchart TD
    - Performs on-site diagnostics and submits itemized quotes.
    - Puts job on `WAITING_FOR_PARTS` when components are held at taluka distributors.
    - Respects governed work-hold states (`CANCELLATION_REQUESTED`) with locked progression controls when farmer requests cancellation.
-   - Conducts field load testing and records permanent maintenance notes before completing ticket.
+    - Conducts field load testing under operational load and taps "Complete & sign off" with final notes to finalize repair, create permanent service record, and restore equipment to Operational.
 3. **Profile & Availability**: Toggles live availability switch and maintains verified workshop credentials.
 
 ---
@@ -217,11 +219,15 @@ flowchart TD
 
 1. **Operations Queue (`/admin/`)**:
    - Central command monitoring repair pipeline in Nagpur District (`NAGPUR DISTRICT · LIVE`).
-   - Tracks SLA exceptions (unassigned >20 min, overdue quotes, parts delays).
+   - Tracks SLA exceptions (unassigned >20 min, overdue quotes, parts delays, quote revisions awaiting technician).
+   - Dedicated filter tabs: `"All"`, `"Assigned"`, `"Quotes"`, `"In Progress"`, `"Cancellation Requests"`, `"Completed"`, and `"Cancelled"`.
+   - Excludes closed repairs (`COMPLETED`, `CANCELLED`) from the active operational queue and metrics while ensuring fast discoverability and one-click access via dedicated tabs.
    - Monitors technician workload across registered Nagpur workshops.
 2. **Dispatch & Assignment (`/admin/repair/$id`)**:
    - Reviews incoming breakdown tickets.
    - Matches and assigns jobs to verified technicians based on proximity and expertise.
+   - When viewing completed tickets (`COMPLETED`): renders dedicated **Completion Details** card (completion timestamp, testing status, technician notes, equipment status) and suppresses reassignment actions.
+   - When viewing cancelled tickets (`CANCELLED`): suppresses reassignment actions and renders cancellation resolution notes.
 3. **Technician Verification (`/admin/technicians`)**:
    - Reviews and approves or revokes technician workshop accounts.
 
@@ -251,8 +257,8 @@ flowchart TD
       ▼                      │
 [5. IN_PROGRESS (Testing)] ──┘
       │
-      ▼
-[6. COMPLETED] ──► Permanent Service Record Created & Equipment Operational
+      ▼ (Technician "Complete & sign off")
+[6. COMPLETED] ──► Permanent Service Record Created, Equipment Operational, Farmer & Admin Notified
 ```
 
 ---
@@ -328,7 +334,43 @@ sequenceDiagram
 3. **Canonical Quote Baseline (TB-4489)**:
    - Balasaheb Patil (`f1`) holds canonical ticket `TB-4489` in `QUOTE_REVISED` status with quote clarification *"Can you finish by 3 PM instead of 6 PM?"*.
    - Quote v1 fixture in `public.reset_demo_data()` anchors baseline at ₹2,800 (Labour ₹800, Rotavator seal kit ₹1,400, Gear oil ₹600).
-   - In Step 4, Ramesh Kumar (`t1`) can formulate a revised Quote v2 addressing time and cost adjustments with full version diffing.
+   - Ramesh Kumar (`t1`) formulates a revised Quote v2 addressing time and cost adjustments with full version diffing.
+4. **Quote Revision & Comparison UX**:
+   - `<QuoteComparison />` renders summary diffs (total, parts, labour) and itemized line differences (`+ Added`, `- Removed`, `Modified`, `Unchanged`).
+   - Distinct callout boxes preserve the farmer's revision request and technician's explanation separately without overwriting historical notes.
+   - When Quote v2 is submitted, farmer repairs route transitions from waiting state to "Revised quote ready for your review (v2)" with active Approve/Decline actions.
+   - `<RepairChat />` enables real-time ticket discussion across farmer, technician, and admin portals.
+
+---
+
+## 9. Repair Completion & Service History Lifecycle (Phase 5.6)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Tech as Ramesh Kumar (Technician)
+    participant TechUI as Job Workbench (/technician/job/:id)
+    participant Service as repair-requests.ts (completeRepair)
+    participant DB as PostgreSQL (repairs, equipment, service_history, notifs)
+    participant FarmerUI as Farmer Repair (/farmer/repair/:id)
+    participant AdminUI as Admin Workbench (/admin/repair/:id)
+
+    Tech->>TechUI: Completes physical repair and testing under operational load
+    Tech->>TechUI: Taps "Complete & sign off", enters final repair notes
+    TechUI->>Service: completeRepair(id, { notes, tested: true })
+    Service->>DB: UPDATE repair_requests SET status = 'COMPLETED', is_testing = false, completion_details = {...}
+    Service->>DB: UPDATE equipment SET status = 'Operational'
+    Service->>DB: INSERT service_history (INV-TB-xxxx, parts, labour, invoice) [Idempotent]
+    Service->>DB: INSERT notifications (Farmer: "Repair TB-xxxx completed and saved to service history.")
+    Service->>DB: INSERT notifications (Admin: "Repair TB-xxxx completed & verified by technician. Ready for review.")
+    DB-->>FarmerUI: Live/polled update: "Repair Complete & Saved to Service History"
+    DB-->>AdminUI: Live/polled update: Completion Details card rendered; reassignment hidden
+```
+
+1. **Deterministic Immediate Completion**: Technician sign-off transitions ticket directly from `IN_PROGRESS` (testing) to `COMPLETED`. No intermediate `HANDOVER_PENDING` state exists.
+2. **Permanent Service Record Commitment**: `createServiceHistoryFromRepair()` idempotently generates an immutable maintenance entry linked to the equipment asset, preventing duplication.
+3. **Multi-Party Notification**: Both the equipment owner (farmer) and Service Centre dispatchers receive immediate completion notifications.
+4. **Closed-State Governance**: Completed and cancelled tickets are cleanly isolated into dedicated dashboard tabs on `/admin`, keeping the active operations queue focused while retaining 1-click access to closed job records. Reassignment controls are hidden on closed tickets.
 
 
 

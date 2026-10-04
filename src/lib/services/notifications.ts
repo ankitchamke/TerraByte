@@ -147,6 +147,7 @@ export function isActionableServiceCentreNotification(text: string): boolean {
     "new technician registration",
     "technician registration",
     "pending verification",
+    "completed",
   ];
   return operationalPatterns.some((pattern) => t.includes(pattern));
 }

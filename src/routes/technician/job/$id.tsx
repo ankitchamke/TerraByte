@@ -1230,7 +1230,7 @@ function InProgress({ repairId, r, notes, onUpdate }: InProgressProps) {
               }}
               className={cn(btn.primary, "h-14")}
             >
-              Complete & hand over
+              Complete & sign off
             </button>
           </div>
         </div>
@@ -1338,7 +1338,10 @@ function InProgress({ repairId, r, notes, onUpdate }: InProgressProps) {
       )}
       {mode === "complete" && (
         <Card className="space-y-3 border-success">
-          <h3 className="text-lg font-bold">Complete repair</h3>
+          <h3 className="text-lg font-bold">Complete repair & sign off</h3>
+          <p className="text-sm text-muted-foreground">
+            Final sign-off on completed repair. This marks the equipment as Operational, saves the repair to permanent service history, and notifies the farmer and Service Centre.
+          </p>
           <div>
             <Label>Final repair notes</Label>
             <textarea
@@ -1386,7 +1389,7 @@ function InProgress({ repairId, r, notes, onUpdate }: InProgressProps) {
               onClick={handleComplete}
               className={cn(btn.primary, "disabled:opacity-50")}
             >
-              {submitting ? "Completing…" : "Complete & hand over"}
+              {submitting ? "Signing off…" : "Complete & sign off"}
             </button>
           </div>
         </Card>

@@ -21,8 +21,9 @@ flowchart TD
     P51 --> P52["PHASE 5.2: Demo/Data Hygiene & Baseline Reset<br/>(STATUS: COMPLETE)"]
     P52 --> P53["PHASE 5.3: Notification & Product Communication Polish<br/>(STATUS: COMPLETE)"]
     P53 --> P54["PHASE 5.4: Cancellation Approval<br/>(STATUS: COMPLETE — Commit d39d821)"]
-    P54 --> P55["PHASE 5.5: Communication & Quote Revision<br/>(STATUS: IN PROGRESS)"]
-    P55 --> P56["PHASE 5.6: Gemini Multimodal Diagnostics"]
+    P54 --> P55["PHASE 5.5: Communication & Quote Revision<br/>(STATUS: COMPLETE)"]
+    P55 --> P56["PHASE 5.6: Handover & Completion Polish<br/>(STATUS: COMPLETE)"]
+    P56 --> P6["PHASE 6: Assistive Multimodal Diagnostics"]
 ```
 
 ---
@@ -106,7 +107,7 @@ flowchart TD
 ---
 
 ### PHASE 5.4 — Cancellation Approval
-- **Status**: **IN PROGRESS**
+- **Status**: **COMPLETE** (Committed and pushed: `d39d821`)
 - **Objective**: Establish a governed repair cancellation workflow providing structured farmer cancellation requests, work-hold pauses for assigned technicians, and administrative review/resolution by the Service Centre.
 
 #### Step 1 — Database & State Foundation
@@ -201,7 +202,7 @@ flowchart TD
 ---
 
 ### PHASE 5.5 — Communication & Quote Revision Workflow
-- **Status**: **IN PROGRESS** (Step 1 Implemented)
+- **Status**: **COMPLETE**
 - **Objective**: Implement ticket-scoped farmer–technician messaging with unread tracking, real-time sync, and notification dispatch, alongside the quote revision request/resubmission lifecycle with version comparison.
 
 #### Step 1 — Database Foundation & Canonical Demo Fixture Completion
@@ -252,8 +253,50 @@ flowchart TD
      - Embedded `<RepairChat />` ticket discussion thread.
 
 #### Step 4 — End-to-End Verification & Review
-- **Status**: PENDING
+- **Status**: **COMPLETE**
 - **Deliverables**:
-  - Verification suite `P5.5-01` through `P5.5-14`.
+  - Verification suite `P5.5-01` through `P5.5-14` fully verified and passing.
 
+---
 
+### PHASE 5.6 — Handover & Completion Polish
+- **Status**: **COMPLETE**
+- **Objective**: Align the repair completion lifecycle across technician sign-off, farmer notification, administrative workbench visibility, and permanent service history creation, eliminating legacy "handover pending" contradictions.
+
+#### Step 1 — Audit Only
+- **Status**: **COMPLETE**
+- Confirmed canonical completion lifecycle: `IN_PROGRESS` $\rightarrow$ `TESTING` $\rightarrow$ `COMPLETED` $\rightarrow$ Service History. Confirmed that TerraByte does NOT use a persisted `HANDOVER_PENDING` state.
+
+#### Step 2 — Service Layer & Admin Completion Notification Alignment
+- **Status**: **COMPLETE**
+- **Deliverables**:
+  1. Updated `completeRepair()` in `src/lib/services/repair-requests.ts` to dispatch an actionable completion notification to Service Centre admins (*"Repair TB-xxxx completed & verified by technician. Ready for review."*, link `/admin/repair/:id`, category `Repair`).
+  2. Updated `getNotificationCategory()` in `src/lib/services/notifications.ts` to categorize completion notifications under `Repair`.
+  3. Verified service history idempotency in `createServiceHistoryFromRepair()`.
+
+#### Step 3 — Admin Workbench & Dashboard Completion Polish
+- **Status**: **COMPLETE**
+- **Deliverables**:
+  1. Admin Repair Detail (`src/routes/admin/repair/$id.tsx`):
+     - Renders clear **Completion Details** card displaying completion timestamp, testing verification status, final work notes, and equipment operational status.
+     - Suppressed/hid reassignment and dispatch controls when repair status is `COMPLETED` or `CANCELLED`.
+  2. Admin Operations Dashboard (`src/routes/admin/index.tsx`):
+     - Added dedicated `"Completed"` and `"Cancelled"` filter tabs alongside active filters.
+     - Excluded closed/cancelled repairs from active operational queue and metrics while ensuring easy searchability and one-click access.
+
+#### Step 4 — Technician + Farmer Completion UX
+- **Status**: **COMPLETE**
+- **Deliverables**:
+  1. Renamed technician completion CTA from *"Complete & hand over"* to *"Complete & sign off"*.
+  2. Updated technician completion modal explanatory text to clarify that sign-off saves to permanent service history and marks equipment `Operational`.
+  3. Refined farmer repair hub testing copy to clarify that testing under operational load is the final verification before completing the repair and saving it to service history.
+
+#### Step 5 — Final End-to-End Verification & Phase 5 Closeout
+- **Status**: **COMPLETE**
+- **Deliverables**:
+  1. Full E2E lifecycle executed on canonical demo repair `TB-8841` (`WAITING_FOR_PARTS` $\rightarrow$ `IN_PROGRESS` $\rightarrow$ `TESTING` $\rightarrow$ `COMPLETED`).
+  2. Admin completion notification verified (*"Repair TB-8841 completed & verified by technician. Ready for review."*, category `Repair`).
+  3. Service history record created and verified (`INV-TB-8841`).
+  4. Demo baseline reset via `resetDemoData()` as admin: verified pristine restoration of `TB-8841` (`WAITING_FOR_PARTS`, `completion_details: null`, equipment `In Repair`), `TB-8902`, `TB-8898`, `TB-4489`.
+  5. Real user Ankit Chamke account (`TB-4545`) isolated and 100% untouched.
+  6. Phase 5.1–5.6 regression test suite, static audit, and `npm run build` all passing cleanly.

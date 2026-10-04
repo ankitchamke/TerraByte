@@ -798,7 +798,7 @@ function RepairHub() {
             <span className="text-lg">Testing in progress</span>
           </div>
           <p className="text-sm text-muted-foreground">
-            The technician is testing your machine under operational load to verify everything works properly before handover.
+            The technician is testing your machine under operational load as the final verification before completing the repair and saving it to service history.
           </p>
         </Card>
       )}

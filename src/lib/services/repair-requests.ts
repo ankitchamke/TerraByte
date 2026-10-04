@@ -958,6 +958,15 @@ export function getRepairActionOwnership(status: RepairStatus): RepairActionOwne
         actionDescription: "Administrative cancellation request review required",
       };
     case "COMPLETED":
+      return {
+        currentStatus: status,
+        primaryActor: "none",
+        isActionRequired: false,
+        farmerState: "closed",
+        technicianState: "closed",
+        adminState: "closed",
+        actionDescription: "Repair completed and verified in service history",
+      };
     case "CANCELLED":
       return {
         currentStatus: status,
@@ -1802,6 +1811,17 @@ export async function completeRepair(
     });
   } catch (notifErr) {
     console.warn("[TerraByte] Warning: Failed to send completion notification:", notifErr);
+  }
+
+  // Notify Service Centre (admin) that repair is completed and verified
+  try {
+    await createNotification({
+      recipient_role: "admin",
+      notification_text: `Repair ${repair.job_number} completed & verified by technician. Ready for review.`,
+      link_target: `/admin/repair/${repair.id}`,
+    });
+  } catch (adminNotifErr) {
+    console.warn("[TerraByte] Warning: Failed to send admin completion notification:", adminNotifErr);
   }
 
   return updated;

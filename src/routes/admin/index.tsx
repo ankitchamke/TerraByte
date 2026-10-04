@@ -26,6 +26,8 @@ const FILTERS = [
   "Waiting for Parts",
   "Cancellation Requests",
   "Overdue",
+  "Completed",
+  "Cancelled",
 ] as const;
 type F = (typeof FILTERS)[number];
 
@@ -51,6 +53,8 @@ const test: Record<F, (r: RepairRequestDetail) => boolean> = {
   "Waiting for Parts": (r) => r.status === "WAITING_FOR_PARTS",
   "Cancellation Requests": (r) => r.status === "CANCELLATION_REQUESTED",
   Overdue: checkOverdue,
+  Completed: (r) => r.status === "COMPLETED",
+  Cancelled: (r) => r.status === "CANCELLED",
 };
 
 function Admin() {
@@ -93,6 +97,8 @@ function Admin() {
   const open = repairs.filter(
     (r) => r.status !== "CANCELLED" && r.status !== "COMPLETED"
   );
+  const completed = repairs.filter((r) => r.status === "COMPLETED");
+  const cancelled = repairs.filter((r) => r.status === "CANCELLED");
   const exceptions = open.filter(checkOverdue);
   const cancellationRequests = open.filter((r) => r.status === "CANCELLATION_REQUESTED");
 
@@ -128,13 +134,25 @@ function Admin() {
     ? sortedTechWorkload
     : sortedTechWorkload.slice(0, INITIAL_TECHS_COUNT);
 
-  const rows = open
-    .filter(test[f])
-    .sort(
-      (a, b) =>
-        Number(checkOverdue(b)) - Number(checkOverdue(a)) ||
-        new Date(a.status_since).getTime() - new Date(b.status_since).getTime()
-    );
+  const rows = f === "Completed"
+    ? completed.sort(
+        (a, b) =>
+          new Date(b.status_since || b.created_at).getTime() -
+          new Date(a.status_since || a.created_at).getTime()
+      )
+    : f === "Cancelled"
+    ? cancelled.sort(
+        (a, b) =>
+          new Date(b.status_since || b.created_at).getTime() -
+          new Date(a.status_since || a.created_at).getTime()
+      )
+    : open
+        .filter(test[f])
+        .sort(
+          (a, b) =>
+            Number(checkOverdue(b)) - Number(checkOverdue(a)) ||
+            new Date(a.status_since).getTime() - new Date(b.status_since).getTime()
+        );
 
   return (
     <div className="space-y-6">
@@ -369,7 +387,7 @@ function Admin() {
               f === x ? "border-foreground bg-foreground text-background" : "border-border bg-card"
             )}
           >
-            {x} <span className="opacity-60">{open.filter(test[x]).length}</span>
+            {x} <span className="opacity-60">{x === "Completed" ? completed.length : x === "Cancelled" ? cancelled.length : open.filter(test[x]).length}</span>
           </button>
         ))}
       </div>
@@ -397,6 +415,8 @@ function Admin() {
               const t = r.technician;
               const od = checkOverdue(r);
               const isCancelling = r.status === "CANCELLATION_REQUESTED";
+              const isCompleted = r.status === "COMPLETED";
+              const isCancelled = r.status === "CANCELLED";
               const statusSinceMs = new Date(r.status_since).getTime();
               return (
                 <tr
@@ -407,6 +427,8 @@ function Admin() {
                       ? "bg-warning/10 border-warning/30 hover:bg-warning/15"
                       : od
                       ? "bg-destructive/5"
+                      : isCompleted || isCancelled
+                      ? "hover:bg-muted/40"
                       : undefined
                   )}
                 >
@@ -422,18 +444,29 @@ function Admin() {
                   <td className="px-4 py-3">
                     <div>
                       <p>{r.farmer?.full_name || "Farmer"}</p>
-                      {isCancelling && r.cancellation_reason && (
+                      {isCancelling && r.cancellation_reason ? (
                         <p
                           className="text-xs text-warning-foreground font-medium italic truncate max-w-[170px]"
                           title={r.cancellation_reason}
                         >
                           "{r.cancellation_reason}"
                         </p>
-                      )}
+                      ) : isCancelled && r.cancellation_reason ? (
+                        <p
+                          className="text-xs text-muted-foreground font-medium italic truncate max-w-[170px]"
+                          title={r.cancellation_reason}
+                        >
+                          "{r.cancellation_reason}"
+                        </p>
+                      ) : null}
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    {t?.full_name ?? <span className="font-semibold text-destructive">Unassigned</span>}
+                    {t?.full_name ?? (r.status === "CANCELLED" || r.status === "COMPLETED" ? (
+                      <span className="text-muted-foreground italic">Unassigned</span>
+                    ) : (
+                      <span className="font-semibold text-destructive">Unassigned</span>
+                    ))}
                   </td>
                   <td className="px-4 py-3">
                     <StatusPill r={{ status: r.status, testing: r.is_testing }} audience="staff" />

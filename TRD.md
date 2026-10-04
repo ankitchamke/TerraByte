@@ -251,6 +251,12 @@ TerraByte implements a dual-path repair cancellation governance workflow to prev
     - `TB-8898` $\rightarrow$ `REQUESTED` (Anil Pawar, Swaraj 744 FE, unassigned)
     - `TB-4489` $\rightarrow$ `QUOTE_REVISED` (Balasaheb Patil, VST Shakti 130 DI, revised quote)
   - Real user accounts (such as `Ankit Chamke`) remain strictly isolated and unaffected.
+- **Service Layer & State Machine Implementation (Step 2)**:
+  - `cancelRepairRequest(id, options)`: Strictly validates that farmers can only directly cancel unassigned `REQUESTED` tickets (`technician_id IS NULL`). Protects against accidental abandonment by throwing an informative redirection error for assigned or in-progress tickets. Automatically restores machinery to `Operational` if no other active repairs exist, and dispatches administrative alerts.
+  - `requestCancellation(id, input)`: Allows farmers to request cancellation on active/assigned repairs (`ACCEPTED`, `QUOTE_PENDING`, `QUOTE_REVISED`, `IN_PROGRESS`, `WAITING_FOR_PARTS`, or assigned `REQUESTED`). Snapshots current status into `cancellation_previous_status`, records reason/note, transitions to `CANCELLATION_REQUESTED`, preserves equipment in `"In Repair"`, and notifies Service Centre admins. If invoked on an unassigned `REQUESTED` ticket, seamlessly delegates to immediate cancellation.
+  - `approveCancellation(id, input)`: Admin-only operation transitioning `CANCELLATION_REQUESTED` $\rightarrow$ `CANCELLED`. Records administrative response, checks equipment integrity before setting status to `Operational`, and notifies both farmer and technician.
+  - `rejectCancellation(id, input)`: Admin-only operation requiring explicit administrative justification. Reverts status to `cancellation_previous_status` (or `ACCEPTED`), maintains equipment in `"In Repair"`, and notifies both farmer and technician that work has resumed.
+  - `isActionableServiceCentreNotification()` & `getNotificationCategory()`: Extended to classify cancellation requests as high-priority `"Alert"` items in administrative notification queues.
 
 ---
 

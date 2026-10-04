@@ -195,29 +195,33 @@ flowchart TD
 
 ---
 
-## 6. 7-Step Repair Lifecycle State Machine
+## 6. Repair Lifecycle & Governed Cancellation State Machine
 
 ```
-[1. REQUESTED]
+[1. REQUESTED (Unassigned)] ───────────────────────────────► [CANCELLED] (Direct Farmer Cancellation)
       │
-      ▼
-[2. ACCEPTED]
-      │
-      ▼
-[3. QUOTE_PENDING] ◄────────┐
-      │                     │ (Technician revises)
-      ├─► [QUOTE_REVISED] ──┘
-      ▼
-[4. IN_PROGRESS]
-      │
-      ├─► [WAITING_FOR_PARTS] (Parts blocker)
-      │          │
-      │◄─────────┘ (Part arrives)
-      ▼
-[5. IN_PROGRESS (Testing)]
+      ▼ (Assigned)
+[1b. REQUESTED (Assigned)] ──┐
+      │                      │
+      ▼                      │
+[2. ACCEPTED] ───────────────┤
+      │                      │
+      ▼                      │
+[3. QUOTE_PENDING] ◄────┐    │
+      │                 │    ├─► [CANCELLATION_REQUESTED] (Farmer Requests Cancellation)
+      ├─► [QUOTE_REVISED] ┘  │          │
+      ▼                      │          ├─► [CANCELLED] (Admin Approves; Equipment -> Operational)
+[4. IN_PROGRESS] ────────────┤          │
+      │                      │          └─► [Previous Status] (Admin Rejects; Work Resumes)
+      ├─► [WAITING_FOR_PARTS]┤
+      │          │           │
+      │◄─────────┘           │
+      ▼                      │
+[5. IN_PROGRESS (Testing)] ──┘
       │
       ▼
 [6. COMPLETED] ──► Permanent Service Record Created & Equipment Operational
+```
 
 ---
 

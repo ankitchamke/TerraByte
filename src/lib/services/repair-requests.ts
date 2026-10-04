@@ -33,6 +33,29 @@ export interface RepairRequestDetail extends RepairRequestWithEquipment {
   repair_timeline: RepairTimelineWithActor[];
 }
 
+export const CANCELLATION_REASONS = [
+  "Repaired locally / alternative arrangement",
+  "Cost / quote concerns",
+  "Delay / timing constraints",
+  "Machine no longer needed",
+  "Other",
+] as const;
+
+export type CancellationReason = (typeof CANCELLATION_REASONS)[number] | string;
+
+export interface RequestCancellationInput {
+  reason: CancellationReason;
+  note?: string;
+}
+
+export interface ApproveCancellationInput {
+  adminResponse?: string;
+}
+
+export interface RejectCancellationInput {
+  adminResponse: string;
+}
+
 let cachedProfile: { auth_user_id: string; id: string; role: string; expiresAt: number } | null = null;
 
 /**
@@ -350,11 +373,16 @@ export async function getAdminRepairRequests(): Promise<RepairRequestDetail[]> {
 
 /**
  * Cancels an eligible repair request.
- * Cancellation is strictly permitted only while the ticket is in 'REQUESTED' or 'ACCEPTED' state.
- * Work in progress or completed repairs cannot be cancelled by the farmer.
+ * Direct cancellation is strictly permitted only while the ticket is in 'REQUESTED' state
+ * and has not yet been assigned to a technician (unassigned).
+ * Assigned or in-progress repairs require governed review via requestCancellation().
+ * Admins retain operational authority to directly cancel active tickets.
  * Automatically restores the associated equipment to 'Operational' if no other active repairs exist.
  */
-export async function cancelRepairRequest(id: string): Promise<RepairRequestRow> {
+export async function cancelRepairRequest(
+  id: string,
+  options?: { reason?: string; note?: string }
+): Promise<RepairRequestRow> {
   const profile = await getAuthenticatedProfile();
 
   // 1. Fetch current repair ticket state
@@ -372,38 +400,60 @@ export async function cancelRepairRequest(id: string): Promise<RepairRequestRow>
   }
 
   // 2. Validate cancellation eligibility
-  const cancellableStatuses: RepairStatus[] = ["REQUESTED", "ACCEPTED"];
-  if (!cancellableStatuses.includes(repair.status)) {
-    throw new Error(
-      `Cannot cancel repair: Ticket is in '${repair.status}' status. Only newly requested or accepted repairs can be cancelled.`
-    );
+  if (profile.role !== "admin") {
+    if (repair.status !== "REQUESTED" || repair.technician_id !== null) {
+      throw new Error(
+        `Direct cancellation is only permitted for unassigned requested repairs. This repair is ${
+          repair.technician_id ? "assigned to a technician" : `in '${repair.status}' status`
+        }; please submit a cancellation request for Service Centre review.`
+      );
+    }
+  } else {
+    // Admin direct cancel guard
+    if (repair.status === "COMPLETED" || repair.status === "CANCELLED") {
+      throw new Error(`Cannot cancel repair: Ticket is already '${repair.status}'.`);
+    }
   }
 
   const now = new Date().toISOString();
 
   // 3. Update repair request status to CANCELLED
+  const updatePayload: Record<string, any> = {
+    status: "CANCELLED",
+    status_since: now,
+  };
+  if (options?.reason?.trim()) {
+    updatePayload.cancellation_reason = options.reason.trim();
+  }
+  if (options?.note?.trim()) {
+    updatePayload.cancellation_note = options.note.trim();
+  }
+
   const { data: updated, error: updateError } = await supabase
     .from("repair_requests")
-    .update({
-      status: "CANCELLED",
-      status_since: now,
-    })
+    .update(updatePayload)
     .eq("id", repair.id)
     .select()
     .single();
 
-  if (updateError) {
-    throw new Error(`Failed to cancel repair request: ${updateError.message}`);
+  if (updateError || !updated) {
+    throw new Error(`Failed to cancel repair request: ${updateError?.message}`);
   }
 
   // 4. Log cancellation event in timeline
+  const reasonText = options?.reason?.trim() ? `: ${options.reason.trim()}` : "";
+  const timelineNote =
+    profile.role === "admin"
+      ? `Cancelled by Service Centre${reasonText}`
+      : `Cancelled by farmer before assignment${reasonText}`;
+
   const { error: timelineError } = await supabase
     .from("repair_timeline")
     .insert({
       repair_request_id: repair.id,
       status: "CANCELLED",
-      note: "Cancelled by farmer",
-      created_by_role: "farmer",
+      note: timelineNote,
+      created_by_role: profile.role,
       created_by_id: profile.id,
     });
 
@@ -430,23 +480,359 @@ export async function cancelRepairRequest(id: string): Promise<RepairRequestRow>
     }
   }
 
-  // Notify admin (and assigned technician if any) of operational cancellation
+  // 6. Notify relevant parties
   try {
+    if (profile.role === "admin") {
+      await createNotification({
+        recipient_role: "farmer",
+        recipient_user_id: repair.farmer_id,
+        notification_text: `Repair request ${repair.job_number} was cancelled by Service Centre.`,
+        link_target: `/farmer/repair/${repair.id}`,
+      });
+      if (repair.technician_id) {
+        await createNotification({
+          recipient_role: "technician",
+          recipient_user_id: repair.technician_id,
+          notification_text: `Repair request ${repair.job_number} was cancelled by Service Centre.`,
+          link_target: `/technician/job/${repair.id}`,
+        });
+      }
+    } else {
+      await createNotification({
+        recipient_role: "admin",
+        notification_text: `Repair request ${repair.job_number} was cancelled by farmer.`,
+        link_target: `/admin/repair/${repair.id}`,
+      });
+    }
+  } catch (notifErr) {
+    console.warn("[TerraByte] Warning: Failed to dispatch cancellation notification:", notifErr);
+  }
+
+  return updated;
+}
+
+/**
+ * Requests cancellation for an assigned or active repair ticket.
+ * If the ticket is in 'REQUESTED' status and unassigned, automatically delegates to immediate cancellation.
+ * For assigned or in-progress tickets, transitions status to 'CANCELLATION_REQUESTED',
+ * saves cancellation metadata (reason, note, requested_by, requested_at, previous_status),
+ * records a timeline event, and notifies the Service Centre (admin).
+ * Equipment status remains unchanged ('In Repair') during the administrative review.
+ */
+export async function requestCancellation(
+  id: string,
+  input: RequestCancellationInput
+): Promise<RepairRequestRow> {
+  const trimmedReason = input.reason?.trim();
+  if (!trimmedReason) {
+    throw new Error("A cancellation reason is required.");
+  }
+  const trimmedNote = input.note?.trim() || null;
+
+  const profile = await getAuthenticatedProfile();
+
+  // 1. Fetch current repair ticket state
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+  const { data: repair, error: fetchError } = isUuid
+    ? await supabase.from("repair_requests").select("*").eq("id", id).maybeSingle()
+    : await supabase.from("repair_requests").select("*").eq("job_number", id).maybeSingle();
+
+  if (fetchError || !repair) {
+    throw new Error("Repair ticket not found or inaccessible.");
+  }
+
+  if (repair.farmer_id !== profile.id && profile.role !== "admin") {
+    throw new Error("Unauthorized: You can only request cancellation for your own repair requests.");
+  }
+
+  // 2. Validate current status
+  if (repair.status === "COMPLETED") {
+    throw new Error("Cannot request cancellation: Repair has already been completed.");
+  }
+  if (repair.status === "CANCELLED") {
+    throw new Error("Cannot request cancellation: Repair ticket is already cancelled.");
+  }
+  if (repair.status === "CANCELLATION_REQUESTED") {
+    throw new Error("A cancellation request is already pending Service Centre review.");
+  }
+
+  // 3. If unassigned and still in REQUESTED status, perform immediate direct cancellation
+  if (repair.status === "REQUESTED" && !repair.technician_id) {
+    return cancelRepairRequest(repair.id, { reason: trimmedReason, note: trimmedNote || undefined });
+  }
+
+  // 4. Active / assigned repair: transition to CANCELLATION_REQUESTED
+  if (!isLegalRepairTransition(repair.status, "CANCELLATION_REQUESTED")) {
+    throw new Error(`Cannot request cancellation from '${repair.status}' status.`);
+  }
+
+  const now = new Date().toISOString();
+  const { data: updated, error: updateError } = await supabase
+    .from("repair_requests")
+    .update({
+      status: "CANCELLATION_REQUESTED",
+      cancellation_previous_status: repair.status,
+      cancellation_reason: trimmedReason,
+      cancellation_note: trimmedNote,
+      cancellation_requested_by: profile.id,
+      cancellation_requested_at: now,
+      cancellation_admin_response: null,
+      status_since: now,
+    })
+    .eq("id", repair.id)
+    .select()
+    .single();
+
+  if (updateError || !updated) {
+    throw new Error(`Failed to request cancellation: ${updateError?.message}`);
+  }
+
+  // 5. Log cancellation request event in timeline
+  const timelineNote = trimmedNote
+    ? `Cancellation requested: ${trimmedReason} — ${trimmedNote}`
+    : `Cancellation requested: ${trimmedReason}`;
+
+  const { error: timelineError } = await supabase
+    .from("repair_timeline")
+    .insert({
+      repair_request_id: repair.id,
+      status: "CANCELLATION_REQUESTED",
+      note: timelineNote,
+      created_by_role: profile.role,
+      created_by_id: profile.id,
+    });
+
+  if (timelineError) {
+    console.warn(`[TerraByte] Warning: Failed to record cancellation request timeline entry: ${timelineError.message}`);
+  }
+
+  // 6. Notify Service Centre (admin) of actionable cancellation request
+  try {
+    await createNotification({
+      recipient_role: "admin",
+      notification_text: `Cancellation requested for ${repair.job_number}: ${trimmedReason}.`,
+      link_target: `/admin/repair/${repair.id}`,
+    });
+  } catch (notifErr) {
+    console.warn("[TerraByte] Warning: Failed to dispatch cancellation request notification:", notifErr);
+  }
+
+  return updated;
+}
+
+/**
+ * Approves a pending repair cancellation request by the Service Centre (admin).
+ * Transitions status: CANCELLATION_REQUESTED -> CANCELLED.
+ * Restores associated equipment to 'Operational' if no other active repairs exist.
+ * Records admin response and notifies farmer and assigned technician.
+ */
+export async function approveCancellation(
+  id: string,
+  input?: ApproveCancellationInput
+): Promise<RepairRequestRow> {
+  const profile = await getAuthenticatedProfile();
+
+  if (profile.role !== "admin") {
+    throw new Error("Unauthorized: Only Service Centre administrators can approve cancellation requests.");
+  }
+
+  // 1. Fetch current repair ticket state
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+  const { data: repair, error: fetchError } = isUuid
+    ? await supabase.from("repair_requests").select("*").eq("id", id).maybeSingle()
+    : await supabase.from("repair_requests").select("*").eq("job_number", id).maybeSingle();
+
+  if (fetchError || !repair) {
+    throw new Error("Repair ticket not found or inaccessible.");
+  }
+
+  if (repair.status !== "CANCELLATION_REQUESTED") {
+    throw new Error(
+      `Cannot approve cancellation: Ticket is in '${repair.status}' status (must be CANCELLATION_REQUESTED).`
+    );
+  }
+
+  const now = new Date().toISOString();
+  const adminResponse = input?.adminResponse?.trim() || "Cancellation approved by Service Centre";
+
+  // 2. Update status to CANCELLED
+  const { data: updated, error: updateError } = await supabase
+    .from("repair_requests")
+    .update({
+      status: "CANCELLED",
+      cancellation_admin_response: adminResponse,
+      status_since: now,
+    })
+    .eq("id", repair.id)
+    .select()
+    .single();
+
+  if (updateError || !updated) {
+    throw new Error(`Failed to approve cancellation: ${updateError?.message}`);
+  }
+
+  // 3. Log approval event in timeline
+  const timelineNote = input?.adminResponse?.trim()
+    ? `Cancellation approved by Service Centre: ${input.adminResponse.trim()}`
+    : "Cancellation approved by Service Centre";
+
+  const { error: timelineError } = await supabase
+    .from("repair_timeline")
+    .insert({
+      repair_request_id: repair.id,
+      status: "CANCELLED",
+      note: timelineNote,
+      created_by_role: "admin",
+      created_by_id: profile.id,
+    });
+
+  if (timelineError) {
+    console.warn(`[TerraByte] Warning: Failed to record cancellation approval timeline entry: ${timelineError.message}`);
+  }
+
+  // 4. Restore equipment to 'Operational' if no other active repairs exist
+  const { data: otherActive } = await supabase
+    .from("repair_requests")
+    .select("id")
+    .eq("equipment_id", repair.equipment_id)
+    .neq("id", repair.id)
+    .not("status", "in", '("COMPLETED","CANCELLED")');
+
+  if (!otherActive || otherActive.length === 0) {
+    const { error: eqRestoreError } = await supabase
+      .from("equipment")
+      .update({ status: "Operational" })
+      .eq("id", repair.equipment_id);
+
+    if (eqRestoreError) {
+      console.warn(`[TerraByte] Warning: Failed to restore equipment status to Operational: ${eqRestoreError.message}`);
+    }
+  }
+
+  // 5. Notify farmer and assigned technician
+  try {
+    await createNotification({
+      recipient_role: "farmer",
+      recipient_user_id: repair.farmer_id,
+      notification_text: `Cancellation approved for ${repair.job_number}. Repair cancelled.`,
+      link_target: `/farmer/repair/${repair.id}`,
+    });
+
     if (repair.technician_id) {
       await createNotification({
         recipient_role: "technician",
         recipient_user_id: repair.technician_id,
-        notification_text: `Repair request ${repair.job_number} was cancelled by farmer.`,
+        notification_text: `Cancellation approved for ${repair.job_number}. Repair cancelled.`,
         link_target: `/technician/job/${repair.id}`,
       });
     }
-    await createNotification({
-      recipient_role: "admin",
-      notification_text: `Repair request ${repair.job_number} was cancelled by farmer.`,
-      link_target: `/admin/repair/${repair.id}`,
-    });
   } catch (notifErr) {
-    console.warn("[TerraByte] Warning: Failed to dispatch cancellation notification:", notifErr);
+    console.warn("[TerraByte] Warning: Failed to dispatch cancellation approval notifications:", notifErr);
+  }
+
+  return updated;
+}
+
+/**
+ * Declines/rejects a pending repair cancellation request by the Service Centre (admin).
+ * Transitions status: CANCELLATION_REQUESTED -> cancellation_previous_status (or ACCEPTED fallback).
+ * Records admin response and explanation.
+ * Equipment remains in current repair status ('In Repair').
+ * Notifies farmer and assigned technician that work has resumed.
+ */
+export async function rejectCancellation(
+  id: string,
+  input: RejectCancellationInput
+): Promise<RepairRequestRow> {
+  const profile = await getAuthenticatedProfile();
+
+  if (profile.role !== "admin") {
+    throw new Error("Unauthorized: Only Service Centre administrators can decline cancellation requests.");
+  }
+
+  const adminResponse = input?.adminResponse?.trim();
+  if (!adminResponse) {
+    throw new Error("An administrative explanation is required to decline a cancellation request.");
+  }
+
+  // 1. Fetch current repair ticket state
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+  const { data: repair, error: fetchError } = isUuid
+    ? await supabase.from("repair_requests").select("*").eq("id", id).maybeSingle()
+    : await supabase.from("repair_requests").select("*").eq("job_number", id).maybeSingle();
+
+  if (fetchError || !repair) {
+    throw new Error("Repair ticket not found or inaccessible.");
+  }
+
+  if (repair.status !== "CANCELLATION_REQUESTED") {
+    throw new Error(
+      `Cannot decline cancellation: Ticket is in '${repair.status}' status (must be CANCELLATION_REQUESTED).`
+    );
+  }
+
+  // 2. Resolve target restoration status
+  const targetStatus: RepairStatus = repair.cancellation_previous_status || "ACCEPTED";
+  if (!isLegalRepairTransition("CANCELLATION_REQUESTED", targetStatus)) {
+    throw new Error(
+      `Illegal state transition: Cannot restore status from 'CANCELLATION_REQUESTED' to '${targetStatus}'.`
+    );
+  }
+
+  const now = new Date().toISOString();
+
+  // 3. Update status back to previous status
+  const { data: updated, error: updateError } = await supabase
+    .from("repair_requests")
+    .update({
+      status: targetStatus,
+      cancellation_admin_response: adminResponse,
+      status_since: now,
+    })
+    .eq("id", repair.id)
+    .select()
+    .single();
+
+  if (updateError || !updated) {
+    throw new Error(`Failed to decline cancellation: ${updateError?.message}`);
+  }
+
+  // 4. Log rejection event in timeline
+  const { error: timelineError } = await supabase
+    .from("repair_timeline")
+    .insert({
+      repair_request_id: repair.id,
+      status: targetStatus,
+      note: `Cancellation request declined by Service Centre: ${adminResponse}`,
+      created_by_role: "admin",
+      created_by_id: profile.id,
+    });
+
+  if (timelineError) {
+    console.warn(`[TerraByte] Warning: Failed to record cancellation rejection timeline entry: ${timelineError.message}`);
+  }
+
+  // 5. Equipment remains In Repair — no equipment update needed.
+
+  // 6. Notify farmer and assigned technician
+  try {
+    await createNotification({
+      recipient_role: "farmer",
+      recipient_user_id: repair.farmer_id,
+      notification_text: `Cancellation request for ${repair.job_number} was declined by Service Centre: ${adminResponse}.`,
+      link_target: `/farmer/repair/${repair.id}`,
+    });
+
+    if (repair.technician_id) {
+      await createNotification({
+        recipient_role: "technician",
+        recipient_user_id: repair.technician_id,
+        notification_text: `Cancellation request for ${repair.job_number} was declined. Work resumed.`,
+        link_target: `/technician/job/${repair.id}`,
+      });
+    }
+  } catch (notifErr) {
+    console.warn("[TerraByte] Warning: Failed to dispatch cancellation rejection notifications:", notifErr);
   }
 
   return updated;
@@ -457,7 +843,7 @@ export async function cancelRepairRequest(id: string): Promise<RepairRequestRow>
 // ============================================================================
 
 export const LEGAL_REPAIR_TRANSITIONS: Record<RepairStatus, readonly RepairStatus[]> = {
-  REQUESTED: ["ACCEPTED", "CANCELLED"],
+  REQUESTED: ["ACCEPTED", "CANCELLED", "CANCELLATION_REQUESTED"],
   ACCEPTED: ["QUOTE_PENDING", "CANCELLATION_REQUESTED"],
   QUOTE_PENDING: ["QUOTE_REVISED", "IN_PROGRESS", "CANCELLATION_REQUESTED"],
   QUOTE_REVISED: ["QUOTE_PENDING", "CANCELLATION_REQUESTED"],
@@ -465,6 +851,7 @@ export const LEGAL_REPAIR_TRANSITIONS: Record<RepairStatus, readonly RepairStatu
   WAITING_FOR_PARTS: ["IN_PROGRESS", "CANCELLATION_REQUESTED"],
   CANCELLATION_REQUESTED: [
     "CANCELLED",
+    "REQUESTED",
     "ACCEPTED",
     "QUOTE_PENDING",
     "QUOTE_REVISED",

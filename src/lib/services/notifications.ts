@@ -138,6 +138,7 @@ export function isActionableServiceCentreNotification(text: string): boolean {
     "clarification requested",
     "requested service centre",
     "intervention",
+    "cancellation",
     "cancelled",
     "unassigned",
     "exception",
@@ -181,7 +182,7 @@ export function getNotificationCategory(text: string): NotificationCategory {
     return "Account";
   }
   if (t.includes("assigned")) return "Assignment";
-  if (t.includes("cancelled") || t.includes("declined") || t.includes("rejected")) return "Alert";
+  if (t.includes("cancelled") || t.includes("cancellation") || t.includes("declined") || t.includes("rejected")) return "Alert";
   if (
     t.includes("repair") ||
     t.includes("resumed") ||

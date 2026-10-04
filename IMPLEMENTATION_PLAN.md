@@ -129,8 +129,14 @@ flowchart TD
   7. Synchronized TypeScript types across `src/integrations/supabase/types.ts`, `src/lib/tb-store.ts`, `src/components/tb.tsx`, and `src/lib/services/repair-requests.ts`.
 
 #### Step 2 — Service Layer & Notification Workflow
-- **Status**: **PENDING**
-- Service functions for `requestRepairCancellation`, `approveRepairCancellation`, `rejectRepairCancellation`, and multi-party notification dispatch.
+- **Status**: **COMPLETE**
+- **Deliverables**:
+  1. Updated `cancelRepairRequest(id, options)` in `src/lib/services/repair-requests.ts`: strictly restricts direct client cancellation to unassigned `REQUESTED` tickets (`status === 'REQUESTED' && !technician_id`), preserving administrative direct cancellation while throwing informative errors for assigned/in-progress tickets guiding callers to governed review.
+  2. Implemented `requestCancellation(id, input)` in `src/lib/services/repair-requests.ts`: captures structured cancellation reason and freeform note, snapshotting `cancellation_previous_status`, transitioning active/assigned tickets to `CANCELLATION_REQUESTED`, delegating unassigned `REQUESTED` tickets immediately to cancellation, recording timeline events, preserving `"In Repair"` equipment status, and dispatching actionable alerts to Service Centre admins.
+  3. Implemented `approveCancellation(id, input)` in `src/lib/services/repair-requests.ts`: restricted strictly to Service Centre admins, transitions `CANCELLATION_REQUESTED` to `CANCELLED`, records administrative response remarks, restores equipment to `"Operational"` (if no other active repairs exist), and dispatches notifications to both farmer and assigned technician.
+  4. Implemented `rejectCancellation(id, input)` in `src/lib/services/repair-requests.ts`: restricted strictly to Service Centre admins with required explanation, restores ticket from `CANCELLATION_REQUESTED` back to `cancellation_previous_status` (or `ACCEPTED`), maintains equipment in `"In Repair"`, and dispatches resumption notifications to farmer and assigned technician.
+  5. Updated `LEGAL_REPAIR_TRANSITIONS` in `src/lib/services/repair-requests.ts` allowing transitions between `REQUESTED` and `CANCELLATION_REQUESTED`.
+  6. Expanded `isActionableServiceCentreNotification()` and `getNotificationCategory()` in `src/lib/services/notifications.ts` to recognize cancellation events as actionable Service Centre alerts.
 
 #### Step 3 — Farmer Cancellation UI & Dialog
 - **Status**: **PENDING**

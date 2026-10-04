@@ -1,4 +1,4 @@
-﻿export type Json =
+export type Json =
   | string
   | number
   | boolean
@@ -321,6 +321,12 @@ export type Database = {
       repair_requests: {
         Row: {
           assessment: Json
+          cancellation_admin_response: string | null
+          cancellation_note: string | null
+          cancellation_previous_status: Database["public"]["Enums"]["repair_status"] | null
+          cancellation_reason: string | null
+          cancellation_requested_at: string | null
+          cancellation_requested_by: string | null
           clarification_note: string | null
           completion_details: Json | null
           created_at: string
@@ -343,6 +349,12 @@ export type Database = {
         }
         Insert: {
           assessment?: Json
+          cancellation_admin_response?: string | null
+          cancellation_note?: string | null
+          cancellation_previous_status?: Database["public"]["Enums"]["repair_status"] | null
+          cancellation_reason?: string | null
+          cancellation_requested_at?: string | null
+          cancellation_requested_by?: string | null
           clarification_note?: string | null
           completion_details?: Json | null
           created_at?: string
@@ -365,6 +377,12 @@ export type Database = {
         }
         Update: {
           assessment?: Json
+          cancellation_admin_response?: string | null
+          cancellation_note?: string | null
+          cancellation_previous_status?: Database["public"]["Enums"]["repair_status"] | null
+          cancellation_reason?: string | null
+          cancellation_requested_at?: string | null
+          cancellation_requested_by?: string | null
           clarification_note?: string | null
           completion_details?: Json | null
           created_at?: string
@@ -637,6 +655,7 @@ export type Database = {
         | "IN_PROGRESS"
         | "WAITING_FOR_PARTS"
         | "COMPLETED"
+        | "CANCELLATION_REQUESTED"
         | "CANCELLED"
       user_role: "farmer" | "technician" | "admin"
     }
@@ -786,6 +805,7 @@ export const Constants = {
         "IN_PROGRESS",
         "WAITING_FOR_PARTS",
         "COMPLETED",
+        "CANCELLATION_REQUESTED",
         "CANCELLED",
       ],
       user_role: ["farmer", "technician", "admin"],

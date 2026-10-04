@@ -20,7 +20,8 @@ flowchart TD
     P4 --> P51["PHASE 5.1: Product Polish & Account Lifecycle<br/>(STATUS: COMPLETE — Commit a6ff2de)"]
     P51 --> P52["PHASE 5.2: Demo/Data Hygiene & Baseline Reset<br/>(STATUS: COMPLETE)"]
     P52 --> P53["PHASE 5.3: Notification & Product Communication Polish<br/>(STATUS: COMPLETE)"]
-    P53 --> P54["PHASE 5.4: Gemini Multimodal Diagnostics"]
+    P53 --> P54["PHASE 5.4: Cancellation Approval<br/>(STATUS: IN PROGRESS)"]
+    P54 --> P55["PHASE 5.5: Gemini Multimodal Diagnostics"]
 ```
 
 ---
@@ -100,5 +101,51 @@ flowchart TD
 
 > [!NOTE]
 > **Realtime Scope Boundary**: Realtime notification delivery in Phase 5.3 is strictly scoped to the existing Supabase Realtime channel (`postgres_changes` on `public.notifications`) and 15-second background polling fallback. Broad multi-user interactive realtime state synchronization across boards, active forms, and technician assignments is explicitly deferred to **Phase 7 (Realtime Sync & Production Hardening)**.
+
+---
+
+### PHASE 5.4 — Cancellation Approval
+- **Status**: **IN PROGRESS**
+- **Objective**: Establish a governed repair cancellation workflow providing structured farmer cancellation requests, work-hold pauses for assigned technicians, and administrative review/resolution by the Service Centre.
+
+#### Step 1 — Database & State Foundation
+- **Status**: **COMPLETE** (Manually deployed and verified in Supabase; forward migration `20261004100000_phase5_4_cancellation_approval_foundation.sql` preserved as canonical source)
+- **Deliverables**:
+  1. Forward migration `supabase/migrations/20261004100000_phase5_4_cancellation_approval_foundation.sql`.
+  2. Extended `public.repair_status` enum with `CANCELLATION_REQUESTED`.
+  3. Added cancellation tracking columns to `public.repair_requests`:
+     - `cancellation_reason` (text)
+     - `cancellation_note` (text)
+     - `cancellation_requested_by` (uuid)
+     - `cancellation_requested_at` (timestamptz)
+     - `cancellation_previous_status` (public.repair_status)
+     - `cancellation_admin_response` (text)
+  4. Partial index on `repair_requests(status)` for `CANCELLATION_REQUESTED`.
+  5. Hardened RLS `UPDATE` policies on `public.repair_requests`:
+     - Four granular policies: Admins (full operational access), Farmers Direct Cancel (strictly unassigned `REQUESTED`), Farmers Active Lifecycle (quote revision, quote approval, cancellation requests; blocks direct `CANCELLED` and `COMPLETED`), and Technicians (job acceptance, repair progress; blocks `CANCELLED` and `CANCELLATION_REQUESTED`).
+     - Tickets in `CANCELLATION_REQUESTED` locked against non-admin edits.
+     - Only `admin` can approve (`CANCELLED`) or reject (`cancellation_previous_status`).
+  6. Updated `public.reset_demo_data()` to nullify cancellation metadata across all four canonical demo repairs while strictly preserving their Phase 5.2 baseline statuses (`TB-8841` $\rightarrow$ `WAITING_FOR_PARTS`, `TB-8902` $\rightarrow$ `QUOTE_PENDING`, `TB-8898` $\rightarrow$ `REQUESTED`, `TB-4489` $\rightarrow$ `QUOTE_REVISED`), keeping real user accounts (such as `Ankit Chamke`) untouched.
+  7. Synchronized TypeScript types across `src/integrations/supabase/types.ts`, `src/lib/tb-store.ts`, `src/components/tb.tsx`, and `src/lib/services/repair-requests.ts`.
+
+#### Step 2 — Service Layer & Notification Workflow
+- **Status**: **PENDING**
+- Service functions for `requestRepairCancellation`, `approveRepairCancellation`, `rejectRepairCancellation`, and multi-party notification dispatch.
+
+#### Step 3 — Farmer Cancellation UI & Dialog
+- **Status**: **PENDING**
+- Farmer cancellation modal with structured reason dropdown, holding banner, and Stepper status alignment.
+
+#### Step 4 — Admin Approval Workbench & Operations Filter
+- **Status**: **PENDING**
+- Cancellation review card on admin repair detail, approve/reject confirmation flows, and operations pipeline filter.
+
+#### Step 5 — Technician Work-Hold UI & Assignment Termination
+- **Status**: **PENDING**
+- Work-hold banner on technician workbench, action button suppression while under review, and assignment termination notice.
+
+#### Step 6 — End-to-End Verification
+- **Status**: **PENDING**
+- Execution of verification suite `P5.4-01` through `P5.4-06`.
 
 

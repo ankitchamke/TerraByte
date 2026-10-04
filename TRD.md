@@ -110,7 +110,14 @@ stateDiagram-v2
     IN_PROGRESS --> WAITING_FOR_PARTS: Required part unavailable
     WAITING_FOR_PARTS --> IN_PROGRESS: Part delivered to workshop/field
     IN_PROGRESS --> COMPLETED: Repair finished & test run verified
-    REQUESTED --> CANCELLED: Farmer cancels request
+    REQUESTED --> CANCELLED: Farmer cancels unassigned request
+    ACCEPTED --> CANCELLATION_REQUESTED: Farmer requests cancellation
+    QUOTE_PENDING --> CANCELLATION_REQUESTED: Farmer requests cancellation
+    QUOTE_REVISED --> CANCELLATION_REQUESTED: Farmer requests cancellation
+    IN_PROGRESS --> CANCELLATION_REQUESTED: Farmer requests cancellation
+    WAITING_FOR_PARTS --> CANCELLATION_REQUESTED: Farmer requests cancellation
+    CANCELLATION_REQUESTED --> CANCELLED: Admin approves cancellation
+    CANCELLATION_REQUESTED --> ACCEPTED: Admin rejects cancellation (reverts to previous status)
     COMPLETED --> [*]: Service record committed
 ```
 
@@ -125,9 +132,11 @@ stateDiagram-v2
 | **--**| `WAITING_FOR_PARTS` | Technician logs missing part delay | **Paused** · *"Waiting for Parts"* |
 | **6** | `IN_PROGRESS (Testing)` | Technician verifies fix under load | **Active Repair** · *"Testing Your Machine"* |
 | **7** | `COMPLETED` | Technician signs off; Farmer verifies | **Service History** · *"Repaired & Verified"* |
+| **--**| `CANCELLATION_REQUESTED` | Farmer submits cancellation on assigned ticket | **Under Review** · *"Cancellation Pending Review"* |
+| **--**| `CANCELLED` | Immediate (if unassigned) or Admin approved | **Closed** · *"Repair Cancelled"* |
 
 > [!IMPORTANT]
-> **Lifecycle Semantic Guardrail**: The UI must NEVER falsely display *"Finding Your Technician"* until the farmer has actually initiated the technician request. A newly reported breakdown (`status = 'REQUESTED'`, `technician_id = null`) is an **Action Needed** state requiring farmer technician selection/dispatch.
+> **Lifecycle Semantic Guardrail**: The UI must NEVER falsely display *"Finding Your Technician"* until the farmer has actually initiated the technician request. A newly reported breakdown (`status = 'REQUESTED'`, `technician_id = null`) is an **Action Needed** state requiring farmer technician selection/dispatch. Assigned or in-progress tickets cannot be directly cancelled by the farmer; they transition to `CANCELLATION_REQUESTED` for Service Centre administrative approval.
 
 ### 5.2 Preliminary Diagnostic Assessment vs. Confirmed Diagnosis Boundary
 
@@ -203,6 +212,45 @@ TerraByte implements a high-integrity, real-time notification and communication 
   - Notification updates in Phase 5.3 operate strictly on the existing Supabase Realtime channel (`postgres_changes` on `public.notifications`) and 15-second background polling fallback.
   - Broader multi-user interactive realtime state synchronization across boards, active forms, and technician assignments is explicitly deferred to **Phase 7 (Realtime Sync & Production Hardening)**.
 
+### 5.7 Governed Cancellation Approval Architecture (Phase 5.4)
+
+TerraByte implements a dual-path repair cancellation governance workflow to prevent arbitrary abandonment of in-flight field repairs while preserving farmer autonomy for unassigned requests:
+
+- **Unassigned Direct Cancellation**:
+  - Breakdown tickets in `REQUESTED` status with no assigned technician (`technician_id IS NULL`) can be directly cancelled by the farmer to `CANCELLED`.
+  - Immediate resolution prevents unnecessary administrative burden when a farmer self-resolves an issue prior to technician dispatch.
+- **Assigned & Active Governed Cancellation**:
+  - Once a ticket has been accepted by a technician or advanced (`ACCEPTED`, `QUOTE_PENDING`, `QUOTE_REVISED`, `IN_PROGRESS`, `WAITING_FOR_PARTS`), cancellation attempts transition the ticket to `CANCELLATION_REQUESTED`.
+  - Direct transition to `CANCELLED` is blocked at the database RLS layer for farmers and technicians on assigned tickets.
+- **Database Schema & Tracking Columns**:
+  - Added `CANCELLATION_REQUESTED` to `public.repair_status` enum.
+  - Extended `public.repair_requests` with six cancellation tracking columns:
+    - `cancellation_reason text`: Standardized categorization code (e.g., `SELF_REPAIRED`, `DELAY`, `COST_CONCERN`, `ALTERNATE_ARRANGEMENT`, `EQUIPMENT_SOLD`).
+    - `cancellation_note text`: Optional farmer freeform explanation.
+    - `cancellation_requested_by uuid REFERENCES public.profiles(id)`: Identity of the requesting user.
+    - `cancellation_requested_at timestamptz`: Request submission timestamp.
+    - `cancellation_previous_status public.repair_status`: Snapshot of status prior to cancellation request, ensuring safe reversion upon admin rejection.
+    - `cancellation_admin_response text`: Administrative review remarks, conditions, or rejection reason.
+  - Created partial index `idx_repair_requests_cancellation_status` on `status = 'CANCELLATION_REQUESTED'`.
+- **Database Security & RLS Policies**:
+  - Four purpose-driven `UPDATE` policies on `public.repair_requests`:
+    - **Admins**: Full operational update authority across all repair tickets and statuses.
+    - **Farmers (Direct Cancellation)**: Strictly restricted by `USING (status = 'REQUESTED' AND technician_id IS NULL)` and `WITH CHECK (status = 'CANCELLED' AND technician_id IS NULL)`. The `USING` clause evaluates against the existing stored row (`OLD`), preventing clients from bypassing assignment guards.
+    - **Farmers (Active Lifecycle & Cancellation Request)**: Allows advancing tickets (`QUOTE_REVISED`, `IN_PROGRESS`) and requesting governed cancellation (`CANCELLATION_REQUESTED`), while strictly prohibiting direct mutation to `CANCELLED` or `COMPLETED`, and locking tickets in `CANCELLATION_REQUESTED` against unauthorized edits.
+    - **Technicians (Job Progress & Acceptance)**: Allows accepting unassigned tickets to `ACCEPTED`, updating diagnostic assessments, placing parts holds, resuming, and testing/completing repairs. Strictly prohibits setting `CANCELLED` or `CANCELLATION_REQUESTED`, and locks tickets while under administrative cancellation review.
+- **Technician Work-Hold Semantics**:
+  - While in `CANCELLATION_REQUESTED`, physical repair work and parts ordering are placed on hold. The technician workbench displays a work-hold banner with farmer cancellation rationale, suppressing diagnostic and repair mutation controls.
+- **Administrative Review & Resolution**:
+  - Service Centre review workbench on `/admin` enables operators to inspect reason, technician travel/disassembly status, and parts commitments.
+  - **Approval**: Transitions ticket to `CANCELLED`, records response note, and notifies farmer and technician.
+  - **Rejection**: Restores ticket to `cancellation_previous_status`, records admin explanation, and notifies farmer to resume workflow.
+- **Canonical Demo Fixture Cleanliness & Baseline Preservation**:
+  - `public.reset_demo_data()` resets all six cancellation tracking columns (`cancellation_reason = NULL`, etc.) alongside deterministic restoration of the four canonical demo repairs to their exact Phase 5.2 baseline statuses:
+    - `TB-8841` $\rightarrow$ `WAITING_FOR_PARTS` (Balasaheb Patil, Mahindra 575 DI, parts hold)
+    - `TB-8902` $\rightarrow$ `QUOTE_PENDING` (Suresh Jadhav, John Deere 5050 D, pending quote)
+    - `TB-8898` $\rightarrow$ `REQUESTED` (Anil Pawar, Swaraj 744 FE, unassigned)
+    - `TB-4489` $\rightarrow$ `QUOTE_REVISED` (Balasaheb Patil, VST Shakti 130 DI, revised quote)
+  - Real user accounts (such as `Ankit Chamke`) remain strictly isolated and unaffected.
 
 ---
 

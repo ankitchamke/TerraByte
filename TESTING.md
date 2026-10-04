@@ -85,7 +85,20 @@ This document specifies the verification criteria and test matrix for TerraByte.
 
 ---
 
-## 5. Planned Domain Verification Tests (Phases 3–8)
+## 5. Phase 5.4 Cancellation Approval Test Matrix (Step 1 Foundation)
+
+| Test ID | Test Scenario | Persona / Setup | Action | Expected Result | Actual Result | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :---: |
+| **P5.4-01** | `repair_status` enum & cancellation columns present | Database Schema inspection | Inspect `public.repair_status` enum and `public.repair_requests` columns | Enum contains `CANCELLATION_REQUESTED`; `repair_requests` contains `cancellation_reason`, `cancellation_note`, `cancellation_requested_by`, `cancellation_requested_at`, `cancellation_previous_status`, `cancellation_admin_response`; partial index `idx_repair_requests_cancellation_status` exists. | Verified deployed and present in Supabase | **PASS** |
+| **P5.4-02** | RLS blocks direct client mutation of assigned repair to `CANCELLED` | Authenticated Farmer on assigned repair (`technician_id IS NOT NULL`) | Attempt raw client update `status = 'CANCELLED'` | RLS `WITH CHECK` rejects the mutation with error code `42501` (`new row violates row-level security policy`). | Verified deployed and enforced in Supabase | **PASS** |
+| **P5.4-03** | RLS allows direct client cancellation of unassigned newly requested repair | Authenticated Farmer on unassigned repair (`technician_id IS NULL`, `status: REQUESTED`) | Submit cancellation `status = 'CANCELLED'` | RLS `WITH CHECK` permits the update; repair transitions to `CANCELLED`. | Verified deployed and permitted in Supabase | **PASS** |
+| **P5.4-04** | RLS locks tickets in `CANCELLATION_REQUESTED` against non-admin resolution | Authenticated Farmer or Technician on ticket in `CANCELLATION_REQUESTED` | Attempt update to any status (`CANCELLED` or previous status) | RLS `USING` clause (`status != 'CANCELLATION_REQUESTED'`) rejects the update; only admin can resolve ticket. | Verified deployed and locked in Supabase | **PASS** |
+| **P5.4-05** | RLS blocks technician from setting `CANCELLED` or `CANCELLATION_REQUESTED` | Authenticated Technician | Attempt update setting `status = 'CANCELLED'` or `status = 'CANCELLATION_REQUESTED'` | RLS `WITH CHECK` rejects technician cancellation mutations. | Verified deployed and blocked in Supabase | **PASS** |
+| **P5.4-06** | `reset_demo_data()` clears cancellation columns & restores canonical baseline | Designated demo account after cancellation testing | Invoke `public.reset_demo_data()` | Canonical fixtures (`TB-8841`, `TB-8902`, `TB-8898`, `TB-4489`) restored to baseline; all 6 cancellation columns reset to `NULL`; real user data untouched. | Verified deployed and passing in Supabase | **PASS** |
+
+---
+
+## 6. Planned Domain Verification Tests (Phases 3–8)
 
 The following domain tests are scheduled as the relational schema and storage are connected in subsequent phases:
 

@@ -12,6 +12,7 @@ export type RepairStatus =
   | "IN_PROGRESS"
   | "WAITING_FOR_PARTS"
   | "COMPLETED"
+  | "CANCELLATION_REQUESTED"
   | "CANCELLED";
 
 export interface Farmer { id: string; name: string; village: string; phone: string }
@@ -339,11 +340,13 @@ export const FARMER_LABEL: Record<RepairStatus, string> = {
   IN_PROGRESS: "Repair in Progress",
   WAITING_FOR_PARTS: "Paused: Waiting for Spare Parts",
   COMPLETED: "Repair Complete & Verified",
+  CANCELLATION_REQUESTED: "Cancellation Pending Review",
   CANCELLED: "Cancelled",
 };
 export const STAFF_LABEL: Record<RepairStatus, string> = {
   REQUESTED: "Requested", ACCEPTED: "Accepted", QUOTE_PENDING: "Quote pending", QUOTE_REVISED: "Quote revision",
-  IN_PROGRESS: "In progress", WAITING_FOR_PARTS: "Waiting for parts", COMPLETED: "Completed", CANCELLED: "Cancelled",
+  IN_PROGRESS: "In progress", WAITING_FOR_PARTS: "Waiting for parts", COMPLETED: "Completed",
+  CANCELLATION_REQUESTED: "Cancellation requested", CANCELLED: "Cancelled",
 };
 export const isActive = (r: Repair) => r.status !== "CANCELLED" && !(r.status === "COMPLETED" && r.verifiedAt);
 export const OVERDUE_MIN: Partial<Record<RepairStatus, number>> = { REQUESTED: 20, ACCEPTED: 180, QUOTE_PENDING: 240, QUOTE_REVISED: 120, WAITING_FOR_PARTS: 24 * 60 };

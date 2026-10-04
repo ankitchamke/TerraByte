@@ -702,6 +702,7 @@ const TONE: Record<RepairStatus, string> = {
   IN_PROGRESS: "bg-primary/12 text-primary border-primary/30",
   WAITING_FOR_PARTS: "bg-warning/20 text-warning-foreground border-warning/50",
   COMPLETED: "bg-success/15 text-success border-success/30",
+  CANCELLATION_REQUESTED: "bg-warning/20 text-warning-foreground border-warning/50",
   CANCELLED: "bg-muted text-muted-foreground border-border",
 };
 export function StatusPill({

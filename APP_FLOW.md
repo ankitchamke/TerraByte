@@ -115,6 +115,37 @@ flowchart TD
 
 ---
 
+### 2.4 Governed Cancellation Approval Flow (Phase 5.4 Foundation)
+
+```mermaid
+flowchart TD
+    CancelReq["Farmer requests repair cancellation"] --> CheckAssigned{"Is technician assigned?"}
+    
+    CheckAssigned -- "No (Unassigned REQUESTED)" --> ImmediateCancel["Direct Cancellation: status = CANCELLED<br/>Equipment restored to Operational<br/>Admin notified"]
+    
+    CheckAssigned -- "Yes (Assigned / In Progress)" --> HoldState["status = CANCELLATION_REQUESTED<br/>Previous status stored<br/>Technician work paused<br/>Admin alerted for review"]
+    
+    HoldState --> AdminReview{"Service Centre Review"}
+    
+    AdminReview -- "Approve Cancellation" --> ApprovedCancel["status = CANCELLED<br/>Equipment restored to Operational<br/>Farmer & Technician notified"]
+    
+    AdminReview -- "Decline Cancellation" --> RevertedState["status = cancellation_previous_status<br/>Work resumed<br/>Farmer notified with reason"]
+```
+
+1. **Unassigned Cancellation**:
+   - Newly requested repairs without an assigned technician (`status = 'REQUESTED'`, `technician_id IS NULL`) can be cancelled directly by the farmer.
+   - Status updates directly to `CANCELLED`; equipment returns to `Operational`.
+2. **Governed Cancellation Requests**:
+   - Assigned or in-flight repairs (`ACCEPTED`, `QUOTE_PENDING`, `QUOTE_REVISED`, `IN_PROGRESS`, `WAITING_FOR_PARTS`) cannot be cancelled unilaterally.
+   - Farmer submits a cancellation request with structured reason and explanation.
+   - State advances to `CANCELLATION_REQUESTED`; `cancellation_previous_status` preserves the current state.
+   - Assigned technician's workbench displays a work-hold notice.
+3. **Service Centre Decision**:
+   - **Approval**: Admin confirms cancellation. Status moves to `CANCELLED`, machinery is marked `Operational`, farmer and technician receive notifications.
+   - **Rejection**: Admin declines cancellation with an explanation. Ticket reverts to its previous status; work resumes; farmer receives notice.
+
+---
+
 ## 3. Demo Reset Flow (Evaluation Personas Only)
 
 ```mermaid

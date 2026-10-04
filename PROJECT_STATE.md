@@ -2,7 +2,13 @@
 
 ## 1. Current Phase
 
-- **Current Phase**: **PHASE 5.4 — UPCOMING** (Gemini Multimodal Diagnostics)
+- **Current Phase**: **PHASE 5.4 — IN PROGRESS** (Cancellation Approval)
+  - **Step 1 — Database & State Foundation**: **COMPLETE** (Forward migration `20261004100000_phase5_4_cancellation_approval_foundation.sql` manually deployed and verified in Supabase; enum extension, 6 cancellation columns, index, 4 hardened RLS policies, corrected `reset_demo_data()` RPC, TypeScript definitions)
+  - **Step 2 — Service Layer & Notification Workflow**: PENDING
+  - **Step 3 — Farmer Cancellation UI & Dialog**: PENDING
+  - **Step 4 — Admin Approval Workbench & Operations Filter**: PENDING
+  - **Step 5 — Technician Work-Hold UI & Assignment Termination**: PENDING
+  - **Step 6 — End-to-End Verification**: PENDING
 - **Previous Completed Phase**: **PHASE 5.3 — COMPLETE** (Notification & Product Communication Polish)
 - **Branch**: `phase-5` (connected to Lovable; no destructive Git history operations)
 
@@ -42,6 +48,14 @@ TerraByte is an end-to-end digital agricultural equipment repair ecosystem desig
   - **Notification Copy Standardization**: Audited and standardized all notification copy across quotes, repair requests, and technician operations. Enforced consistent sentence casing, concise action-oriented tone, and proper ending punctuation across all system notifications.
   - **Enhanced Notification Popover Visual Hierarchy**: Redesigned Shell bell popover in `src/components/tb.tsx` with semantic category pill badges and icons (`Breakdown`, `Quote`, `Parts`, `Testing`, `Repair`, `Account`, `Assignment`, `Alert`, `Notice`), distinct unread indicator dot with subtle focus ring, unread background highlight (`bg-primary/[0.04]`), and actionable "View details" cue, preserving all existing interactions.
 
+- **Phase 5.4 — Cancellation Approval**: **IN PROGRESS** (Step 1 Database & State Foundation Implemented)
+  - **Repair Status Enum Extended**: Added `CANCELLATION_REQUESTED` to `public.repair_status` PostgreSQL enum before `CANCELLED`.
+  - **Cancellation Tracking Columns**: Added `cancellation_reason` (text), `cancellation_note` (text), `cancellation_requested_by` (uuid), `cancellation_requested_at` (timestamptz), `cancellation_previous_status` (public.repair_status), and `cancellation_admin_response` (text) to `public.repair_requests` with a partial index on status `CANCELLATION_REQUESTED`.
+  - **RLS UPDATE Policies Hardened**: Implemented 4 purpose-driven `UPDATE` policies on `public.repair_requests` preventing direct dangerous mutations. Farmers may directly cancel ONLY unassigned `REQUESTED` repairs (verified via `USING` on `OLD` stored row); assigned/in-flight repairs must transition via `CANCELLATION_REQUESTED`; tickets under review are locked (`USING (status != 'CANCELLATION_REQUESTED')`); technicians are strictly prohibited from cancelling or requesting cancellation; and administrative resolution authority is preserved.
+  - **Demo Reset Function Updated**: Enhanced `public.reset_demo_data()` in forward migration `20261004100000_phase5_4_cancellation_approval_foundation.sql` to nullify all 6 cancellation columns on canonical demo repairs while strictly preserving their Phase 5.2 baseline statuses (`TB-8841` $\rightarrow$ `WAITING_FOR_PARTS`, `TB-8902` $\rightarrow$ `QUOTE_PENDING`, `TB-8898` $\rightarrow$ `REQUESTED`, `TB-4489` $\rightarrow$ `QUOTE_REVISED`), keeping real user accounts (such as `Ankit Chamke`) completely untouched.
+  - **Type Synchronization**: Synchronized TypeScript definitions in `src/integrations/supabase/types.ts`, `src/lib/tb-store.ts`, `src/components/tb.tsx`, and `src/lib/services/repair-requests.ts`.
+  - **Remote Deployment Status**: Supabase CLI push is blocked by `DbPushMissingLocalError` due to Lovable legacy migration entries (`20260930000001`–`20260930000008`). Per project rules against history rewrites, history is not repaired. Migration is prepared for execution via the Supabase Dashboard SQL Editor.
+
 ### Current Discovered Issues Under Remediation
 
 1. **Farmer Demo Data Isolation**:
@@ -74,9 +88,9 @@ TerraByte is an end-to-end digital agricultural equipment repair ecosystem desig
 
 ### Checkpoint Status
 
-- The five core architecture documents (`PROJECT_STATE.md`, `IMPLEMENTATION_PLAN.md`, `APP_FLOW.md`, `TESTING.md`, `TRD.md`) are synchronized at this Phase 5.3 completion checkpoint.
-- All implementation steps (Steps 1–3) are finished, and manual verification tests `P5.3-01` through `P5.3-22` have **PASSED**.
-- **Phase 5.3 is COMPLETE**. Working tree is verified and ready for commit on branch `phase-5`.
+- The five core architecture documents (`PROJECT_STATE.md`, `IMPLEMENTATION_PLAN.md`, `APP_FLOW.md`, `TESTING.md`, `TRD.md`) are synchronized at this Phase 5.4 Step 1 checkpoint.
+- **Phase 5.4 is IN PROGRESS**. Step 1 (Database & State Foundation) is implemented and verified with clean builds (`npm run build`). Verification tests `P5.4-01` through `P5.4-06` are recorded as **PENDING MANUAL EXECUTION**.
+- Working tree is verified on branch `phase-5`.
 
 ---
 

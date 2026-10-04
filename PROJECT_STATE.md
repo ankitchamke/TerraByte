@@ -2,14 +2,13 @@
 
 ## 1. Current Phase
 
-- **Current Phase**: **PHASE 5.4 — IN PROGRESS** (Cancellation Approval)
-  - **Step 1 — Database & State Foundation**: **COMPLETE** (Forward migration `20261004100000_phase5_4_cancellation_approval_foundation.sql` manually deployed and verified in Supabase; enum extension, 6 cancellation columns, index, 4 hardened RLS policies, corrected `reset_demo_data()` RPC, TypeScript definitions)
-  - **Step 2 — Service Layer & Notification Workflow**: **COMPLETE** (Implemented `requestCancellation`, `approveCancellation`, `rejectCancellation`, hardened `cancelRepairRequest`, equipment integrity guards, multi-party notifications, and notification alert classification)
-  - **Step 3 — Farmer Cancellation UI & Dialog**: **COMPLETE** (Accessible Radix Dialog for unassigned immediate cancellation and governed review requests, structured reason selection, dynamic holding and closed status banners, Stepper status alignment with hold state, and active control suppression)
-  - **Step 4 — Admin Approval Workbench & Operations Filter**: **COMPLETE** (Added "Cancellation Requests" filter tab, actionable pending cancellation banner on operations dashboard, highlighted table rows with review button, dedicated Cancellation Review Card on admin repair detail, and accessible modal confirmation dialogs for Approve with optional remarks and Reject with required explanation)
-  - **Step 5 — Technician Work-Hold UI & Assignment Termination**: **COMPLETE** (Technician dashboard isolated "On hold · Cancellation pending" and "Cancelled" sections; detail view work-hold banner with farmer cancellation metadata, action suppression on hold, read-only quote and parts cards, cancelled repair closed banner with admin resolution remarks, and cancellation declined work resumed notice)
-  - **Step 6 — End-to-End Verification**: PENDING
-- **Previous Completed Phase**: **PHASE 5.3 — COMPLETE** (Notification & Product Communication Polish)
+- **Current Phase**: **PHASE 5.5 — IN PROGRESS** (Communication & Quote Revision Workflow)
+  - **Step 1 — Database Foundation & Canonical Demo Fixture Completion**: **COMPLETE** (Forward migration `20261005100000_phase5_5_communication_foundation.sql` created; canonical Quote v1 fixture for `TB-4489` added to `public.reset_demo_data()` with ₹2,800 itemized breakdown; `public.repair_messages` table created with performance indexes, anti-spoofing RLS, realtime publication, and disposable demo message cleanup; Supabase TypeScript definitions synchronized)
+  - **Step 2 — Ticket-Scoped Messaging Service Layer**: PENDING
+  - **Step 3 — Farmer–Technician Communication UI & Notification Wiring**: PENDING
+  - **Step 4 — Quote Revision Flow & Version Comparison UI**: PENDING
+  - **Step 5 — End-to-End Verification**: PENDING
+- **Previous Completed Phase**: **PHASE 5.4 — COMPLETE** (Cancellation Approval Workflow — Baseline Commit `d39d821`)
 - **Branch**: `phase-5` (connected to Lovable; no destructive Git history operations)
 
 ---
@@ -48,7 +47,7 @@ TerraByte is an end-to-end digital agricultural equipment repair ecosystem desig
   - **Notification Copy Standardization**: Audited and standardized all notification copy across quotes, repair requests, and technician operations. Enforced consistent sentence casing, concise action-oriented tone, and proper ending punctuation across all system notifications.
   - **Enhanced Notification Popover Visual Hierarchy**: Redesigned Shell bell popover in `src/components/tb.tsx` with semantic category pill badges and icons (`Breakdown`, `Quote`, `Parts`, `Testing`, `Repair`, `Account`, `Assignment`, `Alert`, `Notice`), distinct unread indicator dot with subtle focus ring, unread background highlight (`bg-primary/[0.04]`), and actionable "View details" cue, preserving all existing interactions.
 
-- **Phase 5.4 — Cancellation Approval**: **IN PROGRESS** (Steps 1, 2, 3, 4 & 5 Implemented)
+- **Phase 5.4 — Cancellation Approval**: **COMPLETE** (Committed and pushed: `d39d821`)
   - **Repair Status Enum Extended**: Added `CANCELLATION_REQUESTED` to `public.repair_status` PostgreSQL enum before `CANCELLED`.
   - **Cancellation Tracking Columns**: Added `cancellation_reason` (text), `cancellation_note` (text), `cancellation_requested_by` (uuid), `cancellation_requested_at` (timestamptz), `cancellation_previous_status` (public.repair_status), and `cancellation_admin_response` (text) to `public.repair_requests` with a partial index on status `CANCELLATION_REQUESTED`.
   - **RLS UPDATE Policies Hardened**: Implemented 4 purpose-driven `UPDATE` policies on `public.repair_requests` preventing direct dangerous mutations. Farmers may directly cancel ONLY unassigned `REQUESTED` repairs (verified via `USING` on `OLD` stored row); assigned/in-flight repairs must transition via `CANCELLATION_REQUESTED`; tickets under review are locked (`USING (status != 'CANCELLATION_REQUESTED')`); technicians are strictly prohibited from cancelling or requesting cancellation; and administrative resolution authority is preserved.
@@ -58,7 +57,20 @@ TerraByte is an end-to-end digital agricultural equipment repair ecosystem desig
   - **Admin Approval Workbench & Operations Filter**: Enhanced Service Centre operations dashboard (`src/routes/admin/index.tsx`) with a dedicated `"Cancellation Requests"` filter tab, actionable pending cancellation alert banner, and visual table row highlights with a `"Review"` CTA. Implemented a comprehensive **Cancellation Review Card** on the admin repair detail route (`src/routes/admin/repair/$id.tsx`) displaying job number, farmer, equipment, previous status, reason, notes, request timestamp, and technician hold state. Added accessible Radix confirmation modals for `approveCancellation()` (with optional resolution remarks) and `rejectCancellation()` (with required explanation), guarded by admin role checks, loading states, and error handling.
   - **Technician Work-Hold UI & Cancellation Awareness**: Enhanced technician dashboard (`src/routes/technician/index.tsx`) with an isolated `"On hold · Cancellation pending"` section, amber hold styling, animated pulse dot, and reason preview, preventing jobs under cancellation review from appearing as normal actionable jobs. Added a prominent **Cancellation Request Under Review** work-hold banner on `/technician/job/:id` detailing reason, note, timestamp, previous status, and work-hold instructions while locking active progression actions (quotes, parts, testing, completion). Added a dedicated **Repair Cancelled** closed banner with admin resolution notes, and an informative **Cancellation Request Declined · Work Resumed** notice when previous status is restored, maintaining full context and assignment history.
   - **Type Synchronization**: Synchronized TypeScript definitions in `src/integrations/supabase/types.ts`, `src/lib/tb-store.ts`, `src/components/tb.tsx`, and `src/lib/services/repair-requests.ts`.
-  - **Remote Deployment Status**: Supabase CLI push is blocked by `DbPushMissingLocalError` due to Lovable legacy migration entries (`20260930000001`–`20260930000008`). Per project rules against history rewrites, history is not repaired. Migration is prepared for execution via the Supabase Dashboard SQL Editor.
+
+- **Phase 5.5 — Communication & Quote Revision Workflow**: **IN PROGRESS** (Step 1 Implemented)
+  - **Step 1 — Database Foundation & Canonical Demo Fixture Completion**: **COMPLETE**
+    - Created forward migration `supabase/migrations/20261005100000_phase5_5_communication_foundation.sql`.
+    - Added `public.repair_messages` table for ticket-scoped farmer/technician/admin messaging with `id`, `repair_request_id`, `sender_id`, `recipient_id`, `message_text`, `created_at`, and `is_read`.
+    - Configured performance indexes on `(repair_request_id, created_at ASC)` and partial index on `(recipient_id, is_read) WHERE is_read = false`.
+    - Hardened RLS policies for `repair_messages`: SELECT for ticket participants and admins, INSERT with strict caller anti-spoofing (`sender_id = current_profile_id()`) and ticket participation validation, UPDATE strictly for recipient read receipts, and DELETE restricted to administrative moderation.
+    - Added idempotent Supabase Realtime publication hook for `public.repair_messages`.
+    - Updated `public.reset_demo_data()` to clean disposable test messages and extra test quotes while leaving real user records untouched, and restored canonical Quote v1 fixture for `TB-4489` (status `REVISED`, total ₹2,800: Rotavator seal kit ₹1,400 + EP-90 Gearbox Oil ₹600 + Labour ₹800).
+    - Synchronized TypeScript definitions in `src/integrations/supabase/types.ts`.
+  - **Step 2 — Ticket-Scoped Messaging Service Layer**: PENDING
+  - **Step 3 — Farmer–Technician Communication UI & Notification Wiring**: PENDING
+  - **Step 4 — Quote Revision Flow & Version Comparison UI**: PENDING
+  - **Step 5 — End-to-End Verification**: PENDING
 
 ### Current Discovered Issues Under Remediation
 

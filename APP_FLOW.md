@@ -300,4 +300,35 @@ sequenceDiagram
    - Realtime behavior in Phase 5.3 is strictly scoped to the existing notification channel (`postgres_changes` on `public.notifications`) and 15-second polling fallback.
    - Any broader multi-user interactive realtime/session synchronization improvements across the active application are deferred to **Phase 7 (Realtime Sync & Production Hardening)**.
 
+---
+
+## 8. Ticket-Scoped Communication & Quote Revision Lifecycle
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Farmer as Balasaheb Patil (Farmer)
+    participant RepairView as Repair Detail (/farmer/repair/:id)
+    participant MsgDB as PostgreSQL repair_messages
+    participant Realtime as Supabase Realtime
+    participant JobView as Job Detail (/technician/job/:id)
+    actor Tech as Ramesh Kumar (Technician)
+
+    Note over Farmer,Tech: Ticket-Scoped Communication on Active Repair
+    Farmer->>RepairView: Types message on repair ticket
+    RepairView->>MsgDB: INSERT repair_messages (anti-spoofing check sender_id)
+    MsgDB-->>Realtime: Broadcast new message event
+    Realtime-->>JobView: Live incoming message push
+    Tech->>JobView: Views message on repair workbench
+    JobView->>MsgDB: UPDATE repair_messages SET is_read = true WHERE recipient_id = Tech
+```
+
+1. **Ticket-Scoped Encapsulation**: Messages are strictly tied to a `repair_request_id`, ensuring conversations remain in context of the specific breakdown, diagnosis, parts negotiation, or schedule alignment.
+2. **Access Control & Anti-Spoofing**: PostgreSQL RLS ensures only authorized ticket participants (farmer, assigned technician) and administrators can access or send messages. Senders cannot spoof identity (`sender_id = current_profile_id()`), and only the designated recipient can mark messages as read.
+3. **Canonical Quote Baseline (TB-4489)**:
+   - Balasaheb Patil (`f1`) holds canonical ticket `TB-4489` in `QUOTE_REVISED` status with quote clarification *"Can you finish by 3 PM instead of 6 PM?"*.
+   - Quote v1 fixture in `public.reset_demo_data()` anchors baseline at ₹2,800 (Labour ₹800, Rotavator seal kit ₹1,400, Gear oil ₹600).
+   - In Step 4, Ramesh Kumar (`t1`) can formulate a revised Quote v2 addressing time and cost adjustments with full version diffing.
+
+
 

@@ -122,6 +122,15 @@ This document specifies the verification criteria and test matrix for TerraByte.
 
 ---
 
+### Phase 5.5 — Communication & Quote Revision Verification Suite
+
+| Test ID | Test Case | Target State / Persona | Action / Steps | Expected Result | Verification Method | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :---: |
+| **P5.5-01** | `public.reset_demo_data()` Canonical Quote v1 for TB-4489 | Authenticated demo persona (Balasaheb Patil or Ramesh Kumar) | Trigger `reset_demo_data()` via Shell or SQL | Ticket `TB-4489` restores Quote v1 (`00000000-0000-0000-0030-000000004489`) with status `REVISED`, version 1, total ₹2,800 (Items: Rotavator seal kit ₹1,400, Gear oil ₹600, Labour ₹800); idempotent across repeated resets; canonical tickets and real users remain untouched. | Database inspection of `quotes`, `quote_items`, and `reset_demo_data()` result | **PENDING** |
+| **P5.5-02** | `public.repair_messages` schema, indexes, anti-spoofing RLS, and demo cleanup | Authenticated users & Supabase RLS | Inspect table structure, indexes, and test SELECT, INSERT, UPDATE, DELETE policies across roles | Table contains ticket-scoped schema; `(repair_request_id, created_at ASC)` and unread indexes exist; RLS prevents sender impersonation, allows authorized ticket participants and admins to read/send, restricts updates strictly to recipient read status, restricts delete to admin; `reset_demo_data()` cleans demo messages safely. | SQL & RLS policy audit; database execution | **PENDING** |
+
+---
+
 ## 6. Planned Domain Verification Tests (Phases 3–8)
 
 The following domain tests are scheduled as the relational schema and storage are connected in subsequent phases:

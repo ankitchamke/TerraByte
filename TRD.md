@@ -287,7 +287,21 @@ TerraByte implements a dual-path repair cancellation governance workflow to prev
     - **Read-Only Context Cards**: Preserves read-only quotation and parts-hold context cards so existing diagnostics and parts specifications remain visible to the technician without modification controls.
     - **Closed Banner (`CANCELLED`)**: Renders a muted closed status card displaying cancellation reason, farmer note, and administrative resolution remarks. Outbound calling action is suppressed on cancelled jobs.
     - **Resumption Notice**: When a cancellation request is declined by the Service Centre, displays an informative notice explaining that the request was declined with the administrator's justification, and restores the standard progression actions for the resumed status.
-    - **Assignment Guard Access**: Updated route authorization check to permit technicians to view cancelled historical jobs assigned to them without access rejection.
+- **Communication & Quote Revision Foundation (Phase 5.5 Step 1)**:
+  - **Repair Messages Table (`public.repair_messages`)**: Ticket-scoped communication entity capturing messages between farmers, technicians, and administrators directly tied to repair jobs.
+    - Fields: `id` (uuid, primary key), `repair_request_id` (uuid, fk to `repair_requests` with cascading deletion), `sender_id` (uuid, fk to `profiles`), `recipient_id` (uuid, fk to `profiles`), `message_text` (text, non-empty check), `created_at` (timestamptz), and `is_read` (boolean, default false).
+    - Composite Performance Index: `idx_repair_messages_ticket` on `(repair_request_id, created_at ASC)` ensuring fast chronology loading.
+    - Partial Index for Unread Badges: `idx_repair_messages_unread` on `(recipient_id, is_read) WHERE is_read = false`.
+  - **Hardened RLS Security Model**:
+    - `SELECT`: Restricted to administrators and authorized ticket participants (the repair's farmer or assigned technician, or direct sender/recipient).
+    - `INSERT`: Enforces strict caller identity anti-spoofing (`sender_id = public.current_profile_id()`) and mandates ticket participant or admin authorization.
+    - `UPDATE`: Strictly restricted to message recipients updating read receipt status (`recipient_id = public.current_profile_id()`).
+    - `DELETE`: Exclusively reserved for administrative moderation (`public.current_user_role() = 'admin'`).
+  - **Canonical Quote v1 Fixture for `TB-4489`**:
+    - Incorporated into `public.reset_demo_data()` with deterministic UUIDs: Quote ID `00000000-0000-0000-0030-000000004489`, status `'REVISED'`, version 1, labour ₹800, tax 0%, estimated completion `'Today, 6:00 PM'`, sent 4 hours ago.
+    - Item 1 (`00000000-0000-0000-0031-000000000005`): Rotavator Oil Seal Kit (`VST 130DI-GS-22`), quantity 1, unit price ₹1,400.
+    - Item 2 (`00000000-0000-0000-0031-000000000006`): EP-90 Gearbox Oil (`3.5L can`), quantity 1, unit price ₹600.
+    - Total canonical quote value: ₹2,800. Fully idempotent upon reset; aligns with Balasaheb Patil's clarification note *"Can you finish by 3 PM instead of 6 PM?"*.
 
 ---
 

@@ -20,8 +20,9 @@ flowchart TD
     P4 --> P51["PHASE 5.1: Product Polish & Account Lifecycle<br/>(STATUS: COMPLETE — Commit a6ff2de)"]
     P51 --> P52["PHASE 5.2: Demo/Data Hygiene & Baseline Reset<br/>(STATUS: COMPLETE)"]
     P52 --> P53["PHASE 5.3: Notification & Product Communication Polish<br/>(STATUS: COMPLETE)"]
-    P53 --> P54["PHASE 5.4: Cancellation Approval<br/>(STATUS: IN PROGRESS)"]
-    P54 --> P55["PHASE 5.5: Gemini Multimodal Diagnostics"]
+    P53 --> P54["PHASE 5.4: Cancellation Approval<br/>(STATUS: COMPLETE — Commit d39d821)"]
+    P54 --> P55["PHASE 5.5: Communication & Quote Revision<br/>(STATUS: IN PROGRESS)"]
+    P55 --> P56["PHASE 5.6: Gemini Multimodal Diagnostics"]
 ```
 
 ---
@@ -195,7 +196,44 @@ flowchart TD
      - Updated route assignment check (`r.technician_id !== profile?.id && r.status !== "COMPLETED" && r.status !== "CANCELLED"`) to allow technicians to view cancelled historical jobs assigned to them.
 
 #### Step 6 — End-to-End Verification
-- **Status**: **PENDING**
-- Execution of verification suite `P5.4-01` through `P5.4-06`.
+- **Status**: **COMPLETE** (Verification suite P5.4-01 through P5.4-30 passed and committed in baseline commit `d39d821`)
+
+---
+
+### PHASE 5.5 — Communication & Quote Revision Workflow
+- **Status**: **IN PROGRESS** (Step 1 Implemented)
+- **Objective**: Implement ticket-scoped farmer–technician messaging with unread tracking, real-time sync, and notification dispatch, alongside the quote revision request/resubmission lifecycle with version comparison.
+
+#### Step 1 — Database Foundation & Canonical Demo Fixture Completion
+- **Status**: **COMPLETE**
+- **Deliverables**:
+  1. Forward migration `supabase/migrations/20261005100000_phase5_5_communication_foundation.sql`:
+     - Creates `public.repair_messages` table with `id`, `repair_request_id`, `sender_id`, `recipient_id`, `message_text`, `created_at`, and `is_read`.
+     - Adds composite performance index on `(repair_request_id, created_at ASC)` and unread partial index on `(recipient_id, is_read) WHERE is_read = false`.
+     - Hardened RLS policies: SELECT for participants/admins, INSERT with caller anti-spoofing (`sender_id = current_profile_id()`), UPDATE strictly for recipient read status, and DELETE reserved for administrative moderation.
+     - Idempotent realtime publication hook for `public.repair_messages`.
+     - Updated `public.reset_demo_data()` to clean disposable test messages and extra test quotes, preserving canonical repairs (`TB-8841`, `TB-8902`, `TB-8898`, `TB-4489`), and restored canonical Quote v1 fixture for `TB-4489` (status `REVISED`, v1, Rotavator seal kit ₹1,400 + EP-90 Gearbox oil ₹600 + Labour ₹800 = ₹2,800).
+  2. Synchronized `src/integrations/supabase/types.ts` with `repair_messages` table row, insert, update, and relationship types.
+
+#### Step 2 — Ticket-Scoped Messaging Service Layer
+- **Status**: PENDING
+- **Deliverables**:
+  - `src/lib/services/messages.ts` with `sendRepairMessage()`, `getRepairMessages()`, `markRepairMessagesAsRead()`, unread message counts, and notification triggering.
+
+#### Step 3 — Farmer–Technician Communication UI & Notification Wiring
+- **Status**: PENDING
+- **Deliverables**:
+  - Embedded ticket chat UI on `/farmer/repair/:id` and `/technician/job/:id`.
+  - Unread indicators, message timestamps, sender badges, and Realtime subscriptions with fallback polling.
+
+#### Step 4 — Quote Revision Flow & Version Comparison UI
+- **Status**: PENDING
+- **Deliverables**:
+  - Quote version history (`version: 1` $\rightarrow$ `version: 2`), diff comparison, revision reason surfacing, and quote resubmission.
+
+#### Step 5 — End-to-End Verification
+- **Status**: PENDING
+- **Deliverables**:
+  - Verification suite `P5.5-01` through `P5.5-30`.
 
 

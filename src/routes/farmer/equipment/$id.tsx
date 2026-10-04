@@ -13,8 +13,8 @@ import { meta } from "@/lib/seo";
 import { cn } from "@/lib/utils";
 
 interface EquipmentDetailSearch {
-  from?: "home" | "list" | "repair";
-  repairId?: string;
+  from?: "home" | "list" | "repair" | undefined;
+  repairId?: string | undefined;
 }
 
 export const Route = createFileRoute("/farmer/equipment/$id")({

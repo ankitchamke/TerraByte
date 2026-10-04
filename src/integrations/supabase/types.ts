@@ -680,6 +680,10 @@ export type Database = {
         Args: never
         Returns: Database["public"]["Enums"]["user_role"]
       }
+      delete_user_account: {
+        Args: never
+        Returns: Json
+      }
       get_storage_buckets: {
         Args: never
         Returns: {
@@ -688,6 +692,10 @@ export type Database = {
           name: string
           public: boolean
         }[]
+      }
+      reset_demo_data: {
+        Args: never
+        Returns: Json
       }
     }
     Enums: {

@@ -303,8 +303,9 @@ export async function getQuoteVersions(repairRequestId: string): Promise<QuoteVe
     let revisionRequest: QuoteRevisionInfo | null = null;
     if (q.status === "REVISED" || idx < quoteRows.length - 1) {
       const qTime = new Date(q.sent_at || q.created_at).getTime();
-      const nextQTime = quoteRows[idx + 1]
-        ? new Date(quoteRows[idx + 1].sent_at || quoteRows[idx + 1].created_at).getTime()
+      const nextRow = quoteRows[idx + 1];
+      const nextQTime = nextRow
+        ? new Date(nextRow.sent_at || nextRow.created_at).getTime()
         : Infinity;
 
       const revEvent = timeline.find((t) => {

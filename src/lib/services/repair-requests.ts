@@ -45,11 +45,11 @@ export type CancellationReason = (typeof CANCELLATION_REASONS)[number] | string;
 
 export interface RequestCancellationInput {
   reason: CancellationReason;
-  note?: string;
+  note?: string | undefined;
 }
 
 export interface ApproveCancellationInput {
-  adminResponse?: string;
+  adminResponse?: string | undefined;
 }
 
 export interface RejectCancellationInput {
@@ -381,7 +381,7 @@ export async function getAdminRepairRequests(): Promise<RepairRequestDetail[]> {
  */
 export async function cancelRepairRequest(
   id: string,
-  options?: { reason?: string; note?: string }
+  options?: { reason?: string | undefined; note?: string | undefined }
 ): Promise<RepairRequestRow> {
   const profile = await getAuthenticatedProfile();
 
@@ -418,7 +418,8 @@ export async function cancelRepairRequest(
   const now = new Date().toISOString();
 
   // 3. Update repair request status to CANCELLED
-  const updatePayload: Record<string, any> = {
+  type RepairRequestUpdate = Database["public"]["Tables"]["repair_requests"]["Update"];
+  const updatePayload: RepairRequestUpdate = {
     status: "CANCELLED",
     status_since: now,
   };

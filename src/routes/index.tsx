@@ -13,7 +13,7 @@ import {
   Users,
   Wrench,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { homeFor, signOut, useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -273,13 +273,14 @@ function HomePage() {
   const { ready, userId, emailConfirmed, profile, profileError } = useAuth();
   const [demoBusy, setDemoBusy] = useState(false);
   const [demoErr, setDemoErr] = useState<string | null>(null);
+  const demoSigningInRef = useRef(false);
 
   // Authenticated root routing:
   // 1. If returning from a demo session via Back button or explicit return,
   //    sign out the temporary demo session so the user lands cleanly on Home.
   // 2. Otherwise, route standard authenticated users directly to their assigned workspace.
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || demoSigningInRef.current) return;
 
     const isDemoOrigin =
       typeof window !== "undefined" && sessionStorage.getItem("tb_demo_origin") === "home";
@@ -300,25 +301,34 @@ function HomePage() {
   }, [ready, userId, profile, emailConfirmed, profileError, nav]);
 
   // Safe demo sign-in reusing existing Supabase Auth accounts
-  const handleDemoSignIn = async (email: string, pass: string) => {
+  const handleDemoSignIn = async (
+    email: string,
+    pass: string,
+    targetPath: "/farmer" | "/technician" | "/admin"
+  ) => {
     setDemoBusy(true);
     setDemoErr(null);
-    if (typeof window !== "undefined") {
-      sessionStorage.setItem("tb_demo_origin", "home");
-    }
+    demoSigningInRef.current = true;
     try {
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password: pass,
       });
       if (error) {
+        demoSigningInRef.current = false;
         setDemoErr(error.message);
         if (typeof window !== "undefined") {
           sessionStorage.removeItem("tb_demo_origin");
         }
+        return;
       }
-    } catch (err: any) {
-      setDemoErr(err?.message || "Failed to sign in to demo account");
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem("tb_demo_origin", "home");
+      }
+      await nav({ to: targetPath });
+    } catch (err: unknown) {
+      demoSigningInRef.current = false;
+      setDemoErr(err instanceof Error ? err.message : "Failed to sign in to demo account");
       if (typeof window !== "undefined") {
         sessionStorage.removeItem("tb_demo_origin");
       }
@@ -452,7 +462,11 @@ function HomePage() {
                       type="button"
                       disabled={demoBusy}
                       onClick={() =>
-                        void handleDemoSignIn("farmer.nagpur@terrabyte.demo", "TerraByte@2026")
+                        void handleDemoSignIn(
+                          "farmer.nagpur@terrabyte.demo",
+                          "TerraByte@2026",
+                          "/farmer"
+                        )
                       }
                       className="flex h-10 sm:h-11 items-center justify-center gap-1.5 rounded-xl border-2 border-border bg-card px-2 text-[11px] sm:text-xs font-semibold text-foreground hover:border-primary hover:bg-primary/5 hover:text-primary transition-all duration-200 disabled:opacity-60 active:scale-[0.98]"
                     >
@@ -462,7 +476,11 @@ function HomePage() {
                       type="button"
                       disabled={demoBusy}
                       onClick={() =>
-                        void handleDemoSignIn("tech.nagpur@terrabyte.demo", "TerraByte@2026")
+                        void handleDemoSignIn(
+                          "tech.nagpur@terrabyte.demo",
+                          "TerraByte@2026",
+                          "/technician"
+                        )
                       }
                       className="flex h-10 sm:h-11 items-center justify-center gap-1.5 rounded-xl border-2 border-border bg-card px-2 text-[11px] sm:text-xs font-semibold text-foreground hover:border-primary hover:bg-primary/5 hover:text-primary transition-all duration-200 disabled:opacity-60 active:scale-[0.98]"
                     >
@@ -472,7 +490,11 @@ function HomePage() {
                       type="button"
                       disabled={demoBusy}
                       onClick={() =>
-                        void handleDemoSignIn("admin.nagpur@terrabyte.demo", "TerraByte@2026")
+                        void handleDemoSignIn(
+                          "admin.nagpur@terrabyte.demo",
+                          "TerraByte@2026",
+                          "/admin"
+                        )
                       }
                       className="flex h-10 sm:h-11 items-center justify-center gap-1.5 rounded-xl border-2 border-border bg-card px-2 text-[11px] sm:text-xs font-semibold text-foreground hover:border-primary hover:bg-primary/5 hover:text-primary transition-all duration-200 disabled:opacity-60 active:scale-[0.98]"
                     >

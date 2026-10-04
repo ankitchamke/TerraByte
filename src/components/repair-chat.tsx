@@ -21,18 +21,19 @@ import {
   sendRepairMessage,
   type RepairMessageWithParticipants,
 } from "@/lib/services/repair-messages";
+import { ComponentErrorBoundary } from "@/components/component-error-boundary";
 
 export interface RepairChatProps {
   repairId: string;
-  ticketNumber?: string;
-  farmerId?: string;
-  farmerName?: string;
-  technicianId?: string | null;
-  technicianName?: string;
-  className?: string;
+  ticketNumber?: string | undefined;
+  farmerId?: string | undefined;
+  farmerName?: string | undefined;
+  technicianId?: string | null | undefined;
+  technicianName?: string | null | undefined;
+  className?: string | undefined;
 }
 
-export function RepairChat({
+function RepairChatInner({
   repairId,
   ticketNumber,
   farmerId,
@@ -136,7 +137,10 @@ export function RepairChat({
     if (recipientOptions.length > 0) {
       const currentValid = recipientOptions.some((r) => r.id === selectedRecipientId);
       if (!currentValid) {
-        setSelectedRecipientId(recipientOptions[0].id);
+        const first = recipientOptions[0];
+        if (first) {
+          setSelectedRecipientId(first.id);
+        }
       }
     }
   }, [recipientOptions, selectedRecipientId]);
@@ -422,5 +426,13 @@ function SenderBadge({ role }: { role: string }) {
     <span className="inline-flex items-center gap-0.5 rounded-full bg-purple-500/15 text-purple-700 dark:text-purple-300 px-1.5 py-0.2 text-[9px] font-bold uppercase tracking-wider">
       <Shield className="h-2.5 w-2.5" /> Service Centre
     </span>
+  );
+}
+
+export function RepairChat(props: RepairChatProps) {
+  return (
+    <ComponentErrorBoundary name="Repair Chat">
+      <RepairChatInner {...props} />
+    </ComponentErrorBoundary>
   );
 }

@@ -53,8 +53,8 @@ import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 
 interface RepairHubSearch {
-  from?: "equipment";
-  equipmentId?: string;
+  from?: "equipment" | undefined;
+  equipmentId?: string | undefined;
 }
 
 export const Route = createFileRoute("/farmer/repair/$id")({
@@ -626,7 +626,7 @@ function RepairHub() {
             <ShieldCheck className="h-5 w-5 shrink-0" /> No work or charges start until you approve
             this quote.
           </p>
-          {quoteVersions.length >= 2 && (
+          {quoteVersions.length >= 2 && quoteVersions[quoteVersions.length - 2] && quoteVersions[quoteVersions.length - 1] && (
             <div className="mb-4">
               <QuoteComparison
                 v1={quoteVersions[quoteVersions.length - 2]}

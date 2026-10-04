@@ -19,17 +19,18 @@ import {
   type QuoteVersionComparison,
   type QuoteVersionDetail,
 } from "@/lib/services/quotes";
+import { ComponentErrorBoundary } from "@/components/component-error-boundary";
 
 export interface QuoteComparisonProps {
-  comparison?: QuoteVersionComparison;
-  v1?: QuoteVersionDetail;
-  v2?: QuoteVersionDetail;
-  farmerRequest?: QuoteRevisionInfo | null;
-  technicianResponse?: string | null;
-  className?: string;
+  comparison?: QuoteVersionComparison | undefined;
+  v1?: QuoteVersionDetail | undefined;
+  v2?: QuoteVersionDetail | undefined;
+  farmerRequest?: QuoteRevisionInfo | null | undefined;
+  technicianResponse?: string | null | undefined;
+  className?: string | undefined;
 }
 
-export function QuoteComparison({
+function QuoteComparisonInner({
   comparison: passedComparison,
   v1,
   v2,
@@ -430,5 +431,13 @@ function ItemDiffRow({ diff }: { diff: QuoteItemDiff }) {
         )}
       </div>
     </div>
+  );
+}
+
+export function QuoteComparison(props: QuoteComparisonProps) {
+  return (
+    <ComponentErrorBoundary name="Quote Comparison">
+      <QuoteComparisonInner {...props} />
+    </ComponentErrorBoundary>
   );
 }

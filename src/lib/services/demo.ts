@@ -39,7 +39,7 @@ export interface ResetDemoResponse {
  * Cleans up demo test activity and deterministically restores canonical baseline records.
  */
 export async function resetDemoData(): Promise<ResetDemoResponse> {
-  const { data, error } = await supabase.rpc("reset_demo_data" as any);
+  const { data, error } = await supabase.rpc("reset_demo_data");
 
   if (error) {
     console.error("[TerraByte] Reset demo error:", error);
@@ -58,5 +58,5 @@ export async function resetDemoData(): Promise<ResetDemoResponse> {
     throw new Error((data as { message?: string }).message || "Failed to reset demo data.");
   }
 
-  return (data as ResetDemoResponse) ?? { success: true, message: "Demo environment reset to baseline successfully." };
+  return (data as unknown as ResetDemoResponse) ?? { success: true, message: "Demo environment reset to baseline successfully." };
 }

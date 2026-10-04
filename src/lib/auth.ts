@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { actions } from "@/lib/tb-store";
 
 export type AppRole = "farmer" | "technician" | "service_centre";
 
@@ -112,6 +113,7 @@ export function startAuth() {
   supabase.auth.onAuthStateChange((event, session) => {
     const u = session?.user;
     if (!u) {
+      actions.logout();
       set({ ready: true, userId: null, email: null, emailConfirmed: false, profile: null, profileError: null, isPasswordRecovery: false });
       return;
     }
@@ -127,8 +129,10 @@ export function startAuth() {
   });
   void supabase.auth.getSession().then(({ data }) => {
     const u = data.session?.user;
-    if (!u) set({ ready: true, userId: null, email: null, emailConfirmed: false, profile: null, profileError: null, isPasswordRecovery: false });
-    else {
+    if (!u) {
+      actions.logout();
+      set({ ready: true, userId: null, email: null, emailConfirmed: false, profile: null, profileError: null, isPasswordRecovery: false });
+    } else {
       const emailConfirmed = !!(u.email_confirmed_at || (u as unknown as { confirmed_at?: string }).confirmed_at);
       set({ userId: u.id, email: u.email ?? null, emailConfirmed });
       void loadProfile(u.id, u.email ?? null, emailConfirmed);
@@ -182,5 +186,6 @@ export function homeFor(p: Profile): "/farmer" | "/technician" | "/technician/pe
 }
 
 export async function signOut() {
+  actions.logout();
   await supabase.auth.signOut();
 }

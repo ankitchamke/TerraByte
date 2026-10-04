@@ -93,25 +93,25 @@ function ProfilePage() {
 
   // If technician, fetch workshop details
   useEffect(() => {
-    if (profile?.role === "technician") {
-      let isMounted = true;
-      setLoadingWorkshop(true);
-      void getTechnicianWorkshopDetails()
-        .then((details) => {
-          if (!isMounted) return;
-          if (details) {
-            setWorkshopName(details.workshop_name || "");
-            setWorkshopPhone(details.phone || "");
-          }
-        })
-        .finally(() => {
-          if (isMounted) setLoadingWorkshop(false);
-        });
+    if (profile?.role !== "technician") return;
 
-      return () => {
-        isMounted = false;
-      };
-    }
+    let isMounted = true;
+    setLoadingWorkshop(true);
+    void getTechnicianWorkshopDetails()
+      .then((details) => {
+        if (!isMounted) return;
+        if (details) {
+          setWorkshopName(details.workshop_name || "");
+          setWorkshopPhone(details.phone || "");
+        }
+      })
+      .finally(() => {
+        if (isMounted) setLoadingWorkshop(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, [profile?.role]);
 
   if (!ready || !profile) {
@@ -127,12 +127,6 @@ function ProfilePage() {
 
   const role: AppRole = profile.role;
   const shellRole = role === "service_centre" ? "admin" : role;
-  const shellWho =
-    role === "service_centre"
-      ? "Service Centre Operations"
-      : role === "technician"
-      ? "Technician Workbench"
-      : "Farmer Workspace";
 
   const backTarget =
     role === "service_centre"
@@ -230,7 +224,7 @@ function ProfilePage() {
       return;
     }
 
-    const targetEmail = email || profile?.email;
+    const targetEmail = email;
     if (!targetEmail) {
       setSecurityError("No authenticated email address found.");
       return;
@@ -287,7 +281,7 @@ function ProfilePage() {
       return;
     }
 
-    const currentEmail = email || profile?.email;
+    const currentEmail = email;
     if (!currentEmail) {
       setDeleteError("No authenticated email address found.");
       return;
@@ -331,7 +325,7 @@ function ProfilePage() {
   };
 
   return (
-    <Shell role={shellRole} who={shellWho}>
+    <Shell role={shellRole}>
       <div className="mx-auto max-w-2xl space-y-6">
         {/* Contextual Back Navigation */}
         <ContextualBack to={backTarget.to} label={backTarget.label} />

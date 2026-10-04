@@ -268,6 +268,7 @@ function AdminRepair() {
             maintenance_advice: mockSh.advice,
             downtime_hours: mockSh.downtimeH,
             invoice_reference: mockSh.invoice,
+            demo_code: null,
             created_at: new Date(mockSh.date).toISOString(),
           });
         } else {
@@ -993,7 +994,7 @@ function AdminRepair() {
           )}
 
           {/* Quote Version Comparison */}
-          {quoteVersions.length >= 2 && (
+          {quoteVersions.length >= 2 && quoteVersions[quoteVersions.length - 2] && quoteVersions[quoteVersions.length - 1] && (
             <QuoteComparison
               v1={quoteVersions[quoteVersions.length - 2]}
               v2={quoteVersions[quoteVersions.length - 1]}

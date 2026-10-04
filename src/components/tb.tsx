@@ -797,6 +797,7 @@ export function Label({ children, className }: { children: ReactNode; className?
 }
 export const btn = {
   primary: "inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-primary px-5 font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-40",
+  secondary: "inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-border bg-card px-4 font-semibold text-foreground hover:bg-muted disabled:opacity-40",
   urgent: "inline-flex h-14 items-center justify-center gap-2 rounded-xl bg-destructive px-5 text-lg font-bold text-destructive-foreground hover:bg-destructive/90",
   ghost: "inline-flex h-12 items-center justify-center gap-2 rounded-xl border-2 border-border bg-card px-4 font-semibold hover:bg-muted disabled:opacity-40",
   amber: "inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-accent px-5 font-semibold text-accent-foreground hover:bg-accent/90",

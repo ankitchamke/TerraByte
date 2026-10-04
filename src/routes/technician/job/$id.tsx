@@ -547,7 +547,7 @@ function Job() {
         </Card>
       )}
 
-      {quoteVersions.length >= 2 && (
+      {quoteVersions.length >= 2 && quoteVersions[quoteVersions.length - 2] && quoteVersions[quoteVersions.length - 1] && (
         <QuoteComparison
           v1={quoteVersions[quoteVersions.length - 2]}
           v2={quoteVersions[quoteVersions.length - 1]}

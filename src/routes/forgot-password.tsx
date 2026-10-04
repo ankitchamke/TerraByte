@@ -48,9 +48,10 @@ function ForgotPasswordPage() {
           ? `${window.location.origin}/auth/reset-password`
           : undefined;
 
-      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
-        redirectTo: redirectUrl,
-      });
+      const { error } = await supabase.auth.resetPasswordForEmail(
+        cleanEmail,
+        redirectUrl ? { redirectTo: redirectUrl } : undefined,
+      );
 
       // To prevent email enumeration, we do not expose user existence errors.
       // If a network-level or rate-limit error occurred, show a friendly advisory.

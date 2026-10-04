@@ -51,7 +51,14 @@ import {
   getEligibleTechnicians,
   type ScoredTechnicianMatch,
 } from "@/lib/services/technicians";
-import { getQuotesForRepair, type QuoteDetail } from "@/lib/services/quotes";
+import { QuoteComparison } from "@/components/quote-comparison";
+import { RepairChat } from "@/components/repair-chat";
+import {
+  getQuotesForRepair,
+  getQuoteVersions,
+  type QuoteDetail,
+  type QuoteVersionDetail,
+} from "@/lib/services/quotes";
 
 export const Route = createFileRoute("/admin/repair/$id")({
   head: () => meta("Repair detail", "Inspect, dispatch and unblock a repair."),
@@ -177,6 +184,7 @@ function AdminRepair() {
 
   const [dbRepair, setDbRepair] = useState<RepairRequestDetail | null>(null);
   const [quotes, setQuotes] = useState<QuoteDetail[]>([]);
+  const [quoteVersions, setQuoteVersions] = useState<QuoteVersionDetail[]>([]);
   const [techMatches, setTechMatches] = useState<ScoredTechnicianMatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -215,13 +223,15 @@ function AdminRepair() {
           setEta(ph["eta"] || "");
         }
 
-        // Concurrently fetch quotes and eligible technicians
-        const [quotesData, eligibleData] = await Promise.all([
+        // Concurrently fetch quotes, quote versions, and eligible technicians
+        const [quotesData, eligibleData, versionsData] = await Promise.all([
           getQuotesForRepair(realRepair.id).catch(() => []),
           getEligibleTechnicians(realRepair.id).catch(() => []),
+          getQuoteVersions(realRepair.id).catch(() => []),
         ]);
 
         setQuotes(quotesData);
+        setQuoteVersions(versionsData);
         setTechMatches(eligibleData);
         return;
       }
@@ -679,12 +689,33 @@ function AdminRepair() {
         </div>
       )}
 
-      {od && (
+      {status === "QUOTE_REVISED" ? (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm space-y-1.5">
+          <div className="flex items-center gap-2 font-bold text-amber-900 dark:text-amber-200">
+            <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+            <span>Quote revision requested by farmer · Technician response expected</span>
+          </div>
+          <p className="text-xs text-foreground">
+            The farmer requested changes to the repair quote. The assigned technician ({technicianName || "Technician"}) is expected to submit a revised quote.
+            <span className="text-muted-foreground"> · In revision for {ago(new Date(statusSince).getTime())}</span>
+            {od && (
+              <span className="font-semibold text-amber-700 dark:text-amber-300">
+                {" "}(Overdue — follow up with technician)
+              </span>
+            )}
+          </p>
+          {isReal && r.clarification_note && (
+            <p className="mt-1 rounded-lg bg-card/70 border border-amber-500/20 p-2.5 text-xs italic text-foreground leading-relaxed">
+              Farmer requested: "{r.clarification_note.split("\n")[0]}"
+            </p>
+          )}
+        </div>
+      ) : od ? (
         <p className="flex items-center gap-2 rounded-xl border-2 border-destructive bg-destructive/5 p-3 font-semibold text-destructive">
           <AlertOctagon className="h-5 w-5 shrink-0" /> Exception: in "{status.toLowerCase().replace(/_/g, " ")}" for{" "}
           {ago(new Date(statusSince).getTime())} — intervene.
         </p>
-      )}
+      ) : null}
 
       <div className="grid gap-5 lg:grid-cols-[1.3fr_1fr]">
         <div className="space-y-5">
@@ -783,6 +814,14 @@ function AdminRepair() {
             </Card>
           )}
 
+          {/* Quote Version Comparison */}
+          {quoteVersions.length >= 2 && (
+            <QuoteComparison
+              v1={quoteVersions[quoteVersions.length - 2]}
+              v2={quoteVersions[quoteVersions.length - 1]}
+            />
+          )}
+
           {/* Quote Card */}
           {viewQuote && (
             <Card>
@@ -839,6 +878,18 @@ function AdminRepair() {
             <p className="text-sm font-semibold">{symptoms.join(", ")}</p>
             {description && <p className="mt-2 text-sm italic">"{description}"</p>}
           </Card>
+
+          {/* Ticket Discussion */}
+          {isReal && (
+            <RepairChat
+              repairId={r.id}
+              ticketNumber={jobNumber}
+              farmerId={r.farmer_id}
+              farmerName={farmerName}
+              technicianId={r.technician_id}
+              technicianName={technicianName}
+            />
+          )}
 
           {/* Dedicated Chronological Repair Activity Log */}
           <Card className="space-y-3">

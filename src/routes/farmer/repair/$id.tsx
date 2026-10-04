@@ -27,12 +27,17 @@ import {
   getRepairRequestById,
   type RepairRequestDetail,
 } from "@/lib/services/repair-requests";
+import { useAuth } from "@/lib/auth";
+import { QuoteComparison } from "@/components/quote-comparison";
+import { RepairChat } from "@/components/repair-chat";
 import {
   approveQuote,
   getQuotesForRepair,
+  getQuoteVersions,
   parseClarificationNote,
   rejectQuote,
   type QuoteDetail,
+  type QuoteVersionDetail,
 } from "@/lib/services/quotes";
 import { getRepairNotes, type RepairNoteWithAuthor } from "@/lib/services/repair-notes";
 import {
@@ -105,8 +110,10 @@ function RepairHub() {
       ? { to: `/farmer/equipment/${equipmentId}`, label: "Machine Record" }
       : { to: "/farmer", label: "Home" };
   const navigate = useNavigate();
+  const { profile } = useAuth();
   const [r, setR] = useState<RepairRequestDetail | null>(null);
   const [quotes, setQuotes] = useState<QuoteDetail[]>([]);
+  const [quoteVersions, setQuoteVersions] = useState<QuoteVersionDetail[]>([]);
   const [notes, setNotes] = useState<RepairNoteWithAuthor[]>([]);
   const [assignedTech, setAssignedTech] = useState<VerifiedTechnicianWithProfile | null>(null);
   const [eligibleTechs, setEligibleTechs] = useState<ScoredTechnicianMatch[]>([]);
@@ -140,7 +147,7 @@ function RepairHub() {
       }
       setR(repairData);
 
-      const [quotesData, notesData, assignedTechData, eligibleTechsData] = await Promise.all([
+      const [quotesData, notesData, assignedTechData, eligibleTechsData, versionsData] = await Promise.all([
         getQuotesForRepair(repairData.id).catch(() => []),
         getRepairNotes(repairData.id).catch(() => []),
         repairData.technician_id
@@ -149,9 +156,11 @@ function RepairHub() {
         repairData.status === "REQUESTED" && !repairData.technician_id
           ? getEligibleTechnicians(repairData.id).catch(() => [])
           : Promise.resolve([]),
+        getQuoteVersions(repairData.id).catch(() => []),
       ]);
 
       setQuotes(quotesData);
+      setQuoteVersions(versionsData);
       setNotes(notesData);
       setAssignedTech(assignedTechData);
       setEligibleTechs(eligibleTechsData);
@@ -608,17 +617,21 @@ function RepairHub() {
 
       {r.status === "QUOTE_PENDING" && viewQuote && (
         <section className="rounded-2xl border-2 border-accent bg-card p-5">
-          <h2 className="text-2xl font-bold">Review your repair quote</h2>
+          <h2 className="text-2xl font-bold">
+            {viewQuote.version > 1
+              ? `Revised quote ready for your review (v${viewQuote.version})`
+              : "Review your repair quote"}
+          </h2>
           <p className="mb-4 mt-1 flex items-center gap-2 rounded-xl bg-primary/10 p-3 text-sm font-semibold text-primary">
             <ShieldCheck className="h-5 w-5 shrink-0" /> No work or charges start until you approve
             this quote.
           </p>
-          {r.clarification_note && (
-            <div className="mb-4 rounded-xl border-2 border-primary/30 bg-primary/5 p-4 space-y-1">
-              <p className="text-xs font-bold uppercase tracking-wider text-primary">Technician Note</p>
-              <p className="text-sm font-medium text-foreground italic leading-relaxed">
-                "{r.clarification_note}"
-              </p>
+          {quoteVersions.length >= 2 && (
+            <div className="mb-4">
+              <QuoteComparison
+                v1={quoteVersions[quoteVersions.length - 2]}
+                v2={quoteVersions[quoteVersions.length - 1]}
+              />
             </div>
           )}
           <QuoteTable q={viewQuote} />
@@ -726,17 +739,28 @@ function RepairHub() {
       )}
 
       {r.status === "QUOTE_REVISED" && (
-        <Card className="border-accent space-y-2">
-          <p className="font-semibold text-lg">The technician is revising your quote.</p>
+        <section className="rounded-2xl border-2 border-accent bg-card p-5 space-y-4">
+          <div>
+            <h2 className="text-2xl font-bold">The technician is revising your quote</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              You requested revisions on the previous quote. The technician is reviewing your feedback and preparing an updated quote. No repair work or charges will begin until you review and approve the revised quote.
+            </p>
+          </div>
+
           {r.clarification_note && (() => {
             const parsed = parseClarificationNote(r.clarification_note);
             return (
-              <div className="rounded-xl bg-muted/60 p-3 text-sm space-y-1">
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm space-y-2">
+                <p className="text-xs font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300">
+                  Your Revision Request
+                </p>
                 {parsed.reason && (
-                  <p><span className="font-semibold text-muted-foreground">Reason:</span> {parsed.reason}</p>
+                  <p><span className="font-semibold text-muted-foreground">Reason:</span> <span className="font-medium text-foreground">{parsed.reason}</span></p>
                 )}
                 {parsed.explanation && (
-                  <p><span className="font-semibold text-muted-foreground">Your explanation:</span> "{parsed.explanation}"</p>
+                  <p className="rounded-lg bg-card/70 border border-amber-500/20 p-2.5 text-xs italic text-foreground leading-relaxed">
+                    "{parsed.explanation}"
+                  </p>
                 )}
                 {parsed.photo && (
                   <div className="pt-1">
@@ -745,14 +769,25 @@ function RepairHub() {
                       src={parsed.photo}
                       alt="Attached photo"
                       className="mt-1 h-20 w-20"
-                      thumbnailClassName="h-20 w-20 object-cover"
+                      thumbnailClassName="h-20 w-20 object-cover rounded-md"
                     />
                   </div>
                 )}
               </div>
             );
           })()}
-        </Card>
+
+          {viewQuote && (
+            <details className="rounded-xl border border-border bg-muted/30 p-3.5">
+              <summary className="cursor-pointer font-semibold text-sm text-foreground">
+                View previous quote (v{viewQuote.version} · {inr(quoteTotals(viewQuote).total)})
+              </summary>
+              <div className="mt-3 pt-3 border-t border-border">
+                <QuoteTable q={viewQuote} />
+              </div>
+            </details>
+          )}
+        </section>
       )}
 
 
@@ -870,6 +905,16 @@ function RepairHub() {
           <p>{lastNote.note_text}</p>
         </Card>
       )}
+
+      {/* Ticket Discussion */}
+      <RepairChat
+        repairId={r.id}
+        ticketNumber={r.job_number || r.id}
+        farmerId={r.farmer_id}
+        farmerName={profile?.full_name || "Farmer"}
+        technicianId={r.technician_id}
+        technicianName={assignedTechData?.name}
+      />
 
       <Card>
         <h2 className="mb-4 text-lg font-bold">Progress</h2>

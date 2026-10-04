@@ -224,20 +224,36 @@ flowchart TD
   4. Added `getRepairActionOwnership()` in `src/lib/services/repair-requests.ts` defining actor action obligations (`QUOTE_REVISED`: technician action required, farmer waiting).
   5. Corrected inverted `FARMER_LABEL.QUOTE_REVISED` in `src/lib/tb-store.ts` to `"Revision Requested · Awaiting Technician"` and `STAFF_LABEL.QUOTE_REVISED` to `"Quote revision requested"`.
 
-#### Step 3 — Farmer–Technician Communication UI & Notification Wiring
-- **Status**: PENDING
+#### Step 3 — Quote Revision UX, Comparison & Farmer–Technician Communication
+- **Status**: **COMPLETE**
 - **Deliverables**:
-  - Embedded ticket chat UI on `/farmer/repair/:id` and `/technician/job/:id`.
-  - Unread indicators, message timestamps, sender badges, and Realtime subscriptions with fallback polling.
+  1. `<QuoteComparison />` component (`src/components/quote-comparison.tsx`):
+     - Displays summary KPI cards: Total difference (₹ and %), Parts difference, Labour difference with directional indicators.
+     - Preserves and separately displays Farmer Revision Request (reason, explanation, photo) and Technician Response in distinct styled callout boxes.
+     - Itemizes line-by-line differences with semantic badges (`+ Added`, `- Removed`, `Modified`, `Unchanged`).
+  2. `<RepairChat />` ticket communication component (`src/components/repair-chat.tsx`):
+     - Real-time ticket discussion thread using Supabase Realtime channel on `public.repair_messages`.
+     - Automatic `markMessagesAsRead()` on viewing received messages.
+     - Role badges (`Farmer`, `Tech`, `Service Centre`), outgoing status indicators (Sent / Read), relative timestamps.
+     - Validated textarea composer with character limit (max 2,000 chars) and enter-to-send support.
+  3. Technician Job Route Integration (`src/routes/technician/job/$id.tsx`):
+     - In `QuoteBuilder`: displays previous Quote v1 summary card when `status === "QUOTE_REVISED"`.
+     - Made technician explanation input universal for all revision reasons, passing note to `reviseQuote()`.
+     - Renders `<QuoteComparison />` when quote versions $\ge 2$ and ticket is in `QUOTE_PENDING`.
+     - Embedded `<RepairChat />` ticket communication thread above status timeline.
+  4. Farmer Repair Hub Integration (`src/routes/farmer/repair/$id.tsx`):
+     - Distinct `QUOTE_REVISED` waiting state ("The technician is revising your quote") displaying farmer's revision request and collapsible previous quote details, suppressing approval actions.
+     - When `status === "QUOTE_PENDING"` and `version > 1`: displays "Revised quote ready for your review", renders `<QuoteComparison />`, and enables Approve/Decline actions.
+     - Embedded `<RepairChat />` ticket discussion thread.
+  5. Service Centre Operations Integration (`src/routes/admin/repair/$id.tsx` & `src/routes/admin/index.tsx`):
+     - Corrected `QUOTE_REVISED` exception banner on `/admin/repair/:id` to workflow copy ("Quote revision requested by farmer · Technician response expected") with elapsed time as supporting info.
+     - Corrected exceptions copy on `/admin` to "revision awaiting technician".
+     - Renders `<QuoteComparison />` when quote versions $\ge 2$.
+     - Embedded `<RepairChat />` ticket discussion thread.
 
-#### Step 4 — Quote Revision Flow & Version Comparison UI
+#### Step 4 — End-to-End Verification & Review
 - **Status**: PENDING
 - **Deliverables**:
-  - Quote version history (`version: 1` $\rightarrow$ `version: 2`), diff comparison, revision reason surfacing, and quote resubmission.
-
-#### Step 5 — End-to-End Verification
-- **Status**: PENDING
-- **Deliverables**:
-  - Verification suite `P5.5-01` through `P5.5-30`.
+  - Verification suite `P5.5-01` through `P5.5-14`.
 
 

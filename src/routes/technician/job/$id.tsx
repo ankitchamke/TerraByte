@@ -24,14 +24,18 @@ import {
   type RepairRequestDetail,
 } from "@/lib/services/repair-requests";
 import { addRepairNote, getRepairNotes, type RepairNoteWithAuthor } from "@/lib/services/repair-notes";
+import { QuoteComparison } from "@/components/quote-comparison";
+import { RepairChat } from "@/components/repair-chat";
 import {
   createQuote,
   getQuotesForRepair,
+  getQuoteVersions,
   parseClarificationNote,
   reviseQuote,
   type CreateQuoteInput,
   type CreateQuoteItemInput,
   type QuoteDetail,
+  type QuoteVersionDetail,
 } from "@/lib/services/quotes";
 
 export const Route = createFileRoute("/technician/job/$id")({
@@ -65,6 +69,7 @@ function Job() {
   const hasLoadedRef = useRef(false);
   const [r, setR] = useState<RepairRequestDetail | null>(null);
   const [quotes, setQuotes] = useState<QuoteDetail[]>([]);
+  const [quoteVersions, setQuoteVersions] = useState<QuoteVersionDetail[]>([]);
   const [notes, setNotes] = useState<RepairNoteWithAuthor[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -77,14 +82,16 @@ function Job() {
         setLoading(true);
       }
       setError(null);
-      const [repairData, quotesData, notesData] = await Promise.all([
+      const [repairData, quotesData, notesData, versionsData] = await Promise.all([
         getRepairRequestById(id),
         getQuotesForRepair(id).catch(() => []),
         getRepairNotes(id).catch(() => []),
+        getQuoteVersions(id).catch(() => []),
       ]);
       setR(repairData);
       setQuotes(quotesData);
       setNotes(notesData);
+      setQuoteVersions(versionsData);
       hasLoadedRef.current = true;
     } catch (err: any) {
       console.error("[TerraByte] Failed to load job details:", err);
@@ -540,6 +547,13 @@ function Job() {
         </Card>
       )}
 
+      {quoteVersions.length >= 2 && (
+        <QuoteComparison
+          v1={quoteVersions[quoteVersions.length - 2]}
+          v2={quoteVersions[quoteVersions.length - 1]}
+        />
+      )}
+
       {r.status === "IN_PROGRESS" && (
         <>
           {adaptedRepair.quote && (
@@ -569,6 +583,16 @@ function Job() {
           </p>
         </Card>
       )}
+
+      {/* Ticket Communication Thread */}
+      <RepairChat
+        repairId={r.id}
+        ticketNumber={r.job_number || r.id}
+        farmerId={r.farmer_id}
+        farmerName={f?.full_name || "Farmer"}
+        technicianId={r.technician_id}
+        technicianName={profile?.full_name}
+      />
 
       <details className="rounded-2xl border border-border bg-card p-5">
         <summary className="cursor-pointer font-semibold">Status timeline</summary>
@@ -796,20 +820,49 @@ function QuoteBuilder({
               />
             </div>
           )}
-          {parsedClarification.reason === "Please explain labour" && (
-            <div className="pt-2 border-t border-amber-500/30 space-y-2">
-              <Label>Farmer asked you to explain the labour charge</Label>
-              <p className="text-xs text-muted-foreground">
-                Detail what is included in the labour charge for the farmer.
-              </p>
-              <textarea
-                className={cn(input, "h-24 resize-none py-2 text-sm leading-relaxed bg-card")}
-                placeholder="Explain what the labour charge includes..."
-                value={technicianExplanation}
-                onChange={(e) => setTechnicianExplanation(e.target.value)}
-              />
+          {previousQuote && (
+            <div className="rounded-xl border border-border bg-card p-3 space-y-1.5 text-xs">
+              <div className="flex items-center justify-between font-bold text-foreground">
+                <span>Previous Quote v{previousQuote.version}</span>
+                <span className="font-mono text-sm">
+                  {inr(
+                    previousQuote.totals?.totalAmount ??
+                      (previousQuote.quote_items || []).reduce((s, it) => s + it.quantity * it.unit_price, 0) +
+                        Number(previousQuote.labour_amount)
+                  )}
+                </span>
+              </div>
+              <div className="text-muted-foreground flex flex-wrap gap-x-4">
+                <span>
+                  Parts:{" "}
+                  {inr(
+                    previousQuote.totals?.partsTotal ??
+                      (previousQuote.quote_items || []).reduce((s, it) => s + it.quantity * it.unit_price, 0)
+                  )}
+                </span>
+                <span>Labour: {inr(Number(previousQuote.labour_amount))}</span>
+                <span>Est: {formatEta(previousQuote.estimated_completion || "")}</span>
+              </div>
             </div>
           )}
+          <div className="pt-2 border-t border-amber-500/30 space-y-1.5">
+            <Label>Technician Response / Revision Explanation</Label>
+            <p className="text-xs text-muted-foreground">
+              {parsedClarification.reason === "Please explain labour"
+                ? "Farmer asked you to explain what is included in the labour charge."
+                : "Explain changes made, revised part sourcing, or adjusted labour charges to the farmer."}
+            </p>
+            <textarea
+              className={cn(input, "h-24 resize-none py-2 text-sm leading-relaxed bg-card")}
+              placeholder={
+                parsedClarification.reason === "Please explain labour"
+                  ? "Detail what is included in the labour charge..."
+                  : "Explain revisions made to parts, pricing, or labour..."
+              }
+              value={technicianExplanation}
+              onChange={(e) => setTechnicianExplanation(e.target.value)}
+            />
+          </div>
         </section>
       )}
       {status !== "QUOTE_REVISED" && clarification && (

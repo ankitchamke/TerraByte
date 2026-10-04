@@ -192,8 +192,12 @@ function Admin() {
                   className="rounded-lg bg-card px-3 py-2 text-sm"
                 >
                   <b className="font-mono">{r.job_number || r.id}</b> ·{" "}
-                  {r.status === "REQUESTED" ? "unaccepted" : r.status.toLowerCase().replace(/_/g, " ")} for{" "}
-                  {ago(statusSinceMs)}
+                  {r.status === "REQUESTED"
+                    ? "unaccepted"
+                    : r.status === "QUOTE_REVISED"
+                    ? "revision awaiting technician"
+                    : r.status.toLowerCase().replace(/_/g, " ")}{" "}
+                  for {ago(statusSinceMs)}
                 </Link>
               );
             })}

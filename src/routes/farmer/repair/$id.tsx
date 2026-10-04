@@ -1,11 +1,29 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { CheckCircle2, Loader2, PackageSearch, ShieldCheck } from "lucide-react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  Loader2,
+  PackageSearch,
+  ShieldCheck,
+  XCircle,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AssessmentCard, QuoteTable, TechCard, Timeline } from "@/components/repair-parts";
 import { btn, CallButton, Card, ClickableImage, ContextualBack, formatEtaDateTime, input, Label, StatusPill, Stepper } from "@/components/tb";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   cancelRepairRequest,
+  requestCancellation,
+  CANCELLATION_REASONS,
   getRepairRequestById,
   type RepairRequestDetail,
 } from "@/lib/services/repair-requests";
@@ -101,7 +119,11 @@ function RepairHub() {
   const [photoUrl, setPhotoUrl] = useState("");
   const [declining, setDeclining] = useState(false);
   const [actionInProgress, setActionInProgress] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
+  const [cancellationDialogOpen, setCancellationDialogOpen] = useState(false);
+  const [cancellationReason, setCancellationReason] = useState<string>(CANCELLATION_REASONS[0]);
+  const [cancellationNote, setCancellationNote] = useState("");
+  const [submittingCancellation, setSubmittingCancellation] = useState(false);
+  const [cancellationError, setCancellationError] = useState<string | null>(null);
   const [assigningTechId, setAssigningTechId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
@@ -327,17 +349,56 @@ function RepairHub() {
     }
   };
 
-  const handleCancel = async () => {
-    if (!r || cancelling) return;
-    if (!confirm("Cancel this repair request?")) return;
-    setCancelling(true);
+  const isUnassignedRequested = r.status === "REQUESTED" && !r.technician_id;
+  const isGovernedCancellable =
+    (r.status === "REQUESTED" && Boolean(r.technician_id)) ||
+    ["ACCEPTED", "QUOTE_PENDING", "QUOTE_REVISED", "IN_PROGRESS", "WAITING_FOR_PARTS"].includes(
+      r.status
+    );
+  const canCancelOrRequest = isUnassignedRequested || isGovernedCancellable;
+
+  const openCancellationDialog = () => {
+    setCancellationReason(CANCELLATION_REASONS[0]);
+    setCancellationNote("");
+    setCancellationError(null);
+    setCancellationDialogOpen(true);
+  };
+
+  const handleSubmitCancellation = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!r || submittingCancellation) return;
+    if (!cancellationReason) {
+      setCancellationError("Please select a reason for cancellation.");
+      return;
+    }
+
+    setSubmittingCancellation(true);
+    setCancellationError(null);
+
     try {
-      await cancelRepairRequest(r.id);
-      toast.success("Repair request cancelled.");
-      await navigate({ to: "/farmer" });
+      if (isUnassignedRequested) {
+        await cancelRepairRequest(r.id, {
+          reason: cancellationReason,
+          note: cancellationNote.trim() || undefined,
+        });
+        toast.success("Repair request cancelled.");
+        setCancellationDialogOpen(false);
+        await navigate({ to: "/farmer" });
+      } else {
+        await requestCancellation(r.id, {
+          reason: cancellationReason,
+          note: cancellationNote.trim() || undefined,
+        });
+        toast.success("Cancellation request submitted. Service Centre has been notified.");
+        setCancellationDialogOpen(false);
+        await loadData();
+      }
     } catch (err: any) {
-      toast.error(err?.message || "Failed to cancel repair request");
-      setCancelling(false);
+      const msg = err?.message || "Failed to process cancellation";
+      setCancellationError(msg);
+      toast.error(msg);
+    } finally {
+      setSubmittingCancellation(false);
     }
   };
 
@@ -364,6 +425,87 @@ function RepairHub() {
           <StatusPill r={{ status: r.status, testing: r.is_testing, technicianId: r.technician_id }} audience="farmer" />
         </div>
       </div>
+
+      {r.status === "CANCELLATION_REQUESTED" && (
+        <section className="overflow-hidden rounded-2xl border-2 border-warning bg-card">
+          <div className="flex items-center gap-2 bg-warning px-5 py-3 font-display text-lg font-bold text-warning-foreground">
+            <Clock className="h-5 w-5" /> Cancellation Request Under Review
+          </div>
+          <div className="space-y-4 p-5">
+            <p className="text-sm text-foreground">
+              You have requested to cancel this repair. The Service Centre has been notified and is currently reviewing your request. Work on your machine is temporarily <strong>on hold</strong>.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2 rounded-xl bg-muted/50 p-4 text-sm">
+              <div>
+                <Label>Reason Submitted</Label>
+                <p className="font-semibold">{r.cancellation_reason || "None specified"}</p>
+              </div>
+              <div>
+                <Label>Requested At</Label>
+                <p className="font-semibold">
+                  {r.cancellation_requested_at
+                    ? fmtTime(new Date(r.cancellation_requested_at).getTime())
+                    : "Recently"}
+                </p>
+              </div>
+              {r.cancellation_note && (
+                <div className="sm:col-span-2">
+                  <Label>Your Note</Label>
+                  <p className="italic text-muted-foreground">"{r.cancellation_note}"</p>
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Our Service Centre team will review the request against any parts ordered or labor performed and finalize your ticket.
+            </p>
+          </div>
+        </section>
+      )}
+
+      {r.status === "CANCELLED" && (
+        <section className="overflow-hidden rounded-2xl border-2 border-muted-foreground/30 bg-card">
+          <div className="flex items-center gap-2 bg-muted px-5 py-3 font-display text-lg font-bold text-foreground">
+            <XCircle className="h-5 w-5 text-destructive" /> Repair Cancelled
+          </div>
+          <div className="space-y-4 p-5">
+            <p className="text-sm text-foreground">
+              This repair request has been cancelled. Your equipment status has been restored to Operational.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2 rounded-xl bg-muted/50 p-4 text-sm">
+              <div>
+                <Label>Cancellation Reason</Label>
+                <p className="font-semibold">{r.cancellation_reason || "Cancelled by user"}</p>
+              </div>
+              <div>
+                <Label>Status</Label>
+                <p className="font-semibold text-muted-foreground">Closed</p>
+              </div>
+              {r.cancellation_note && (
+                <div className="sm:col-span-2">
+                  <Label>Farmer Note</Label>
+                  <p className="italic text-muted-foreground">"{r.cancellation_note}"</p>
+                </div>
+              )}
+              {r.cancellation_admin_response && (
+                <div className="sm:col-span-2">
+                  <Label>Service Centre Resolution</Label>
+                  <p className="font-medium text-foreground">"{r.cancellation_admin_response}"</p>
+                </div>
+              )}
+            </div>
+            {e && (
+              <Link
+                to="/farmer/equipment/$id"
+                params={{ id: e.id }}
+                search={{ from: "repair", repairId: r.id }}
+                className={cn(btn.ghost, "w-full")}
+              >
+                View Machine Record
+              </Link>
+            )}
+          </div>
+        </section>
+      )}
 
       {r.status === "WAITING_FOR_PARTS" && (
         <section className="overflow-hidden rounded-2xl border-2 border-warning bg-card">
@@ -707,7 +849,7 @@ function RepairHub() {
         </section>
       )}
 
-      {assignedTechData && r.status !== "REQUESTED" && (
+      {assignedTechData && r.status !== "REQUESTED" && r.status !== "CANCELLED" && (
         <TechCard t={assignedTechData}>
           {assignedTechData.phone ? (
             <div className="mt-4 grid grid-cols-1">
@@ -720,7 +862,7 @@ function RepairHub() {
         </TechCard>
       )}
 
-      {lastNote && r.status !== "COMPLETED" && (
+      {lastNote && r.status !== "COMPLETED" && r.status !== "CANCELLED" && (
         <Card>
           <Label>
             Latest note from technician · {ago(new Date(lastNote.created_at).getTime())} ago
@@ -737,6 +879,7 @@ function RepairHub() {
               status: r.status,
               testing: r.is_testing,
               technicianId: r.technician_id,
+              cancellation_previous_status: r.cancellation_previous_status,
             } as any
           }
         />
@@ -788,15 +931,107 @@ function RepairHub() {
         </div>
       </details>
 
-      {["REQUESTED", "ACCEPTED"].includes(r.status) && (
+      {canCancelOrRequest && (
         <button
-          disabled={cancelling}
-          onClick={handleCancel}
-          className="w-full py-3 text-sm text-muted-foreground underline disabled:opacity-50"
+          type="button"
+          onClick={openCancellationDialog}
+          className="w-full py-3 text-sm text-muted-foreground hover:text-destructive underline transition-colors"
         >
-          {cancelling ? "Cancelling request…" : "Cancel request"}
+          {isUnassignedRequested ? "Cancel request" : "Request cancellation"}
         </button>
       )}
+
+      <Dialog open={cancellationDialogOpen} onOpenChange={setCancellationDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {isUnassignedRequested ? "Cancel Repair Request" : "Request Repair Cancellation"}
+            </DialogTitle>
+            <DialogDescription>
+              {isUnassignedRequested
+                ? "Since no technician has been assigned to this ticket yet, your repair request will be cancelled immediately and your equipment will be restored to Operational status."
+                : "This repair is currently active or assigned to a technician. Submitting this request will pause the repair and notify the Service Centre for administrative review. The repair is not cancelled until approved."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleSubmitCancellation} className="space-y-4 py-2">
+            <div>
+              <Label>Reason for cancellation</Label>
+              <select
+                value={cancellationReason}
+                onChange={(e) => setCancellationReason(e.target.value)}
+                className={cn(input, "w-full cursor-pointer bg-background")}
+                disabled={submittingCancellation}
+              >
+                {CANCELLATION_REASONS.map((reason) => (
+                  <option key={reason} value={reason}>
+                    {reason}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <Label>
+                {isUnassignedRequested
+                  ? "Additional details (optional)"
+                  : "Explanation for Service Centre (optional)"}
+              </Label>
+              <textarea
+                className={cn(input, "h-24 resize-none py-2 text-sm leading-relaxed")}
+                maxLength={500}
+                value={cancellationNote}
+                onChange={(e) => setCancellationNote(e.target.value)}
+                placeholder={
+                  isUnassignedRequested
+                    ? "Add any notes about why you are cancelling..."
+                    : "Explain why you wish to cancel this active repair..."
+                }
+                disabled={submittingCancellation}
+              />
+            </div>
+
+            {cancellationError && (
+              <div className="flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                <span>{cancellationError}</span>
+              </div>
+            )}
+
+            <DialogFooter className="mt-4 gap-2 sm:gap-0">
+              <button
+                type="button"
+                disabled={submittingCancellation}
+                onClick={() => setCancellationDialogOpen(false)}
+                className={cn(btn.ghost, "h-11")}
+              >
+                {isUnassignedRequested ? "Keep Request" : "Keep Repair"}
+              </button>
+              <button
+                type="submit"
+                disabled={submittingCancellation || !cancellationReason}
+                className={cn(
+                  isUnassignedRequested
+                    ? "inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-destructive px-5 font-semibold text-sm text-destructive-foreground hover:bg-destructive/90"
+                    : cn(btn.amber, "h-11 text-sm"),
+                  "disabled:opacity-50"
+                )}
+              >
+                {submittingCancellation ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {isUnassignedRequested ? "Cancelling…" : "Submitting…"}
+                  </>
+                ) : isUnassignedRequested ? (
+                  "Confirm Cancellation"
+                ) : (
+                  "Submit Request"
+                )}
+              </button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

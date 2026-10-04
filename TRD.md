@@ -256,7 +256,38 @@ TerraByte implements a dual-path repair cancellation governance workflow to prev
   - `requestCancellation(id, input)`: Allows farmers to request cancellation on active/assigned repairs (`ACCEPTED`, `QUOTE_PENDING`, `QUOTE_REVISED`, `IN_PROGRESS`, `WAITING_FOR_PARTS`, or assigned `REQUESTED`). Snapshots current status into `cancellation_previous_status`, records reason/note, transitions to `CANCELLATION_REQUESTED`, preserves equipment in `"In Repair"`, and notifies Service Centre admins. If invoked on an unassigned `REQUESTED` ticket, seamlessly delegates to immediate cancellation.
   - `approveCancellation(id, input)`: Admin-only operation transitioning `CANCELLATION_REQUESTED` $\rightarrow$ `CANCELLED`. Records administrative response, checks equipment integrity before setting status to `Operational`, and notifies both farmer and technician.
   - `rejectCancellation(id, input)`: Admin-only operation requiring explicit administrative justification. Reverts status to `cancellation_previous_status` (or `ACCEPTED`), maintains equipment in `"In Repair"`, and notifies both farmer and technician that work has resumed.
-  - `isActionableServiceCentreNotification()` & `getNotificationCategory()`: Extended to classify cancellation requests as high-priority `"Alert"` items in administrative notification queues.
+- **Farmer Cancellation Dialog & UI (Step 3)**:
+  - `Farmer Repair Detail (src/routes/farmer/repair/$id.tsx)`: Replaced legacy browser `confirm()` with accessible Radix Dialog (`@/components/ui/dialog`). Includes keyboard focus trap, Esc dismissal, and form validation.
+  - `Dynamic Action Routing`:
+    - Unassigned `REQUESTED` (`technician_id IS NULL`): Displays bottom action `"Cancel request"`. Dialog informs farmer that cancellation is immediate. Requires structured reason from `CANCELLATION_REASONS` with optional context note. Submitting invokes `cancelRepairRequest()`, restores equipment to `Operational`, shows a success toast, and redirects to `/farmer`.
+    - Assigned or Active (`ACCEPTED`, `QUOTE_PENDING`, `QUOTE_REVISED`, `IN_PROGRESS`, `WAITING_FOR_PARTS`, or assigned `REQUESTED`): Displays bottom action `"Request cancellation"`. Dialog explains that cancellation requires Service Centre review and pauses the repair. Requires structured reason with optional context note. Submitting invokes `requestCancellation()`, transitions status to `CANCELLATION_REQUESTED`, snapshots `cancellation_previous_status`, shows a success toast, and refreshes the ticket in-place.
+  - `Holding Banner (CANCELLATION_REQUESTED)`: Renders prominent amber warning card under ticket header with clock icon, displaying submitted reason, note, timestamp, and hold explanation. Suppresses cancellation CTA.
+  - `Closed Banner (CANCELLED)`: Renders muted closed card with `XCircle` icon displaying cancellation reason, farmer note, Service Centre resolution remarks, and link to machine record. Suppresses active actions like calling the technician.
+  - `Progress Stepper Alignment`: Updated `stepIndex()` and `Stepper` in `src/components/tb.tsx` to handle `CANCELLATION_REQUESTED` using `cancellation_previous_status`, highlighting the active step with `"Cancellation Pending Review"` and a warning pulse while preserving prior progression history.
+- **Admin Cancellation Review Workbench & Operations Filter (Step 4)**:
+  - `Operations Dashboard (src/routes/admin/index.tsx)`:
+    - Integrated `"Cancellation Requests"` into `FILTERS` array and filter predicate logic, enabling triage isolation of held repairs.
+    - Added high-priority amber alert banner at the top of the dashboard whenever active `CANCELLATION_REQUESTED` repairs exist, presenting job number, farmer name, cancellation reason, elapsed time, and direct navigation links to the review card.
+    - Updated operations table row rendering: displays amber pulse status dot, inline cancellation reason preview beneath the farmer's name, and a prominent `"Review"` action button directly routing to the review workbench.
+  - `Admin Repair Detail (src/routes/admin/repair/$id.tsx)`:
+    - Renders a prominent **Cancellation Review Card** when `status === "CANCELLATION_REQUESTED"` displaying ticket ID, farmer name, equipment details, previous status snapshot, cancellation reason, farmer context note, request timestamp, assigned technician, and work-hold status indicator.
+    - Suppresses the generic bottom `"Cancel repair"` action button when a ticket is in `CANCELLATION_REQUESTED` to avoid conflicting paths.
+    - **Approve Cancellation Dialog**: Radix Dialog explaining that approving sets the ticket to `CANCELLED`, notifies the farmer and assigned technician, and restores equipment to `Operational`. Allows optional administrative response remarks (`cancellation_admin_response`). Invokes `approveCancellation()`.
+    - **Decline Cancellation Dialog**: Radix Dialog explaining that declining reverts the ticket to `cancellation_previous_status` and resumes repair work. Enforces mandatory administrative explanation (`adminResponse: string`). Invokes `rejectCancellation()`.
+    - **Post-Resolution States**: Renders closed banner for `CANCELLED` tickets with administrative remarks; renders an informative resumption notice for tickets where cancellation was previously declined.
+    - **Activity Log Mapping**: Extends activity timeline to record farmer cancellation requests, Service Centre approvals, and Service Centre rejections.
+- **Technician Work-Hold UI & Cancellation Awareness (Step 5)**:
+  - `Technician Dashboard (src/routes/technician/index.tsx)`:
+    - Separates repairs in `CANCELLATION_REQUESTED` from standard active jobs to prevent unintended workflow progression.
+    - Displays a dedicated `"On hold · Cancellation pending (N)"` section with amber visual styling, an animated warning pulse dot, cancellation reason preview, and clear notice that work is paused awaiting Service Centre review.
+    - Displays a dedicated `"Cancelled (N)"` section with muted styling, providing technicians with full audit visibility of closed/cancelled jobs without cluttering active workbench queues.
+  - `Technician Job Detail (src/routes/technician/job/$id.tsx)`:
+    - **Work-Hold Banner (`CANCELLATION_REQUESTED`)**: Renders a prominent amber work-hold card under the job header detailing job number, farmer name, equipment model, cancellation reason, farmer context note, request timestamp, and previous status snapshot. Provides explicit operational guidance: *"The farmer has requested cancellation for this repair. All diagnostic and repair work is on hold pending review by the Service Centre. Please do not proceed with repairs, parts procurement, or testing until a decision is made."*
+    - **Action Suppression**: Progression actions (quote formulation/revision, start repair, parts hold, testing, complete repair) are strictly suppressed while the ticket is under review.
+    - **Read-Only Context Cards**: Preserves read-only quotation and parts-hold context cards so existing diagnostics and parts specifications remain visible to the technician without modification controls.
+    - **Closed Banner (`CANCELLED`)**: Renders a muted closed status card displaying cancellation reason, farmer note, and administrative resolution remarks. Outbound calling action is suppressed on cancelled jobs.
+    - **Resumption Notice**: When a cancellation request is declined by the Service Centre, displays an informative notice explaining that the request was declined with the administrator's justification, and restores the standard progression actions for the resumed status.
+    - **Assignment Guard Access**: Updated route authorization check to permit technicians to view cancelled historical jobs assigned to them without access rejection.
 
 ---
 

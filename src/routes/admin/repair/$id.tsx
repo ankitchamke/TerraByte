@@ -1,11 +1,15 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   AlertOctagon,
+  AlertTriangle,
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Clock,
   History,
   Loader2,
   PackageSearch,
+  XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -20,14 +24,25 @@ import {
   Label,
   StatusPill,
 } from "@/components/tb";
-import { ago, useTB, type Quote, type Repair } from "@/lib/tb-store";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ago, STAFF_LABEL, useTB, type Quote, type Repair } from "@/lib/tb-store";
+import { useAuth } from "@/lib/auth";
 import type { Assessment } from "@/lib/assessment";
 import { meta } from "@/lib/seo";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import {
+  approveCancellation,
   cancelRepairRequest,
   getRepairRequestById,
+  rejectCancellation,
   updatePartsEta,
   type RepairRequestDetail,
 } from "@/lib/services/repair-requests";
@@ -117,12 +132,16 @@ function getActivityAction(status: string, note?: string | null): string {
     case "COMPLETED":
       return "Repair complete & saved to service history";
     case "CANCELLED":
+      if (n.includes("approved")) return "Cancellation approved by Service Centre";
       return "Repair cancelled";
+    case "CANCELLATION_REQUESTED":
+      return "Cancellation requested by farmer";
     case "REASSIGNED":
       return "Technician reassigned";
     case "NOTE":
       return "Technician note recorded";
     default:
+      if (n.includes("declined")) return "Cancellation request declined";
       return status.replace(/_/g, " ").toLowerCase();
   }
 }
@@ -153,6 +172,8 @@ function AdminRepair() {
   const { id } = Route.useParams();
   const nav = useNavigate();
   const s = useTB();
+  const { profile } = useAuth();
+  const isAdmin = profile?.role === "service_centre" || (profile?.role as string) === "admin";
 
   const [dbRepair, setDbRepair] = useState<RepairRequestDetail | null>(null);
   const [quotes, setQuotes] = useState<QuoteDetail[]>([]);
@@ -165,6 +186,17 @@ function AdminRepair() {
   const [cancelling, setCancelling] = useState(false);
   const [activityOpen, setActivityOpen] = useState(true);
   const [showAllActivity, setShowAllActivity] = useState(false);
+
+  // Cancellation review dialog states
+  const [approveDialogOpen, setApproveDialogOpen] = useState(false);
+  const [approveRemarks, setApproveRemarks] = useState("");
+  const [approveError, setApproveError] = useState<string | null>(null);
+
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [rejectExplanation, setRejectExplanation] = useState("");
+  const [rejectError, setRejectError] = useState<string | null>(null);
+
+  const [reviewActionBusy, setReviewActionBusy] = useState<"approve" | "reject" | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -428,6 +460,61 @@ function AdminRepair() {
     }
   };
 
+  // Handle Cancellation Approval
+  const handleConfirmApprove = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!r || reviewActionBusy) return;
+    setReviewActionBusy("approve");
+    setApproveError(null);
+    try {
+      if (isReal) {
+        await approveCancellation(r.id, {
+          adminResponse: approveRemarks.trim() || undefined,
+        });
+      }
+      toast.success("Cancellation approved. Ticket cancelled.");
+      setApproveDialogOpen(false);
+      setApproveRemarks("");
+      await loadData();
+    } catch (err: any) {
+      const msg = err?.message || "Failed to approve cancellation";
+      setApproveError(msg);
+      toast.error(msg);
+    } finally {
+      setReviewActionBusy(null);
+    }
+  };
+
+  // Handle Cancellation Rejection
+  const handleConfirmReject = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!r || reviewActionBusy) return;
+    const trimmed = rejectExplanation.trim();
+    if (!trimmed) {
+      setRejectError("An administrative explanation is required to decline a cancellation request.");
+      return;
+    }
+    setReviewActionBusy("reject");
+    setRejectError(null);
+    try {
+      if (isReal) {
+        await rejectCancellation(r.id, {
+          adminResponse: trimmed,
+        });
+      }
+      toast.success("Cancellation request declined. Repair resumed.");
+      setRejectDialogOpen(false);
+      setRejectExplanation("");
+      await loadData();
+    } catch (err: any) {
+      const msg = err?.message || "Failed to decline cancellation";
+      setRejectError(msg);
+      toast.error(msg);
+    } finally {
+      setReviewActionBusy(null);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <ContextualBack to="/admin" label="Pipeline" />
@@ -446,6 +533,151 @@ function AdminRepair() {
         </div>
         <StatusPill r={{ status, testing: isTesting }} audience="staff" />
       </div>
+
+      {status === "CANCELLATION_REQUESTED" && (
+        <section className="overflow-hidden rounded-2xl border-2 border-warning bg-card shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-warning px-5 py-3.5 font-display text-lg font-bold text-warning-foreground">
+            <div className="flex items-center gap-2">
+              <Clock className="h-5 w-5 shrink-0" />
+              <span>Cancellation Request Awaiting Service Centre Review</span>
+            </div>
+            <span className="rounded-full bg-warning-foreground/15 px-2.5 py-0.5 text-xs font-mono font-semibold text-warning-foreground">
+              Work on hold
+            </span>
+          </div>
+
+          <div className="space-y-4 p-5">
+            <p className="text-sm text-foreground">
+              The farmer has submitted a formal cancellation request for this repair ticket. Active physical repair work is temporarily paused pending your administrative decision.
+            </p>
+
+            <div className="grid gap-4 rounded-xl border border-warning/30 bg-warning/5 p-4 sm:grid-cols-2 text-sm">
+              <div>
+                <Label>Cancellation Reason</Label>
+                <p className="text-base font-bold text-foreground">
+                  {(isReal && r.cancellation_reason) || "Alternative arrangement / local repair"}
+                </p>
+              </div>
+              <div>
+                <Label>Requested Time</Label>
+                <p className="font-semibold text-foreground">
+                  {isReal && r.cancellation_requested_at
+                    ? formatActivityDate(r.cancellation_requested_at)
+                    : ago(new Date(statusSince).getTime()) + " ago"}
+                </p>
+              </div>
+              <div>
+                <Label>Previous Repair Status</Label>
+                <p className="font-medium text-foreground">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-0.5 text-xs font-semibold">
+                    {STAFF_LABEL[(isReal && r.cancellation_previous_status) || "ACCEPTED"] || "In progress"}
+                  </span>
+                </p>
+              </div>
+              <div>
+                <Label>Assigned Technician</Label>
+                <p className="font-medium text-foreground">
+                  {technicianName ? (
+                    <span>{technicianName} (work on hold)</span>
+                  ) : (
+                    <span className="text-muted-foreground italic">Unassigned</span>
+                  )}
+                </p>
+              </div>
+              {isReal && r.cancellation_note && (
+                <div className="sm:col-span-2 pt-2 border-t border-warning/20">
+                  <Label>Farmer Explanation / Note</Label>
+                  <p className="rounded-lg bg-card/70 border border-warning/20 p-3 text-sm italic text-foreground">
+                    "{r.cancellation_note}"
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {isAdmin && (
+              <div className="flex flex-wrap items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  disabled={Boolean(reviewActionBusy)}
+                  onClick={() => {
+                    setApproveRemarks("");
+                    setApproveError(null);
+                    setApproveDialogOpen(true);
+                  }}
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-destructive px-5 font-semibold text-sm text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50 transition-colors"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  Approve cancellation
+                </button>
+                <button
+                  type="button"
+                  disabled={Boolean(reviewActionBusy)}
+                  onClick={() => {
+                    setRejectExplanation("");
+                    setRejectError(null);
+                    setRejectDialogOpen(true);
+                  }}
+                  className={cn(btn.ghost, "h-11 px-5 text-sm font-semibold border-2 border-border hover:bg-muted disabled:opacity-50")}
+                >
+                  <XCircle className="h-4 w-4 text-destructive" />
+                  Decline cancellation
+                </button>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {status === "CANCELLED" && (
+        <section className="overflow-hidden rounded-2xl border-2 border-border bg-card">
+          <div className="flex items-center gap-2 bg-muted px-5 py-3 font-display text-lg font-bold text-foreground">
+            <XCircle className="h-5 w-5 text-destructive" /> Repair Cancelled
+          </div>
+          <div className="space-y-3 p-5 text-sm">
+            <p className="text-muted-foreground">
+              This repair ticket was cancelled. Equipment status has been restored to Operational.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2 rounded-xl bg-muted/40 p-4">
+              <div>
+                <Label>Cancellation Reason</Label>
+                <p className="font-semibold text-foreground">
+                  {(isReal && r.cancellation_reason) || "Cancelled"}
+                </p>
+              </div>
+              <div>
+                <Label>Resolution Status</Label>
+                <p className="font-semibold text-muted-foreground">Closed</p>
+              </div>
+              {isReal && r.cancellation_note && (
+                <div className="sm:col-span-2">
+                  <Label>Farmer Note</Label>
+                  <p className="italic text-muted-foreground">"{r.cancellation_note}"</p>
+                </div>
+              )}
+              {isReal && r.cancellation_admin_response && (
+                <div className="sm:col-span-2">
+                  <Label>Service Centre Resolution Remarks</Label>
+                  <p className="font-medium text-foreground bg-card border border-border rounded-lg p-3">
+                    "{r.cancellation_admin_response}"
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {isReal && r.cancellation_admin_response && status !== "CANCELLED" && status !== "CANCELLATION_REQUESTED" && (
+        <div className="rounded-xl border border-info/30 bg-info/10 p-4 text-sm space-y-1">
+          <p className="font-semibold text-info flex items-center gap-1.5">
+            <Clock className="h-4 w-4" /> Previous Cancellation Request Declined
+          </p>
+          <p className="text-foreground text-xs">
+            The previous cancellation request was declined by Service Centre with explanation:{" "}
+            <span className="italic font-medium">"{r.cancellation_admin_response}"</span>. Repair work is actively continuing.
+          </p>
+        </div>
+      )}
 
       {od && (
         <p className="flex items-center gap-2 rounded-xl border-2 border-destructive bg-destructive/5 p-3 font-semibold text-destructive">
@@ -704,8 +936,8 @@ function AdminRepair() {
             )}
           </Card>
 
-          {/* Cancellation */}
-          {status !== "COMPLETED" && status !== "CANCELLED" && (
+          {/* Direct Admin Cancellation (Only for non-cancellation-requested active repairs) */}
+          {status !== "COMPLETED" && status !== "CANCELLED" && status !== "CANCELLATION_REQUESTED" && (
             <button
               disabled={cancelling}
               onClick={() => void handleCancel()}
@@ -716,6 +948,151 @@ function AdminRepair() {
           )}
         </div>
       </div>
+
+      {/* Approve Cancellation Confirmation Dialog */}
+      <Dialog open={approveDialogOpen} onOpenChange={setApproveDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Approve Repair Cancellation</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to approve this cancellation request? This will mark the repair ticket as Cancelled, notify both the farmer and assigned technician, and restore equipment to Operational status (if no other active repairs exist).
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleConfirmApprove} className="space-y-4 py-2">
+            <div className="rounded-xl bg-muted/60 p-3.5 text-xs space-y-1.5 border border-border/50">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Ticket:</span>
+                <span className="font-mono font-bold text-foreground">{jobNumber}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Farmer:</span>
+                <span className="font-semibold text-foreground">{farmerName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Reason:</span>
+                <span className="font-semibold text-foreground">
+                  {(isReal && r.cancellation_reason) || "Alternative arrangement"}
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <Label>Administrative Resolution Remarks (Optional)</Label>
+              <textarea
+                className={cn(input, "h-20 resize-none py-2 text-sm leading-relaxed")}
+                maxLength={500}
+                value={approveRemarks}
+                onChange={(e) => setApproveRemarks(e.target.value)}
+                placeholder="e.g. Cancellation approved per farmer request; no parts or labour invoiced."
+                disabled={reviewActionBusy === "approve"}
+              />
+            </div>
+
+            {approveError && (
+              <div className="flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                <span>{approveError}</span>
+              </div>
+            )}
+
+            <DialogFooter className="mt-4 gap-2 sm:gap-0">
+              <button
+                type="button"
+                disabled={reviewActionBusy === "approve"}
+                onClick={() => setApproveDialogOpen(false)}
+                className={cn(btn.ghost, "h-11")}
+              >
+                Go Back
+              </button>
+              <button
+                type="submit"
+                disabled={reviewActionBusy === "approve"}
+                className={cn(
+                  "inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-destructive px-5 font-semibold text-sm text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50 transition-colors"
+                )}
+              >
+                {reviewActionBusy === "approve" ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Approving…
+                  </>
+                ) : (
+                  "Confirm & Cancel Repair"
+                )}
+              </button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Decline / Reject Cancellation Dialog */}
+      <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Decline Cancellation Request</DialogTitle>
+            <DialogDescription>
+              Decline this cancellation request and resume repair work. The ticket will revert to its previous status (
+              <strong>
+                {STAFF_LABEL[(isReal && r.cancellation_previous_status) || "ACCEPTED"] || "previous status"}
+              </strong>
+              ), and both the farmer and assigned technician will be notified with your explanation.
+            </DialogDescription>
+          </DialogHeader>
+
+          <form onSubmit={handleConfirmReject} className="space-y-4 py-2">
+            <div>
+              <Label>Reason for Declining (Required)</Label>
+              <textarea
+                className={cn(input, "h-24 resize-none py-2 text-sm leading-relaxed")}
+                maxLength={500}
+                value={rejectExplanation}
+                onChange={(e) => {
+                  setRejectExplanation(e.target.value);
+                  if (rejectError) setRejectError(null);
+                }}
+                placeholder="Explain to the farmer why this cancellation request cannot be approved (e.g. custom parts already procured, technician on site)..."
+                disabled={reviewActionBusy === "reject"}
+              />
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                An explanation is required and will be sent directly to the farmer and technician.
+              </p>
+            </div>
+
+            {rejectError && (
+              <div className="flex items-center gap-2 rounded-xl border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                <span>{rejectError}</span>
+              </div>
+            )}
+
+            <DialogFooter className="mt-4 gap-2 sm:gap-0">
+              <button
+                type="button"
+                disabled={reviewActionBusy === "reject"}
+                onClick={() => setRejectDialogOpen(false)}
+                className={cn(btn.ghost, "h-11")}
+              >
+                Go Back
+              </button>
+              <button
+                type="submit"
+                disabled={reviewActionBusy === "reject" || !rejectExplanation.trim()}
+                className={cn(btn.primary, "h-11 text-sm disabled:opacity-50")}
+              >
+                {reviewActionBusy === "reject" ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Declining…
+                  </>
+                ) : (
+                  "Decline & Resume Repair"
+                )}
+              </button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ChevronRight, Inbox } from "lucide-react";
+import { ChevronRight, Clock, Inbox } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Card, DemoTag, StatusPill } from "@/components/tb";
@@ -87,10 +87,12 @@ function TechHome() {
   }
 
   const incoming = repairs.filter((r) => r.status === "REQUESTED");
+  const onHold = repairs.filter((r) => r.status === "CANCELLATION_REQUESTED");
   const active = repairs.filter((r) =>
     ["ACCEPTED", "QUOTE_PENDING", "QUOTE_REVISED", "IN_PROGRESS", "WAITING_FOR_PARTS"].includes(r.status)
   );
   const done = repairs.filter((r) => r.status === "COMPLETED");
+  const cancelled = repairs.filter((r) => r.status === "CANCELLED");
 
   const techName = profile?.full_name?.trim() || "Technician";
   const workshopName = techProfile?.workshop_name || "Field Workshop";
@@ -128,8 +130,19 @@ function TechHome() {
         empty="No new requests. Stay online to receive jobs."
         urgent
       />
+      {onHold.length > 0 && (
+        <Section
+          title={`On hold · Cancellation pending (${onHold.length})`}
+          list={onHold}
+          empty=""
+          onHold
+        />
+      )}
       <Section title={`Active jobs (${active.length})`} list={active} empty="No active jobs." />
-      {done.length > 0 && <Section title="Completed" list={done} empty="" />}
+      {done.length > 0 && <Section title={`Completed (${done.length})`} list={done} empty="" />}
+      {cancelled.length > 0 && (
+        <Section title={`Cancelled (${cancelled.length})`} list={cancelled} empty="" isCancelled />
+      )}
     </div>
   );
 }
@@ -139,15 +152,28 @@ function Section({
   list,
   empty,
   urgent,
+  onHold,
+  isCancelled,
 }: {
   title: string;
   list: RepairRequestWithEquipment[];
   empty: string;
   urgent?: boolean;
+  onHold?: boolean;
+  isCancelled?: boolean;
 }) {
   return (
     <div>
-      <h2 className="mb-3 text-xl font-bold">{title}</h2>
+      <h2
+        className={cn(
+          "mb-3 text-xl font-bold",
+          onHold && "text-warning-foreground flex items-center gap-2",
+          isCancelled && "text-muted-foreground"
+        )}
+      >
+        {onHold && <Clock className="h-5 w-5 text-warning shrink-0" />}
+        {title}
+      </h2>
       {list.length === 0 && (
         <Card className="flex items-center gap-3 text-sm text-muted-foreground">
           <Inbox className="h-5 w-5" />
@@ -164,20 +190,44 @@ function Section({
               to="/technician/job/$id"
               params={{ id: r.job_number || r.id }}
               className={cn(
-                "flex items-center gap-3 rounded-2xl border-2 bg-card p-4",
-                urgent ? "border-accent" : "border-border"
+                "flex items-center gap-3 rounded-2xl border-2 bg-card p-4 transition-colors",
+                onHold
+                  ? "border-warning/70 bg-warning/10 hover:bg-warning/15 shadow-xs"
+                  : isCancelled
+                  ? "border-border bg-muted/40 hover:bg-muted/60 opacity-80"
+                  : urgent
+                  ? "border-accent"
+                  : "border-border hover:border-border/80"
               )}
             >
               <div className="min-w-0 flex-1">
-                <p className="font-mono text-xs text-muted-foreground">
-                  {r.job_number || r.id} · {ago(statusSinceMs)} in status
-                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-mono text-xs text-muted-foreground">
+                    {r.job_number || r.id} · {ago(statusSinceMs)} in status
+                  </p>
+                  {onHold && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-warning/20 px-2 py-0.5 text-[11px] font-semibold text-warning-foreground">
+                      <span className="h-1.5 w-1.5 rounded-full bg-warning animate-pulse" />
+                      Work on hold
+                    </span>
+                  )}
+                </div>
                 <p className="truncate text-lg font-bold">
                   {e ? `${e.make} ${e.model}` : "Equipment"}
                 </p>
-                <p className="truncate text-sm text-muted-foreground">
-                  {r.symptoms.join(", ")} · {r.location}
-                </p>
+                {onHold ? (
+                  <p className="truncate text-sm text-warning-foreground font-medium italic">
+                    Reason: "{r.cancellation_reason || "Cancellation requested"}" · Pending Service Centre review
+                  </p>
+                ) : isCancelled && r.cancellation_reason ? (
+                  <p className="truncate text-sm text-muted-foreground italic">
+                    Cancelled: "{r.cancellation_reason}"
+                  </p>
+                ) : (
+                  <p className="truncate text-sm text-muted-foreground">
+                    {r.symptoms.join(", ")} · {r.location}
+                  </p>
+                )}
                 <div className="mt-1.5">
                   <StatusPill r={{ status: r.status, testing: r.is_testing }} audience="staff" />
                 </div>

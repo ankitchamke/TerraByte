@@ -132,17 +132,48 @@ flowchart TD
     AdminReview -- "Decline Cancellation" --> RevertedState["status = cancellation_previous_status<br/>Work resumed<br/>Farmer notified with reason"]
 ```
 
-1. **Unassigned Cancellation**:
-   - Newly requested repairs without an assigned technician (`status = 'REQUESTED'`, `technician_id IS NULL`) can be cancelled directly by the farmer.
-   - Status updates directly to `CANCELLED`; equipment returns to `Operational`.
+1. **Unassigned Direct Cancellation**:
+   - Newly requested repairs without an assigned technician (`status = 'REQUESTED'`, `technician_id IS NULL`) display the bottom action `"Cancel request"`.
+   - Clicking opens the accessible Radix `Dialog` detailing that cancellation is immediate.
+   - Farmer selects a structured reason from `CANCELLATION_REASONS` (e.g., *"Repaired locally / alternative arrangement"*, *"Cost / quote concerns"*, *"Delay / timing constraints"*, *"Machine no longer needed"*, *"Other"*) with optional context notes.
+   - Confirming calls `cancelRepairRequest()`, restores equipment to `Operational`, shows a success toast, and navigates back to `/farmer`.
 2. **Governed Cancellation Requests**:
-   - Assigned or in-flight repairs (`ACCEPTED`, `QUOTE_PENDING`, `QUOTE_REVISED`, `IN_PROGRESS`, `WAITING_FOR_PARTS`) cannot be cancelled unilaterally.
-   - Farmer submits a cancellation request with structured reason and explanation.
-   - State advances to `CANCELLATION_REQUESTED`; `cancellation_previous_status` preserves the current state.
-   - Assigned technician's workbench displays a work-hold notice.
-3. **Service Centre Decision**:
-   - **Approval**: Admin confirms cancellation. Status moves to `CANCELLED`, machinery is marked `Operational`, farmer and technician receive notifications.
-   - **Rejection**: Admin declines cancellation with an explanation. Ticket reverts to its previous status; work resumes; farmer receives notice.
+   - Assigned or in-flight repairs (`REQUESTED` + assigned, `ACCEPTED`, `QUOTE_PENDING`, `QUOTE_REVISED`, `IN_PROGRESS`, `WAITING_FOR_PARTS`) display `"Request cancellation"`.
+   - Clicking opens the Radix `Dialog` explaining that the request is placed under Service Centre review and pauses the repair.
+   - Farmer selects a structured reason and optional explanation.
+   - Confirming calls `requestCancellation()`, transitions status to `CANCELLATION_REQUESTED`, snapshots `cancellation_previous_status`, displays a confirmation toast, and reloads the ticket in-place.
+3. **Farmer Status Banners & Controls**:
+   - **Under Review (`CANCELLATION_REQUESTED`)**: Renders a top holding banner (*"Cancellation Request Under Review"*) displaying the submitted reason, note, timestamp, and hold explanation. The bottom cancellation action is hidden, and `Stepper` indicates `"Cancellation Pending Review"` with a warning pulse on the active step.
+   - **Cancelled (`CANCELLED`)**: Renders a closed banner (*"Repair Cancelled"*) showing the cancellation reason, note, Service Centre resolution remarks, and a link to the machine record. Conflicting actions (such as calling the technician) are suppressed.
+4. **Service Centre Review & Operations Pipeline (`/admin`)**:
+   - **Alert Banner & Quick Links**: When tickets are in `CANCELLATION_REQUESTED`, the Operations dashboard renders a prominent amber alert banner listing all pending tickets with job number, farmer name, reason, and quick-link chips directly opening the review workbench.
+   - **Pipeline Filter**: The operations table includes a dedicated `"Cancellation Requests"` tab filter alongside visual amber pulse indicators and a `"Review"` CTA button on affected rows.
+   - **Review Workbench (`/admin/repair/:id`)**: Accessed via dashboard quick-links or notification alerts. Renders a dedicated **Cancellation Review Card** detailing ticket ID, farmer name, equipment details, previous status snapshot, reason, note, timestamp, assigned technician, and work-hold status.
+   - **Approval Flow**: Admin clicks **"Approve cancellation"**, opening a confirmation dialog explaining that the ticket will be permanently cancelled, the assigned technician and farmer will be notified, and equipment will be restored to `Operational`. Admin may include optional remarks (`cancellation_admin_response`). Submitting invokes `approveCancellation()`.
+   - **Decline Flow**: Admin clicks **"Decline cancellation"**, opening a confirmation dialog explaining that the ticket will revert to `cancellation_previous_status` and repair work will resume. Admin must provide a non-empty explanation (`adminResponse`). Submitting invokes `rejectCancellation()`.
+   - **Post-Resolution States**:
+     - On `CANCELLED` tickets, renders a closed status banner displaying the administrative resolution remarks.
+     - On tickets where cancellation was declined and work resumed, displays an informational notice documenting the decline reason and timestamp for audit transparency.
+     - Activity log chronologically records farmer cancellation requests and admin approval/rejection decisions.
+5. **Technician Work-Hold & Awareness Journey (`/technician`)**:
+   - **Dashboard Isolation & Dedicated Sections (`/technician/`)**:
+     - Jobs in `CANCELLATION_REQUESTED` are partitioned out of `Active jobs` to eliminate accidental work progression.
+     - Displayed in a dedicated **`On hold · Cancellation pending (N)`** section styled with an amber border, warning badge, animated pulse dot, reason preview, and explicit notice that work is paused awaiting Service Centre review.
+     - Jobs in `CANCELLED` appear in a dedicated **`Cancelled (N)`** section with muted styling, retaining visibility of closed/cancelled jobs for technician audit and record-keeping.
+   - **Job Detail Work-Hold Banner (`/technician/job/:id`)**:
+     - When viewing a job in `CANCELLATION_REQUESTED`, a prominent **Cancellation Request Under Review** work-hold banner is rendered with job number, farmer name, equipment model, cancellation reason, farmer note, timestamp, previous status snapshot, and clear instructions: *"The farmer has requested cancellation for this repair. All diagnostic and repair work is on hold pending review by the Service Centre. Please do not proceed with repairs, parts procurement, or testing until a decision is made."*
+     - All active progression actions (quote submission/revision, start repair, parts hold, testing, complete repair) are strictly suppressed while on hold.
+     - Prior quotation and parts-hold context cards are preserved in read-only mode so existing diagnostic and parts context remains visible without mutation capability.
+     - Outbound farmer communication (`CallButton`) remains available during work-hold for coordination.
+   - **Approved Cancellation (Closed State)**:
+     - When approved by admin, the ticket transitions to `CANCELLED`.
+     - Displays a **Repair Cancelled** closed banner with cancellation reason, farmer note, and admin resolution remarks.
+     - Outbound call CTA is suppressed on cancelled tickets.
+     - Technician assignment guard permits viewing cancelled historical jobs.
+   - **Rejected Cancellation (Work Resumed)**:
+     - When rejected by admin, the ticket returns to `cancellation_previous_status`.
+     - Displays a **Cancellation Request Declined · Work Resumed** notice with the admin's mandatory justification.
+     - Full operational controls corresponding to the restored status are automatically re-enabled for the technician.
 
 ---
 
@@ -176,6 +207,7 @@ flowchart TD
    - Accepts job, specifying arrival ETA.
    - Performs on-site diagnostics and submits itemized quotes.
    - Puts job on `WAITING_FOR_PARTS` when components are held at taluka distributors.
+   - Respects governed work-hold states (`CANCELLATION_REQUESTED`) with locked progression controls when farmer requests cancellation.
    - Conducts field load testing and records permanent maintenance notes before completing ticket.
 3. **Profile & Availability**: Toggles live availability switch and maintains verified workshop credentials.
 

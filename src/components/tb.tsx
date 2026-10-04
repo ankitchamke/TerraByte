@@ -741,20 +741,28 @@ export function StatusPill({
 }
 
 export const STEPS = ["Request Sent", "Technician Assigned", "Quote Ready", "Quote Approved", "Repair in Progress", "Testing", "Repaired"];
-export function stepIndex(r: Repair) {
-  switch (r.status) {
-    case "REQUESTED": return r.technicianId ? 0 : 0;
+export function stepIndex(r: Repair | any) {
+  const effectiveStatus =
+    r.status === "CANCELLATION_REQUESTED"
+      ? (r.cancellation_previous_status || r.cancellationPreviousStatus || "ACCEPTED")
+      : (r.status === "CANCELLED"
+        ? (r.cancellation_previous_status || r.cancellationPreviousStatus || "REQUESTED")
+        : r.status);
+
+  switch (effectiveStatus) {
+    case "REQUESTED": return (r.technicianId || r.technician_id) ? 0 : 0;
     case "ACCEPTED": return 1;
     case "QUOTE_PENDING": case "QUOTE_REVISED": return 2;
-    case "IN_PROGRESS": return r.testing ? 5 : 4;
+    case "IN_PROGRESS": return (r.testing || r.is_testing) ? 5 : 4;
     case "WAITING_FOR_PARTS": return 4;
     case "COMPLETED": return 6;
     default: return 0;
   }
 }
-export function Stepper({ r }: { r: Repair }) {
+export function Stepper({ r }: { r: Repair | any }) {
   const i = stepIndex(r);
   const paused = r.status === "WAITING_FOR_PARTS";
+  const onHold = r.status === "CANCELLATION_REQUESTED";
   return (
     <ol className="space-y-0">
       {STEPS.map((s, k) => {
@@ -764,11 +772,11 @@ export function Stepper({ r }: { r: Repair }) {
           <li key={s} className="relative flex gap-3 pb-4 last:pb-0">
             {k < STEPS.length - 1 && <span className={cn("absolute left-[13px] top-7 h-[calc(100%-20px)] w-0.5", k < i ? "bg-primary" : "bg-border")} />}
             <span className={cn("relative z-10 grid h-7 w-7 shrink-0 place-items-center rounded-full border-2 text-xs font-bold",
-              done ? "border-primary bg-primary text-primary-foreground" : cur ? (paused ? "border-warning bg-warning text-warning-foreground animate-pulse" : "border-primary bg-background text-primary ring-4 ring-primary/20") : "border-border bg-background text-muted-foreground")}>
+              done ? "border-primary bg-primary text-primary-foreground" : cur ? (paused || onHold ? "border-warning bg-warning text-warning-foreground animate-pulse" : "border-primary bg-background text-primary ring-4 ring-primary/20") : "border-border bg-background text-muted-foreground")}>
               {done ? <Check className="h-4 w-4" /> : k + 1}
             </span>
             <span className={cn("pt-0.5 text-sm", cur ? "font-bold" : done ? "font-medium" : "text-muted-foreground")}>
-              {cur && paused ? "Paused: Waiting for Spare Parts" : s}
+              {cur && paused ? "Paused: Waiting for Spare Parts" : cur && onHold ? "Cancellation Pending Review" : s}
             </span>
           </li>
         );

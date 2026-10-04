@@ -1,11 +1,11 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { AlertCircle, Camera, Loader2, Lock, PackageSearch, Plus, Trash2 } from "lucide-react";
+import { AlertCircle, Camera, Clock, Loader2, Lock, PackageSearch, Plus, Trash2, XCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AssessmentCard, QuoteTable, Timeline } from "@/components/repair-parts";
 import { btn, CallButton, Card, ClickableImage, ContextualBack, DateTimePicker, formatEtaDateTime, input, Label, StatusPill } from "@/components/tb";
 import { fileToSmallDataUrl } from "@/lib/image";
-import { actions, ago, fmtTime, inr, quoteTotals, useTB, type Quote, type QuotePart, type Repair } from "@/lib/tb-store";
+import { actions, ago, fmtTime, inr, quoteTotals, STAFF_LABEL, useTB, type Quote, type QuotePart, type Repair } from "@/lib/tb-store";
 import { formatEtaDateTime as formatEta, getEtaPresets, toDateTimeLocalString, valueToDateTimeLocal } from "@/lib/date-utils";
 import { useAuth } from "@/lib/auth";
 import { meta } from "@/lib/seo";
@@ -165,7 +165,7 @@ function Job() {
     );
   }
 
-  if (r.technician_id !== profile?.id && r.status !== "COMPLETED" && profile?.role !== "service_centre") {
+  if (r.technician_id !== profile?.id && r.status !== "COMPLETED" && r.status !== "CANCELLED" && profile?.role !== "service_centre") {
     return (
       <div className="space-y-5">
         <ContextualBack to="/technician" label="Jobs" />
@@ -257,6 +257,132 @@ function Job() {
         <StatusPill r={{ status: r.status, testing: r.is_testing }} audience="staff" />
       </div>
 
+      {/* Prominent Cancellation Work-Hold Banner (CANCELLATION_REQUESTED) */}
+      {r.status === "CANCELLATION_REQUESTED" && (
+        <section className="overflow-hidden rounded-2xl border-2 border-warning bg-card shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2 bg-warning px-5 py-3.5 font-display text-lg font-bold text-warning-foreground">
+            <div className="flex items-center gap-2">
+              <Clock className="h-5 w-5 shrink-0" />
+              <span>Cancellation Request Under Review</span>
+            </div>
+            <span className="rounded-full bg-warning-foreground/15 px-2.5 py-0.5 text-xs font-mono font-semibold text-warning-foreground">
+              Work on hold
+            </span>
+          </div>
+
+          <div className="space-y-4 p-5">
+            <p className="text-sm text-foreground">
+              The farmer has submitted a formal cancellation request for repair ticket{" "}
+              <b className="font-mono">{r.job_number || r.id}</b>. The Service Centre is currently reviewing the request.
+            </p>
+
+            <div className="rounded-xl border border-warning/30 bg-warning/5 p-4 text-sm space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <Label>Cancellation Reason</Label>
+                  <p className="font-bold text-foreground">
+                    {r.cancellation_reason || "Alternative arrangement / local repair"}
+                  </p>
+                </div>
+                <div>
+                  <Label>Requested Time</Label>
+                  <p className="font-semibold text-foreground">
+                    {r.cancellation_requested_at
+                      ? formatEtaDateTime(r.cancellation_requested_at)
+                      : ago(new Date(r.status_since).getTime()) + " ago"}
+                  </p>
+                </div>
+                <div>
+                  <Label>Previous Repair Status</Label>
+                  <p className="font-medium text-foreground">
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-0.5 text-xs font-semibold">
+                      {STAFF_LABEL[r.cancellation_previous_status || "ACCEPTED"] || "In progress"}
+                    </span>
+                  </p>
+                </div>
+                <div>
+                  <Label>Current Action Required</Label>
+                  <p className="font-semibold text-warning-foreground">
+                    Do not proceed with repair work
+                  </p>
+                </div>
+              </div>
+
+              {r.cancellation_note && (
+                <div className="pt-2 border-t border-warning/20">
+                  <Label>Farmer Explanation / Note</Label>
+                  <p className="rounded-lg bg-card/70 border border-warning/20 p-3 text-sm italic text-foreground">
+                    "{r.cancellation_note}"
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl bg-muted/60 p-3.5 text-xs text-muted-foreground border border-border/50 space-y-1">
+              <p className="font-semibold text-foreground">Instructions while on hold:</p>
+              <ul className="list-disc list-inside space-y-0.5">
+                <li>All active physical repair work and parts ordering are temporarily paused.</li>
+                <li>Normal repair progression actions (quotes, parts, testing, completion) are locked until the Service Centre resolves the request.</li>
+                <li>You will receive a notification as soon as the Service Centre reaches a decision.</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Prominent Cancelled Banner (CANCELLED) */}
+      {r.status === "CANCELLED" && (
+        <section className="overflow-hidden rounded-2xl border-2 border-border bg-card">
+          <div className="flex items-center gap-2 bg-muted px-5 py-3 font-display text-lg font-bold text-foreground">
+            <XCircle className="h-5 w-5 text-destructive" /> Repair Cancelled
+          </div>
+          <div className="space-y-4 p-5 text-sm">
+            <p className="text-foreground">
+              This repair ticket was cancelled by the Service Centre upon farmer request. Equipment has been restored to Operational status. No further action is required.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2 rounded-xl bg-muted/40 p-4">
+              <div>
+                <Label>Cancellation Reason</Label>
+                <p className="font-semibold text-foreground">
+                  {r.cancellation_reason || "Cancelled"}
+                </p>
+              </div>
+              <div>
+                <Label>Resolution Status</Label>
+                <p className="font-semibold text-muted-foreground">Closed</p>
+              </div>
+              {r.cancellation_note && (
+                <div className="sm:col-span-2">
+                  <Label>Farmer Note</Label>
+                  <p className="italic text-muted-foreground">"{r.cancellation_note}"</p>
+                </div>
+              )}
+              {r.cancellation_admin_response && (
+                <div className="sm:col-span-2">
+                  <Label>Service Centre Resolution Remarks</Label>
+                  <p className="font-medium text-foreground bg-card border border-border rounded-lg p-3">
+                    "{r.cancellation_admin_response}"
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Declined / Resumed Notice */}
+      {r.cancellation_admin_response && r.status !== "CANCELLED" && r.status !== "CANCELLATION_REQUESTED" && (
+        <div className="rounded-xl border border-info/30 bg-info/10 p-4 text-sm space-y-1">
+          <p className="font-semibold text-info flex items-center gap-1.5">
+            <Clock className="h-4 w-4" /> Cancellation Request Declined · Work Resumed
+          </p>
+          <p className="text-foreground text-xs">
+            The previous cancellation request was declined by the Service Centre with explanation:{" "}
+            <span className="italic font-medium">"{r.cancellation_admin_response}"</span>. Repair work on this job has resumed.
+          </p>
+        </div>
+      )}
+
       <Card>
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
@@ -265,7 +391,7 @@ function Job() {
             <p className="text-sm text-muted-foreground">{r.location}</p>
           </div>
           <div className="flex items-end">
-            {f?.phone ? <CallButton phone={f.phone} label="Call farmer" className="w-full" /> : null}
+            {f?.phone && r.status !== "CANCELLED" ? <CallButton phone={f.phone} label="Call farmer" className="w-full" /> : null}
           </div>
           <div className="sm:col-span-2">
             <Label>Reported symptoms</Label>
@@ -350,6 +476,45 @@ function Job() {
       )}
 
       <AssessmentCard r={adaptedRepair} />
+
+      {/* Read-only quotation context when on hold */}
+      {r.status === "CANCELLATION_REQUESTED" && adaptedRepair.quote && (
+        <Card className="opacity-90">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <h2 className="text-lg font-bold">Quotation on hold</h2>
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-warning/15 text-warning-foreground border border-warning/30">
+              Review pending
+            </span>
+          </div>
+          <QuoteTable q={adaptedRepair.quote} />
+        </Card>
+      )}
+
+      {/* Read-only parts hold context when on hold */}
+      {r.status === "CANCELLATION_REQUESTED" && r.parts_hold && (
+        <Card className="opacity-90">
+          <Label>Parts order on hold</Label>
+          <p className="mt-1 text-sm font-semibold text-foreground">
+            Part: {(r.parts_hold as any).part || "Required part"}
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Parts procurement paused pending Service Centre decision.
+          </p>
+        </Card>
+      )}
+
+      {/* Read-only quotation context when cancelled */}
+      {r.status === "CANCELLED" && adaptedRepair.quote && (
+        <Card className="opacity-80">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <h2 className="text-lg font-bold text-muted-foreground">Quotation (cancelled)</h2>
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-muted text-muted-foreground border border-border">
+              Closed
+            </span>
+          </div>
+          <QuoteTable q={adaptedRepair.quote} />
+        </Card>
+      )}
 
       {(r.status === "ACCEPTED" || r.status === "QUOTE_REVISED") && (
         <QuoteBuilder

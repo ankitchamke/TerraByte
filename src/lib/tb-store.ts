@@ -40,6 +40,13 @@ export interface Repair {
   notes: { at: number; text: string }[]; timeline: TimelineEntry[];
   completion?: { notes: string; photo?: string | undefined; at: number }; verifiedAt?: number;
   location: string;
+  cancellation_previous_status?: RepairStatus;
+  cancellationPreviousStatus?: RepairStatus;
+  cancellation_reason?: string;
+  cancellationReason?: string;
+  cancellation_note?: string;
+  cancellation_requested_at?: string | number;
+  cancellation_admin_response?: string;
 }
 export interface ServiceRecord {
   id: string; equipmentId: string; repairId?: string; date: number; hours: number;

@@ -1,5 +1,5 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { AlertOctagon, ChevronDown, ChevronRight, ChevronUp, Users } from "lucide-react";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { AlertOctagon, AlertTriangle, ChevronDown, ChevronRight, ChevronUp, Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Card, DemoTag, StatusPill } from "@/components/tb";
 import { ago } from "@/lib/tb-store";
@@ -19,7 +19,14 @@ export const Route = createFileRoute("/admin/")({
   component: Admin,
 });
 
-const FILTERS = ["All", "Unassigned", "Awaiting Quote", "Waiting for Parts", "Overdue"] as const;
+const FILTERS = [
+  "All",
+  "Unassigned",
+  "Awaiting Quote",
+  "Waiting for Parts",
+  "Cancellation Requests",
+  "Overdue",
+] as const;
 type F = (typeof FILTERS)[number];
 
 const OVERDUE_MIN: Partial<Record<string, number>> = {
@@ -42,10 +49,12 @@ const test: Record<F, (r: RepairRequestDetail) => boolean> = {
   Unassigned: (r) => r.status === "REQUESTED",
   "Awaiting Quote": (r) => ["ACCEPTED", "QUOTE_PENDING", "QUOTE_REVISED"].includes(r.status),
   "Waiting for Parts": (r) => r.status === "WAITING_FOR_PARTS",
+  "Cancellation Requests": (r) => r.status === "CANCELLATION_REQUESTED",
   Overdue: checkOverdue,
 };
 
 function Admin() {
+  const nav = useNavigate();
   const [repairs, setRepairs] = useState<RepairRequestDetail[]>([]);
   const [technicians, setTechnicians] = useState<VerifiedTechnicianWithProfile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -85,6 +94,7 @@ function Admin() {
     (r) => r.status !== "CANCELLED" && r.status !== "COMPLETED"
   );
   const exceptions = open.filter(checkOverdue);
+  const cancellationRequests = open.filter((r) => r.status === "CANCELLATION_REQUESTED");
 
   const metrics = [
     { k: "Unassigned / open requests", v: open.filter(test.Unassigned).length, tone: "text-info" },
@@ -184,6 +194,63 @@ function Admin() {
                   <b className="font-mono">{r.job_number || r.id}</b> ·{" "}
                   {r.status === "REQUESTED" ? "unaccepted" : r.status.toLowerCase().replace(/_/g, " ")} for{" "}
                   {ago(statusSinceMs)}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {cancellationRequests.length > 0 && (
+        <div className="rounded-2xl border-2 border-warning bg-warning/10 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="flex items-center gap-2 font-bold text-warning-foreground">
+              <AlertTriangle className="h-5 w-5" /> {cancellationRequests.length} cancellation request
+              {cancellationRequests.length > 1 ? "s" : ""} pending Service Centre review
+            </p>
+            <button
+              type="button"
+              onClick={() => setF("Cancellation Requests")}
+              className="text-xs font-semibold underline text-warning-foreground hover:opacity-80 cursor-pointer"
+            >
+              Filter queue ({cancellationRequests.length})
+            </button>
+          </div>
+          <div className="mt-2.5 flex flex-wrap gap-2">
+            {cancellationRequests.map((cr) => {
+              const statusSinceMs = new Date(cr.status_since).getTime();
+              const targetId = cr.job_number || cr.id;
+              return (
+                <Link
+                  key={cr.id}
+                  to="/admin/repair/$id"
+                  params={{ id: targetId }}
+                  onClick={(e) => {
+                    if (!e.defaultPrevented && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+                      e.preventDefault();
+                      void nav({
+                        to: "/admin/repair/$id",
+                        params: { id: targetId },
+                      });
+                    }
+                  }}
+                  className="group flex items-center gap-2 rounded-lg border border-warning/40 bg-card px-3 py-2 text-sm shadow-xs hover:border-warning hover:bg-warning/15 hover:shadow-sm active:scale-[0.99] cursor-pointer transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-warning"
+                >
+                  <b className="font-mono text-foreground underline-offset-2 group-hover:underline">
+                    {targetId}
+                  </b>
+                  <span className="text-muted-foreground">·</span>
+                  <span className="text-xs font-medium text-foreground truncate max-w-[140px]">
+                    {cr.farmer?.full_name || "Farmer"}
+                  </span>
+                  <span className="text-muted-foreground">·</span>
+                  <span className="text-xs text-muted-foreground italic truncate max-w-[180px]">
+                    "{cr.cancellation_reason || "Requested"}"
+                  </span>
+                  <span className="text-xs font-mono text-warning-foreground font-semibold">
+                    {ago(statusSinceMs)}
+                  </span>
+                  <ChevronRight className="h-3.5 w-3.5 text-warning-foreground/70 group-hover:text-warning-foreground group-hover:translate-x-0.5 transition-transform shrink-0" />
                 </Link>
               );
             })}
@@ -325,34 +392,74 @@ function Admin() {
               const e = r.equipment;
               const t = r.technician;
               const od = checkOverdue(r);
+              const isCancelling = r.status === "CANCELLATION_REQUESTED";
               const statusSinceMs = new Date(r.status_since).getTime();
               return (
                 <tr
                   key={r.id}
-                  className={cn("border-b border-border last:border-0", od && "bg-destructive/5")}
+                  className={cn(
+                    "border-b border-border last:border-0",
+                    isCancelling
+                      ? "bg-warning/10 border-warning/30 hover:bg-warning/15"
+                      : od
+                      ? "bg-destructive/5"
+                      : undefined
+                  )}
                 >
                   <td className="px-4 py-3 font-mono font-semibold">
-                    {od && <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-destructive" />}
+                    {isCancelling ? (
+                      <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-warning animate-pulse" />
+                    ) : od ? (
+                      <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-destructive" />
+                    ) : null}
                     {r.job_number || r.id}
                   </td>
                   <td className="px-4 py-3">{e ? `${e.make} ${e.model}` : "Equipment"}</td>
-                  <td className="px-4 py-3">{r.farmer?.full_name || "Farmer"}</td>
+                  <td className="px-4 py-3">
+                    <div>
+                      <p>{r.farmer?.full_name || "Farmer"}</p>
+                      {isCancelling && r.cancellation_reason && (
+                        <p
+                          className="text-xs text-warning-foreground font-medium italic truncate max-w-[170px]"
+                          title={r.cancellation_reason}
+                        >
+                          "{r.cancellation_reason}"
+                        </p>
+                      )}
+                    </div>
+                  </td>
                   <td className="px-4 py-3">
                     {t?.full_name ?? <span className="font-semibold text-destructive">Unassigned</span>}
                   </td>
                   <td className="px-4 py-3">
                     <StatusPill r={{ status: r.status, testing: r.is_testing }} audience="staff" />
                   </td>
-                  <td className={cn("px-4 py-3 font-mono", od && "font-bold text-destructive")}>
+                  <td
+                    className={cn(
+                      "px-4 py-3 font-mono",
+                      isCancelling
+                        ? "font-bold text-warning-foreground"
+                        : od && "font-bold text-destructive"
+                    )}
+                  >
                     {ago(statusSinceMs)}
                   </td>
                   <td className="px-4 py-3 text-right">
                     <Link
                       to="/admin/repair/$id"
                       params={{ id: r.job_number || r.id }}
-                      className="inline-flex h-9 items-center gap-1 rounded-lg border border-border px-3 font-semibold hover:bg-muted"
+                      className={cn(
+                        "inline-flex h-9 items-center gap-1 rounded-lg border px-3 font-semibold transition-colors",
+                        isCancelling
+                          ? "border-warning bg-warning/20 text-warning-foreground hover:bg-warning/30"
+                          : "border-border hover:bg-muted"
+                      )}
                     >
-                      {r.status === "REQUESTED" && !t ? "Dispatch" : "Open"} <ChevronRight className="h-4 w-4" />
+                      {isCancelling
+                        ? "Review"
+                        : r.status === "REQUESTED" && !t
+                        ? "Dispatch"
+                        : "Open"} <ChevronRight className="h-4 w-4" />
                     </Link>
                   </td>
                 </tr>

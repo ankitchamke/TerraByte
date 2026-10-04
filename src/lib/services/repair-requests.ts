@@ -866,6 +866,111 @@ export function isLegalRepairTransition(currentStatus: RepairStatus, targetStatu
   return LEGAL_REPAIR_TRANSITIONS[currentStatus]?.includes(targetStatus) ?? false;
 }
 
+export type RepairActionActor = "farmer" | "technician" | "admin" | "none";
+
+export interface RepairActionOwnership {
+  currentStatus: RepairStatus;
+  primaryActor: RepairActionActor;
+  isActionRequired: boolean;
+  farmerState: "action_required" | "waiting" | "closed";
+  technicianState: "action_required" | "waiting" | "on_hold" | "closed";
+  adminState: "monitor" | "action_required" | "closed";
+  actionDescription: string;
+}
+
+/**
+ * Exposes action ownership and persona workflow states across all repair lifecycle statuses.
+ * Accurately models QUOTE_REVISED:
+ * - technician: action_required (must formulate revised quote)
+ * - farmer: waiting (awaiting technician response)
+ * - admin: monitor (intervene if overdue)
+ */
+export function getRepairActionOwnership(status: RepairStatus): RepairActionOwnership {
+  switch (status) {
+    case "REQUESTED":
+      return {
+        currentStatus: status,
+        primaryActor: "admin",
+        isActionRequired: true,
+        farmerState: "waiting",
+        technicianState: "action_required",
+        adminState: "action_required",
+        actionDescription: "Technician assignment pending",
+      };
+    case "ACCEPTED":
+      return {
+        currentStatus: status,
+        primaryActor: "technician",
+        isActionRequired: true,
+        farmerState: "waiting",
+        technicianState: "action_required",
+        adminState: "monitor",
+        actionDescription: "Initial quote formulation required",
+      };
+    case "QUOTE_PENDING":
+      return {
+        currentStatus: status,
+        primaryActor: "farmer",
+        isActionRequired: true,
+        farmerState: "action_required",
+        technicianState: "waiting",
+        adminState: "monitor",
+        actionDescription: "Farmer quote review and approval required",
+      };
+    case "QUOTE_REVISED":
+      return {
+        currentStatus: status,
+        primaryActor: "technician",
+        isActionRequired: true,
+        farmerState: "waiting",
+        technicianState: "action_required",
+        adminState: "monitor",
+        actionDescription: "Technician quote revision response required",
+      };
+    case "IN_PROGRESS":
+      return {
+        currentStatus: status,
+        primaryActor: "technician",
+        isActionRequired: true,
+        farmerState: "waiting",
+        technicianState: "action_required",
+        adminState: "monitor",
+        actionDescription: "Physical repair execution and verification",
+      };
+    case "WAITING_FOR_PARTS":
+      return {
+        currentStatus: status,
+        primaryActor: "technician",
+        isActionRequired: false,
+        farmerState: "waiting",
+        technicianState: "on_hold",
+        adminState: "monitor",
+        actionDescription: "Work paused awaiting spare parts delivery",
+      };
+    case "CANCELLATION_REQUESTED":
+      return {
+        currentStatus: status,
+        primaryActor: "admin",
+        isActionRequired: true,
+        farmerState: "waiting",
+        technicianState: "on_hold",
+        adminState: "action_required",
+        actionDescription: "Administrative cancellation request review required",
+      };
+    case "COMPLETED":
+    case "CANCELLED":
+      return {
+        currentStatus: status,
+        primaryActor: "none",
+        isActionRequired: false,
+        farmerState: "closed",
+        technicianState: "closed",
+        adminState: "closed",
+        actionDescription: "Repair closed",
+      };
+  }
+}
+
 export interface WaitForPartsInput {
   part: string;
   reason: string;

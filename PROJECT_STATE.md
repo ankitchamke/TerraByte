@@ -67,7 +67,13 @@ TerraByte is an end-to-end digital agricultural equipment repair ecosystem desig
     - Added idempotent Supabase Realtime publication hook for `public.repair_messages`.
     - Updated `public.reset_demo_data()` to clean disposable test messages and extra test quotes while leaving real user records untouched, and restored canonical Quote v1 fixture for `TB-4489` (status `REVISED`, total ₹2,800: Rotavator seal kit ₹1,400 + EP-90 Gearbox Oil ₹600 + Labour ₹800).
     - Synchronized TypeScript definitions in `src/integrations/supabase/types.ts`.
-  - **Step 2 — Ticket-Scoped Messaging Service Layer**: PENDING
+  - **Step 2 — Service Layer & State Machine (Quote Revision & Communication)**: **COMPLETE**
+    - Created `src/lib/services/repair-messages.ts` supporting `getRepairMessages()`, `sendRepairMessage()`, `markMessagesAsRead()`, and `getUnreadMessageCount()` with anti-spoofing validation, bounded text limits, counterpart verification, and recipient notifications.
+    - Fixed `reviseQuote()` in `src/lib/services/quotes.ts` to strictly preserve the farmer's original `clarification_note` on `repair_requests` while storing technician explanations separately in `repair_timeline` audit events.
+    - Added `QuoteVersionDetail` and `getQuoteVersions()` to retrieve historical quote versions with line items, totals, timestamps, farmer revision requests, and technician revision explanations across all supported revision reasons.
+    - Added `compareQuoteVersions()` pure diff calculation helper for future multi-version UI comparison.
+    - Added `getRepairActionOwnership()` in `src/lib/services/repair-requests.ts` accurately modeling `QUOTE_REVISED` as technician action required and farmer waiting.
+    - Corrected inverted `FARMER_LABEL.QUOTE_REVISED` in `src/lib/tb-store.ts` to `"Revision Requested · Awaiting Technician"` and `STAFF_LABEL.QUOTE_REVISED` to `"Quote revision requested"`.
   - **Step 3 — Farmer–Technician Communication UI & Notification Wiring**: PENDING
   - **Step 4 — Quote Revision Flow & Version Comparison UI**: PENDING
   - **Step 5 — End-to-End Verification**: PENDING

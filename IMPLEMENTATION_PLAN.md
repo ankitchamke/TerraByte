@@ -215,10 +215,14 @@ flowchart TD
      - Updated `public.reset_demo_data()` to clean disposable test messages and extra test quotes, preserving canonical repairs (`TB-8841`, `TB-8902`, `TB-8898`, `TB-4489`), and restored canonical Quote v1 fixture for `TB-4489` (status `REVISED`, v1, Rotavator seal kit ₹1,400 + EP-90 Gearbox oil ₹600 + Labour ₹800 = ₹2,800).
   2. Synchronized `src/integrations/supabase/types.ts` with `repair_messages` table row, insert, update, and relationship types.
 
-#### Step 2 — Ticket-Scoped Messaging Service Layer
-- **Status**: PENDING
+#### Step 2 — Service Layer & State Machine (Quote Revision & Communication)
+- **Status**: **COMPLETE**
 - **Deliverables**:
-  - `src/lib/services/messages.ts` with `sendRepairMessage()`, `getRepairMessages()`, `markRepairMessagesAsRead()`, unread message counts, and notification triggering.
+  1. `src/lib/services/repair-messages.ts` with `getRepairMessages()`, `sendRepairMessage()`, `markMessagesAsRead()`, `getUnreadMessageCount()`, anti-spoofing validation, bounded text limits, counterpart verification, and recipient notifications.
+  2. Fixed `reviseQuote()` in `src/lib/services/quotes.ts` to preserve the farmer's original `clarification_note` on `repair_requests` intact without overwriting, storing technician explanations separately in `repair_timeline` audit events across all revision reasons.
+  3. Added `getQuoteVersions()` and `compareQuoteVersions()` in `src/lib/services/quotes.ts` providing structured version history and item/labour/total diff comparisons for the future UI.
+  4. Added `getRepairActionOwnership()` in `src/lib/services/repair-requests.ts` defining actor action obligations (`QUOTE_REVISED`: technician action required, farmer waiting).
+  5. Corrected inverted `FARMER_LABEL.QUOTE_REVISED` in `src/lib/tb-store.ts` to `"Revision Requested · Awaiting Technician"` and `STAFF_LABEL.QUOTE_REVISED` to `"Quote revision requested"`.
 
 #### Step 3 — Farmer–Technician Communication UI & Notification Wiring
 - **Status**: PENDING

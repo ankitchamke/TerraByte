@@ -45,6 +45,50 @@ export interface QuoteDetail extends QuoteRow {
   technician?: Pick<ProfileRow, "id" | "full_name" | "phone" | "village"> | null;
 }
 
+export interface QuoteRevisionInfo {
+  reason?: string | undefined;
+  explanation?: string | undefined;
+  photo?: string | undefined;
+  requested_at?: string | undefined;
+}
+
+export interface QuoteVersionDetail extends QuoteDetail {
+  revision_request?: QuoteRevisionInfo | null;
+  technician_explanation?: string | null;
+}
+
+export interface QuoteItemDiff {
+  part_name: string;
+  part_spec?: string | null;
+  part_source?: string;
+  v1_quantity?: number;
+  v1_unit_price?: number;
+  v1_total?: number;
+  v2_quantity?: number;
+  v2_unit_price?: number;
+  v2_total?: number;
+  price_difference?: number;
+  status: "added" | "removed" | "modified" | "unchanged";
+}
+
+export interface QuoteVersionComparison {
+  v1: QuoteVersionDetail;
+  v2: QuoteVersionDetail;
+  item_diffs: QuoteItemDiff[];
+  labour_v1: number;
+  labour_v2: number;
+  labour_difference: number;
+  parts_v1: number;
+  parts_v2: number;
+  parts_difference: number;
+  total_v1: number;
+  total_v2: number;
+  total_difference: number;
+  percentage_change: number;
+  farmer_revision_request?: QuoteRevisionInfo | null;
+  technician_explanation?: string | null;
+}
+
 /**
  * Calculates itemized parts, labour, tax, and total pricing for a quote.
  */
@@ -170,7 +214,13 @@ export async function getQuotesForRepair(repairRequestId: string): Promise<Quote
     throw new Error(`Failed to load quotes: ${error.message}`);
   }
 
-  const quoteRows = (data as unknown as Array<QuoteRow & { quote_items: QuoteItemRow[]; technician: any }>) ?? [];
+  const quoteRows =
+    (data as unknown as Array<
+      QuoteRow & {
+        quote_items: QuoteItemRow[];
+        technician: Pick<ProfileRow, "id" | "full_name" | "phone" | "village"> | null;
+      }
+    >) ?? [];
 
   return quoteRows.map((q) => {
     const items = q.quote_items || [];
@@ -181,6 +231,257 @@ export async function getQuotesForRepair(repairRequestId: string): Promise<Quote
       totals,
     };
   });
+}
+
+/**
+ * Fetches all quote versions for a repair request with full version metadata,
+ * including historical farmer revision requests and technician revision explanations.
+ * Enables multi-version quote progression and comparison.
+ */
+export async function getQuoteVersions(repairRequestId: string): Promise<QuoteVersionDetail[]> {
+  if (!repairRequestId?.trim()) throw new Error("Repair request ID is required.");
+
+  await getAuthenticatedProfile();
+
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairRequestId.trim());
+  let resolvedId = repairRequestId.trim();
+
+  if (!isUuid) {
+    const { data: repairLookup, error: lookupError } = await supabase
+      .from("repair_requests")
+      .select("id")
+      .eq("job_number", repairRequestId.trim())
+      .maybeSingle();
+
+    if (lookupError || !repairLookup) {
+      throw new Error("Repair request not found or inaccessible.");
+    }
+    resolvedId = repairLookup.id;
+  }
+
+  // 1. Fetch quotes with items ordered by version ascending
+  const { data: quotesData, error: quotesError } = await supabase
+    .from("quotes")
+    .select("*, quote_items(*), technician:technician_id(id, full_name, phone, village)")
+    .eq("repair_request_id", resolvedId)
+    .order("version", { ascending: true });
+
+  if (quotesError) {
+    throw new Error(`Failed to load quote versions: ${quotesError.message}`);
+  }
+
+  const quoteRows =
+    (quotesData as unknown as Array<
+      QuoteRow & {
+        quote_items: QuoteItemRow[];
+        technician: Pick<ProfileRow, "id" | "full_name" | "phone" | "village"> | null;
+      }
+    >) ?? [];
+  if (quoteRows.length === 0) return [];
+
+  // 2. Fetch repair request to inspect persistent clarification_note
+  const { data: repair } = await supabase
+    .from("repair_requests")
+    .select("id, status, clarification_note")
+    .eq("id", resolvedId)
+    .maybeSingle();
+
+  // 3. Fetch repair timeline to correlate revision events and technician explanations
+  const { data: timelineEntries } = await supabase
+    .from("repair_timeline")
+    .select("*")
+    .eq("repair_request_id", resolvedId)
+    .order("created_at", { ascending: true });
+
+  const timeline = timelineEntries || [];
+
+  return quoteRows.map((q, idx) => {
+    const items = q.quote_items || [];
+    const totals = calculateQuoteTotals(items, Number(q.labour_amount), Number(q.tax_percent));
+
+    // Find farmer revision request for this version (if revised)
+    let revisionRequest: QuoteRevisionInfo | null = null;
+    if (q.status === "REVISED" || idx < quoteRows.length - 1) {
+      const qTime = new Date(q.sent_at || q.created_at).getTime();
+      const nextQTime = quoteRows[idx + 1]
+        ? new Date(quoteRows[idx + 1].sent_at || quoteRows[idx + 1].created_at).getTime()
+        : Infinity;
+
+      const revEvent = timeline.find((t) => {
+        if (t.status !== "QUOTE_REVISED") return false;
+        const tTime = new Date(t.created_at).getTime();
+        return tTime >= qTime - 5000 && tTime <= nextQTime + 5000;
+      });
+
+      if (revEvent?.note) {
+        const match = revEvent.note.match(/Quote revision requested:\s*"?([\s\S]*?)"?$/);
+        const rawNote = match ? match[1] : revEvent.note;
+        const parsed = parseClarificationNote(rawNote);
+        revisionRequest = {
+          reason: parsed.reason,
+          explanation: parsed.explanation,
+          photo: parsed.photo,
+          requested_at: revEvent.created_at,
+        };
+      } else if (idx === quoteRows.length - 1 && repair?.clarification_note) {
+        const parsed = parseClarificationNote(repair.clarification_note);
+        revisionRequest = {
+          reason: parsed.reason,
+          explanation: parsed.explanation,
+          photo: parsed.photo,
+        };
+      }
+    }
+
+    // Find technician revision explanation for this version (if version > 1)
+    let techExplanation: string | null = null;
+    if (q.version > 1) {
+      const qTime = new Date(q.sent_at || q.created_at).getTime();
+      const sendEvent = timeline.find((t) => {
+        if (t.status !== "QUOTE_PENDING" || t.created_by_role !== "technician") return false;
+        const tTime = new Date(t.created_at).getTime();
+        return Math.abs(tTime - qTime) < 30000;
+      });
+
+      if (sendEvent?.note) {
+        const match = sendEvent.note.match(/Note:\s*"([\s\S]*?)"/);
+        if (match && match[1]) {
+          techExplanation = match[1].trim();
+        }
+      }
+    }
+
+    return {
+      ...q,
+      quote_items: items,
+      totals,
+      revision_request: revisionRequest,
+      technician_explanation: techExplanation,
+    };
+  });
+}
+
+/**
+ * Compares two quote versions (e.g. v1 and v2) and generates a structured diff
+ * containing item differences, labour adjustments, price variances, and revision explanations.
+ * Pure service-layer helper providing clean comparison data for the UI.
+ */
+export function compareQuoteVersions(
+  v1: QuoteVersionDetail,
+  v2: QuoteVersionDetail
+): QuoteVersionComparison {
+  if (!v1 || !v2) {
+    throw new Error("Both quote versions are required for comparison.");
+  }
+
+  const v1Items = v1.quote_items || [];
+  const v2Items = v2.quote_items || [];
+
+  const itemDiffs: QuoteItemDiff[] = [];
+  const matchedV2Ids = new Set<string>();
+
+  // Compare items from v1 against v2
+  for (const item1 of v1Items) {
+    const match2 = v2Items.find(
+      (item2) =>
+        !matchedV2Ids.has(item2.id) &&
+        item2.part_name.trim().toLowerCase() === item1.part_name.trim().toLowerCase()
+    );
+
+    if (match2) {
+      matchedV2Ids.add(match2.id);
+      const v1Total = item1.quantity * item1.unit_price;
+      const v2Total = match2.quantity * match2.unit_price;
+      const diff = v2Total - v1Total;
+      const isModified =
+        item1.quantity !== match2.quantity ||
+        item1.unit_price !== match2.unit_price ||
+        item1.part_source !== match2.part_source;
+
+      itemDiffs.push({
+        part_name: match2.part_name,
+        part_spec: match2.part_spec || item1.part_spec || null,
+        part_source: match2.part_source || item1.part_source,
+        v1_quantity: item1.quantity,
+        v1_unit_price: item1.unit_price,
+        v1_total: v1Total,
+        v2_quantity: match2.quantity,
+        v2_unit_price: match2.unit_price,
+        v2_total: v2Total,
+        price_difference: diff,
+        status: isModified ? "modified" : "unchanged",
+      });
+    } else {
+      // Removed in v2
+      const v1Total = item1.quantity * item1.unit_price;
+      itemDiffs.push({
+        part_name: item1.part_name,
+        part_spec: item1.part_spec || null,
+        part_source: item1.part_source,
+        v1_quantity: item1.quantity,
+        v1_unit_price: item1.unit_price,
+        v1_total: v1Total,
+        v2_quantity: 0,
+        v2_unit_price: 0,
+        v2_total: 0,
+        price_difference: -v1Total,
+        status: "removed",
+      });
+    }
+  }
+
+  // Items added in v2
+  for (const item2 of v2Items) {
+    if (!matchedV2Ids.has(item2.id)) {
+      const v2Total = item2.quantity * item2.unit_price;
+      itemDiffs.push({
+        part_name: item2.part_name,
+        part_spec: item2.part_spec || null,
+        part_source: item2.part_source,
+        v1_quantity: 0,
+        v1_unit_price: 0,
+        v1_total: 0,
+        v2_quantity: item2.quantity,
+        v2_unit_price: item2.unit_price,
+        v2_total: v2Total,
+        price_difference: v2Total,
+        status: "added",
+      });
+    }
+  }
+
+  const labour1 = Number(v1.labour_amount) || 0;
+  const labour2 = Number(v2.labour_amount) || 0;
+  const labourDiff = labour2 - labour1;
+
+  const parts1 = v1.totals.partsTotal || 0;
+  const parts2 = v2.totals.partsTotal || 0;
+  const partsDiff = parts2 - parts1;
+
+  const total1 = v1.totals.totalAmount || 0;
+  const total2 = v2.totals.totalAmount || 0;
+  const totalDiff = total2 - total1;
+
+  const percentageChange =
+    total1 > 0 ? Math.round(((total2 - total1) / total1) * 1000) / 10 : 0;
+
+  return {
+    v1,
+    v2,
+    item_diffs: itemDiffs,
+    labour_v1: labour1,
+    labour_v2: labour2,
+    labour_difference: labourDiff,
+    parts_v1: parts1,
+    parts_v2: parts2,
+    parts_difference: partsDiff,
+    total_v1: total1,
+    total_v2: total2,
+    total_difference: totalDiff,
+    percentage_change: percentageChange,
+    farmer_revision_request: v1.revision_request || null,
+    technician_explanation: v2.technician_explanation || null,
+  };
 }
 
 /**
@@ -460,12 +761,14 @@ export async function reviseQuote(input: ReviseQuoteInput): Promise<QuoteDetail>
     throw new Error(`Failed to save revised quote items: ${itemsError?.message}`);
   }
 
-  // 6. Update repair request status to 'QUOTE_PENDING' and save technician explanation if provided
+  // 6. Update repair request status to 'QUOTE_PENDING'
+  // CRITICAL INVARIANT: The farmer's original clarification_note is preserved intact.
+  // We DO NOT overwrite clarification_note with technician explanation.
+  // The technician's response/explanation is stored separately in the repair_timeline audit event below.
   await supabase
     .from("repair_requests")
     .update({
       status: "QUOTE_PENDING",
-      clarification_note: input.technician_explanation?.trim() || null,
       status_since: now,
     })
     .eq("id", repair.id);

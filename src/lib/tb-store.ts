@@ -343,7 +343,7 @@ export const FARMER_LABEL: Record<RepairStatus, string> = {
   REQUESTED: "Finding Your Technician",
   ACCEPTED: "Technician Assigned",
   QUOTE_PENDING: "Quote Ready for Your Review",
-  QUOTE_REVISED: "Revised Quote Ready",
+  QUOTE_REVISED: "Revision Requested · Awaiting Technician",
   IN_PROGRESS: "Repair in Progress",
   WAITING_FOR_PARTS: "Paused: Waiting for Spare Parts",
   COMPLETED: "Repair Complete & Verified",
@@ -351,7 +351,7 @@ export const FARMER_LABEL: Record<RepairStatus, string> = {
   CANCELLED: "Cancelled",
 };
 export const STAFF_LABEL: Record<RepairStatus, string> = {
-  REQUESTED: "Requested", ACCEPTED: "Accepted", QUOTE_PENDING: "Quote pending", QUOTE_REVISED: "Quote revision",
+  REQUESTED: "Requested", ACCEPTED: "Accepted", QUOTE_PENDING: "Quote pending", QUOTE_REVISED: "Quote revision requested",
   IN_PROGRESS: "In progress", WAITING_FOR_PARTS: "Waiting for parts", COMPLETED: "Completed",
   CANCELLATION_REQUESTED: "Cancellation requested", CANCELLED: "Cancelled",
 };

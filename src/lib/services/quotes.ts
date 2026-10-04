@@ -613,17 +613,29 @@ export async function createQuote(input: CreateQuoteInput): Promise<QuoteDetail>
   }
 
   // 4. Update repair request status to 'QUOTE_PENDING' and clear any previous clarification note
-  const { error: repairUpdateError } = await supabase
+  const { data: updatedRepair, error: repairUpdateError } = await supabase
     .from("repair_requests")
     .update({
       status: "QUOTE_PENDING",
       clarification_note: null,
       status_since: now,
     })
-    .eq("id", repair.id);
+    .eq("id", repair.id)
+    .in("status", quotableStatuses)
+    .select()
+    .maybeSingle();
 
-  if (repairUpdateError) {
-    console.warn(`[TerraByte] Warning: Failed to advance repair status to QUOTE_PENDING: ${repairUpdateError.message}`);
+  if (repairUpdateError || !updatedRepair) {
+    // Rollback inserted quote items and quote
+    await supabase.from("quote_items").delete().eq("quote_id", quote.id);
+    await supabase.from("quotes").delete().eq("id", quote.id);
+
+    if (repairUpdateError) {
+      throw new Error(`Failed to advance repair status: ${repairUpdateError.message}`);
+    }
+    throw new Error(
+      "This repair request changed while creating the quote. The quote was not submitted. Please refresh."
+    );
   }
 
   // 5. Coordinated state: record timeline event
@@ -711,11 +723,24 @@ export async function reviseQuote(input: ReviseQuoteInput): Promise<QuoteDetail>
     throw new Error("Unauthorized: You are not assigned to this repair request.");
   }
 
-  // 3. Mark previous quote as 'REVISED'
-  await supabase
+  // 3. Mark previous quote as 'REVISED' (only if currently PENDING or REVISED)
+  const { data: updatedPrevQuote, error: prevQuoteUpdateError } = await supabase
     .from("quotes")
     .update({ status: "REVISED" })
-    .eq("id", prevQuote.id);
+    .eq("id", prevQuote.id)
+    .in("status", ["PENDING", "REVISED"])
+    .select()
+    .maybeSingle();
+
+  if (prevQuoteUpdateError) {
+    throw new Error(`Failed to update previous quote: ${prevQuoteUpdateError.message}`);
+  }
+
+  if (!updatedPrevQuote) {
+    throw new Error(
+      "The previous quote has already been approved, rejected, or revised. Please refresh."
+    );
+  }
 
   // 4. Create new quote row with incremented version
   const newVersion = prevQuote.version + 1;
@@ -739,6 +764,7 @@ export async function reviseQuote(input: ReviseQuoteInput): Promise<QuoteDetail>
     .single();
 
   if (newQuoteError || !newQuote) {
+    await supabase.from("quotes").update({ status: prevQuote.status }).eq("id", prevQuote.id);
     throw new Error(`Failed to create revised quote: ${newQuoteError?.message}`);
   }
 
@@ -759,6 +785,7 @@ export async function reviseQuote(input: ReviseQuoteInput): Promise<QuoteDetail>
 
   if (itemsError || !insertedItems) {
     await supabase.from("quotes").delete().eq("id", newQuote.id);
+    await supabase.from("quotes").update({ status: prevQuote.status }).eq("id", prevQuote.id);
     throw new Error(`Failed to save revised quote items: ${itemsError?.message}`);
   }
 
@@ -766,13 +793,31 @@ export async function reviseQuote(input: ReviseQuoteInput): Promise<QuoteDetail>
   // CRITICAL INVARIANT: The farmer's original clarification_note is preserved intact.
   // We DO NOT overwrite clarification_note with technician explanation.
   // The technician's response/explanation is stored separately in the repair_timeline audit event below.
-  await supabase
+  const { data: updatedRepair, error: repairUpdateError } = await supabase
     .from("repair_requests")
     .update({
       status: "QUOTE_PENDING",
       status_since: now,
     })
-    .eq("id", repair.id);
+    .eq("id", repair.id)
+    .in("status", ["QUOTE_PENDING", "QUOTE_REVISED", "ACCEPTED"])
+    .select()
+    .maybeSingle();
+
+  if (repairUpdateError || !updatedRepair) {
+    // Rollback newly inserted quote items and quote
+    await supabase.from("quote_items").delete().eq("quote_id", newQuote.id);
+    await supabase.from("quotes").delete().eq("id", newQuote.id);
+    // Restore previous quote status
+    await supabase.from("quotes").update({ status: prevQuote.status }).eq("id", prevQuote.id);
+
+    if (repairUpdateError) {
+      throw new Error(`Failed to advance repair status: ${repairUpdateError.message}`);
+    }
+    throw new Error(
+      "This repair request changed while submitting the revised quote. Please refresh."
+    );
+  }
 
   // 7. Record timeline audit entry
   const totals = calculateQuoteTotals(insertedItems, input.labour_amount, input.tax_percent);
@@ -866,24 +911,42 @@ export async function approveQuote(quoteId: string): Promise<QuoteDetail> {
     .from("quotes")
     .update({ status: "APPROVED" })
     .eq("id", quote.id)
+    .eq("status", "PENDING")
     .select("*, quote_items(*), technician:technician_id(id, full_name, phone, village)")
-    .single();
+    .maybeSingle();
 
-  if (updateError || !updatedQuote) {
-    throw new Error(`Failed to approve quote: ${updateError?.message}`);
+  if (updateError) {
+    throw new Error(`Failed to approve quote: ${updateError.message}`);
+  }
+
+  if (!updatedQuote) {
+    throw new Error(
+      "This quote is no longer pending or was already processed. Please refresh."
+    );
   }
 
   // 5. Advance repair status to IN_PROGRESS
-  const { error: repairError2 } = await supabase
+  const { data: updatedRepair, error: repairError2 } = await supabase
     .from("repair_requests")
     .update({
       status: "IN_PROGRESS",
       status_since: now,
     })
-    .eq("id", repair.id);
+    .eq("id", repair.id)
+    .eq("status", "QUOTE_PENDING")
+    .select()
+    .maybeSingle();
 
-  if (repairError2) {
-    console.warn(`[TerraByte] Warning: Failed to advance repair status to IN_PROGRESS: ${repairError2.message}`);
+  if (repairError2 || !updatedRepair) {
+    // Rollback quote approval
+    await supabase.from("quotes").update({ status: "PENDING" }).eq("id", quote.id);
+
+    if (repairError2) {
+      throw new Error(`Failed to advance repair status to IN_PROGRESS: ${repairError2.message}`);
+    }
+    throw new Error(
+      "This repair request status changed while approving the quote. Please refresh."
+    );
   }
 
   // 6. Record timeline audit entry
@@ -1069,25 +1132,43 @@ export async function rejectQuote(
     .from("quotes")
     .update({ status: newStatus })
     .eq("id", quote.id)
+    .eq("status", "PENDING")
     .select("*, quote_items(*), technician:technician_id(id, full_name, phone, village)")
-    .single();
+    .maybeSingle();
 
-  if (updateError || !updatedQuote) {
-    throw new Error(`Failed to reject quote: ${updateError?.message}`);
+  if (updateError) {
+    throw new Error(`Failed to reject quote: ${updateError.message}`);
+  }
+
+  if (!updatedQuote) {
+    throw new Error(
+      "This quote is no longer pending or was already processed. Please refresh."
+    );
   }
 
   // 5. Update repair request status to QUOTE_REVISED and save clarification note
-  const { error: repairError2 } = await supabase
+  const { data: updatedRepair, error: repairError2 } = await supabase
     .from("repair_requests")
     .update({
       status: "QUOTE_REVISED",
       clarification_note: clarificationToSave,
       status_since: now,
     })
-    .eq("id", repair.id);
+    .eq("id", repair.id)
+    .eq("status", "QUOTE_PENDING")
+    .select()
+    .maybeSingle();
 
-  if (repairError2) {
-    console.warn(`[TerraByte] Warning: Failed to set repair status to QUOTE_REVISED: ${repairError2.message}`);
+  if (repairError2 || !updatedRepair) {
+    // Rollback quote update
+    await supabase.from("quotes").update({ status: "PENDING" }).eq("id", quote.id);
+
+    if (repairError2) {
+      throw new Error(`Failed to set repair status to QUOTE_REVISED: ${repairError2.message}`);
+    }
+    throw new Error(
+      "This repair request status changed while processing the quote revision request. Please refresh."
+    );
   }
 
   // 6. Record timeline audit entry

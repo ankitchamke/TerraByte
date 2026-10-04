@@ -430,15 +430,31 @@ export async function cancelRepairRequest(
     updatePayload.cancellation_note = options.note.trim();
   }
 
-  const { data: updated, error: updateError } = await supabase
+  let updateQuery = supabase
     .from("repair_requests")
     .update(updatePayload)
-    .eq("id", repair.id)
-    .select()
-    .single();
+    .eq("id", repair.id);
 
-  if (updateError || !updated) {
-    throw new Error(`Failed to cancel repair request: ${updateError?.message}`);
+  if (profile.role !== "admin") {
+    updateQuery = updateQuery.eq("status", "REQUESTED").is("technician_id", null);
+  } else {
+    updateQuery = updateQuery.neq("status", "COMPLETED").neq("status", "CANCELLED");
+  }
+
+  const { data: updated, error: updateError } = await updateQuery
+    .select()
+    .maybeSingle();
+
+  if (updateError) {
+    throw new Error(`Failed to cancel repair request: ${updateError.message}`);
+  }
+
+  if (!updated) {
+    throw new Error(
+      profile.role === "admin"
+        ? "This repair request could not be cancelled because its status changed. Please refresh."
+        : "This repair request could not be cancelled because its status or assignment changed. Please refresh."
+    );
   }
 
   // 4. Log cancellation event in timeline
@@ -581,11 +597,18 @@ export async function requestCancellation(
       status_since: now,
     })
     .eq("id", repair.id)
+    .eq("status", repair.status)
     .select()
-    .single();
+    .maybeSingle();
 
-  if (updateError || !updated) {
-    throw new Error(`Failed to request cancellation: ${updateError?.message}`);
+  if (updateError) {
+    throw new Error(`Failed to request cancellation: ${updateError.message}`);
+  }
+
+  if (!updated) {
+    throw new Error(
+      "This repair request changed while submitting your cancellation request. Please refresh."
+    );
   }
 
   // 5. Log cancellation request event in timeline
@@ -665,11 +688,18 @@ export async function approveCancellation(
       status_since: now,
     })
     .eq("id", repair.id)
+    .eq("status", "CANCELLATION_REQUESTED")
     .select()
-    .single();
+    .maybeSingle();
 
-  if (updateError || !updated) {
-    throw new Error(`Failed to approve cancellation: ${updateError?.message}`);
+  if (updateError) {
+    throw new Error(`Failed to approve cancellation: ${updateError.message}`);
+  }
+
+  if (!updated) {
+    throw new Error(
+      "This cancellation request is no longer pending or was already processed. Please refresh."
+    );
   }
 
   // 3. Log approval event in timeline
@@ -791,11 +821,18 @@ export async function rejectCancellation(
       status_since: now,
     })
     .eq("id", repair.id)
+    .eq("status", "CANCELLATION_REQUESTED")
     .select()
-    .single();
+    .maybeSingle();
 
-  if (updateError || !updated) {
-    throw new Error(`Failed to decline cancellation: ${updateError?.message}`);
+  if (updateError) {
+    throw new Error(`Failed to decline cancellation: ${updateError.message}`);
+  }
+
+  if (!updated) {
+    throw new Error(
+      "This cancellation request is no longer pending or was already processed. Please refresh."
+    );
   }
 
   // 4. Log rejection event in timeline
@@ -1053,18 +1090,31 @@ export async function acceptRepairRequest(repairRequestId: string): Promise<Repa
   }
 
   const now = new Date().toISOString();
-  const { data: updated, error: updateError } = await supabase
+  let updateQuery = supabase
     .from("repair_requests")
     .update({
       status: "ACCEPTED",
       status_since: now,
     })
     .eq("id", repair.id)
-    .select()
-    .single();
+    .eq("status", "REQUESTED");
 
-  if (updateError || !updated) {
-    throw new Error(`Failed to accept repair request: ${updateError?.message}`);
+  if (profile.role !== "admin") {
+    updateQuery = updateQuery.eq("technician_id", profile.id);
+  }
+
+  const { data: updated, error: updateError } = await updateQuery
+    .select()
+    .maybeSingle();
+
+  if (updateError) {
+    throw new Error(`Failed to accept repair request: ${updateError.message}`);
+  }
+
+  if (!updated) {
+    throw new Error(
+      "This repair request could not be accepted because its status or assignment changed. Please refresh."
+    );
   }
 
   await supabase.from("repair_timeline").insert({
@@ -1135,7 +1185,7 @@ export async function declineRepairRequest(repairRequestId: string, reason: stri
   }
 
   const now = new Date().toISOString();
-  const { data: updated, error: updateError } = await supabase
+  let updateQuery = supabase
     .from("repair_requests")
     .update({
       technician_id: null,
@@ -1144,11 +1194,24 @@ export async function declineRepairRequest(repairRequestId: string, reason: stri
       status_since: now,
     })
     .eq("id", repair.id)
-    .select()
-    .single();
+    .eq("status", "REQUESTED");
 
-  if (updateError || !updated) {
-    throw new Error(`Failed to decline repair request: ${updateError?.message}`);
+  if (profile.role !== "admin") {
+    updateQuery = updateQuery.eq("technician_id", profile.id);
+  }
+
+  const { data: updated, error: updateError } = await updateQuery
+    .select()
+    .maybeSingle();
+
+  if (updateError) {
+    throw new Error(`Failed to decline repair request: ${updateError.message}`);
+  }
+
+  if (!updated) {
+    throw new Error(
+      "This repair request could not be declined because its status or assignment changed. Please refresh."
+    );
   }
 
   await supabase.from("repair_timeline").insert({
@@ -1225,6 +1288,31 @@ export async function startRepair(repairRequestId: string): Promise<RepairReques
     throw new Error("Cannot start repair work: No approved quote found for this repair ticket.");
   }
 
+  const now = new Date().toISOString();
+  let updateQuery = supabase
+    .from("repair_requests")
+    .update({ updated_at: now })
+    .eq("id", repair.id)
+    .eq("status", "IN_PROGRESS");
+
+  if (profile.role !== "admin") {
+    updateQuery = updateQuery.eq("technician_id", profile.id);
+  }
+
+  const { data: updated, error: updateError } = await updateQuery
+    .select()
+    .maybeSingle();
+
+  if (updateError) {
+    throw new Error(`Failed to start repair work: ${updateError.message}`);
+  }
+
+  if (!updated) {
+    throw new Error(
+      "This repair is no longer in progress or its assignment changed. Please refresh."
+    );
+  }
+
   await supabase.from("repair_timeline").insert({
     repair_request_id: repair.id,
     status: "IN_PROGRESS",
@@ -1254,7 +1342,7 @@ export async function startRepair(repairRequestId: string): Promise<RepairReques
     console.warn("[TerraByte] Warning: Failed to send start repair notification:", notifErr);
   }
 
-  return repair;
+  return updated;
 }
 
 /**
@@ -1312,7 +1400,7 @@ export async function waitForParts(repairRequestId: string, input: WaitForPartsI
     resolvedAt: null,
   };
 
-  const { data: updated, error: updateError } = await supabase
+  let updateQuery = supabase
     .from("repair_requests")
     .update({
       status: "WAITING_FOR_PARTS",
@@ -1321,11 +1409,24 @@ export async function waitForParts(repairRequestId: string, input: WaitForPartsI
       status_since: now,
     })
     .eq("id", repair.id)
-    .select()
-    .single();
+    .eq("status", "IN_PROGRESS");
 
-  if (updateError || !updated) {
-    throw new Error(`Failed to pause repair for parts: ${updateError?.message}`);
+  if (profile.role !== "admin") {
+    updateQuery = updateQuery.eq("technician_id", profile.id);
+  }
+
+  const { data: updated, error: updateError } = await updateQuery
+    .select()
+    .maybeSingle();
+
+  if (updateError) {
+    throw new Error(`Failed to pause repair for parts: ${updateError.message}`);
+  }
+
+  if (!updated) {
+    throw new Error(
+      "This repair is no longer in progress or its assignment changed. Please refresh."
+    );
   }
 
   await supabase.from("repair_timeline").insert({
@@ -1399,17 +1500,30 @@ export async function updatePartsEta(repairRequestId: string, input: UpdateParts
     updatedHold["note"] = input.note.trim() || null;
   }
 
-  const { data: updated, error: updateError } = await supabase
+  let updateQuery = supabase
     .from("repair_requests")
     .update({
       parts_hold: updatedHold as Json,
     })
     .eq("id", repair.id)
-    .select()
-    .single();
+    .eq("status", "WAITING_FOR_PARTS");
 
-  if (updateError || !updated) {
-    throw new Error(`Failed to update parts ETA: ${updateError?.message}`);
+  if (profile.role !== "admin") {
+    updateQuery = updateQuery.eq("technician_id", profile.id);
+  }
+
+  const { data: updated, error: updateError } = await updateQuery
+    .select()
+    .maybeSingle();
+
+  if (updateError) {
+    throw new Error(`Failed to update parts ETA: ${updateError.message}`);
+  }
+
+  if (!updated) {
+    throw new Error(
+      "This repair is no longer waiting for parts or its assignment changed. Please refresh."
+    );
   }
 
   await supabase.from("repair_timeline").insert({
@@ -1481,7 +1595,7 @@ export async function resumeRepair(repairRequestId: string): Promise<RepairReque
     resolvedAt: now,
   };
 
-  const { data: updated, error: updateError } = await supabase
+  let updateQuery = supabase
     .from("repair_requests")
     .update({
       status: "IN_PROGRESS",
@@ -1489,11 +1603,24 @@ export async function resumeRepair(repairRequestId: string): Promise<RepairReque
       status_since: now,
     })
     .eq("id", repair.id)
-    .select()
-    .single();
+    .eq("status", "WAITING_FOR_PARTS");
 
-  if (updateError || !updated) {
-    throw new Error(`Failed to resume repair: ${updateError?.message}`);
+  if (profile.role !== "admin") {
+    updateQuery = updateQuery.eq("technician_id", profile.id);
+  }
+
+  const { data: updated, error: updateError } = await updateQuery
+    .select()
+    .maybeSingle();
+
+  if (updateError) {
+    throw new Error(`Failed to resume repair: ${updateError.message}`);
+  }
+
+  if (!updated) {
+    throw new Error(
+      "This repair is no longer waiting for parts or its assignment changed. Please refresh."
+    );
   }
 
   const partName = currentHold["part"] || "parts";
@@ -1554,17 +1681,30 @@ export async function startTesting(repairRequestId: string): Promise<RepairReque
     throw new Error(`Cannot start testing: Ticket is in '${repair.status}' status (must be IN_PROGRESS).`);
   }
 
-  const { data: updated, error: updateError } = await supabase
+  let updateQuery = supabase
     .from("repair_requests")
     .update({
       is_testing: true,
     })
     .eq("id", repair.id)
-    .select()
-    .single();
+    .eq("status", "IN_PROGRESS");
 
-  if (updateError || !updated) {
-    throw new Error(`Failed to set testing mode: ${updateError?.message}`);
+  if (profile.role !== "admin") {
+    updateQuery = updateQuery.eq("technician_id", profile.id);
+  }
+
+  const { data: updated, error: updateError } = await updateQuery
+    .select()
+    .maybeSingle();
+
+  if (updateError) {
+    throw new Error(`Failed to set testing mode: ${updateError.message}`);
+  }
+
+  if (!updated) {
+    throw new Error(
+      "This repair is no longer in progress or its assignment changed. Please refresh."
+    );
   }
 
   await supabase.from("repair_timeline").insert({
@@ -1636,17 +1776,31 @@ export async function failTesting(
     throw new Error("Cannot report testing failure: Machine is not currently in testing mode.");
   }
 
-  const { data: updated, error: updateError } = await supabase
+  let updateQuery = supabase
     .from("repair_requests")
     .update({
       is_testing: false,
     })
     .eq("id", repair.id)
-    .select()
-    .single();
+    .eq("status", "IN_PROGRESS")
+    .eq("is_testing", true);
 
-  if (updateError || !updated) {
-    throw new Error(`Failed to update testing failure: ${updateError?.message}`);
+  if (profile.role !== "admin") {
+    updateQuery = updateQuery.eq("technician_id", profile.id);
+  }
+
+  const { data: updated, error: updateError } = await updateQuery
+    .select()
+    .maybeSingle();
+
+  if (updateError) {
+    throw new Error(`Failed to update testing failure: ${updateError.message}`);
+  }
+
+  if (!updated) {
+    throw new Error(
+      "This repair is no longer actively testing or its status changed. Please refresh."
+    );
   }
 
   const failureNote = input?.reason?.trim()
@@ -1752,7 +1906,7 @@ export async function completeRepair(
     completed_at: now,
   };
 
-  const { data: updated, error: updateError } = await supabase
+  let updateQuery = supabase
     .from("repair_requests")
     .update({
       status: "COMPLETED",
@@ -1761,11 +1915,24 @@ export async function completeRepair(
       status_since: now,
     })
     .eq("id", repair.id)
-    .select()
-    .single();
+    .eq("status", "IN_PROGRESS");
 
-  if (updateError || !updated) {
-    throw new Error(`Failed to complete repair: ${updateError?.message}`);
+  if (profile.role !== "admin") {
+    updateQuery = updateQuery.eq("technician_id", profile.id);
+  }
+
+  const { data: updated, error: updateError } = await updateQuery
+    .select()
+    .maybeSingle();
+
+  if (updateError) {
+    throw new Error(`Failed to complete repair: ${updateError.message}`);
+  }
+
+  if (!updated) {
+    throw new Error(
+      "This repair is no longer in progress or its assignment changed. Please refresh."
+    );
   }
 
   await supabase.from("repair_timeline").insert({

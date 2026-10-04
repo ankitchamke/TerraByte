@@ -209,18 +209,32 @@ export async function assignTechnician(input: AssignTechnicianInput): Promise<Re
   const workshopName = techRecord.workshop_name || "Field Workshop";
 
   // 4. Persist assignment in repair_requests
-  const { data: updatedRepair, error: updateError } = await supabase
+  let updateQuery = supabase
     .from("repair_requests")
     .update({
       technician_id: input.technician_id,
       status_since: now,
     })
-    .eq("id", repair.id)
+    .eq("id", repair.id);
+
+  if (isOwner && !isAdmin) {
+    updateQuery = updateQuery.eq("status", "REQUESTED");
+  } else {
+    updateQuery = updateQuery.neq("status", "COMPLETED").neq("status", "CANCELLED");
+  }
+
+  const { data: updatedRepair, error: updateError } = await updateQuery
     .select()
-    .single();
+    .maybeSingle();
 
   if (updateError) {
     throw new Error(`Failed to assign technician: ${updateError.message}`);
+  }
+
+  if (!updatedRepair) {
+    throw new Error(
+      "This repair request could not be assigned because its status changed. Please refresh."
+    );
   }
 
   // 5. Record chronological audit event in repair_timeline

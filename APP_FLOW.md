@@ -372,5 +372,30 @@ sequenceDiagram
 3. **Multi-Party Notification**: Both the equipment owner (farmer) and Service Centre dispatchers receive immediate completion notifications.
 4. **Closed-State Governance**: Completed and cancelled tickets are cleanly isolated into dedicated dashboard tabs on `/admin`, keeping the active operations queue focused while retaining 1-click access to closed job records. Reassignment controls are hidden on closed tickets.
 
+---
 
+## 10. Multi-User Realtime Synchronization Flow (Phase 7)
 
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Farmer as Farmer Browser (/farmer/repair/:id)
+    participant RT as Supabase Realtime (WebSocket)
+    participant DB as PostgreSQL Database
+    actor Tech as Technician Workbench (/technician/job/:id)
+
+    Note over Farmer,Tech: Both users connected to channel: ticket-realtime-<id>
+    Tech->>DB: Technician updates status: WAITING_FOR_PARTS -> IN_PROGRESS
+    DB-->>RT: postgres_changes event on repair_requests (filter: id=eq.<id>)
+    RT-->>Farmer: Realtime event delivered via WebSocket
+    Note over Farmer: useRepairTicketRealtime catches event
+    Farmer->>Farmer: 300ms Coalesce Timer (bundles timeline, quotes, request events)
+    Farmer->>DB: Authoritative refetch: loadData()
+    DB-->>Farmer: Fresh ticket state, quote items, and timeline
+    Farmer->>Farmer: Re-renders UI with updated stepper & status pill
+```
+
+1. **Lightweight Invalidation Signals**: Realtime events carry table change signals rather than full application payloads. Authoritative refetching is delegated to the caller's existing loader function to eliminate state synchronization drift.
+2. **Burst Coalescing**: Rapid multi-row database mutations (e.g., ticket status change + timeline insert + quote update) trigger a single coalesced refetch via a 300ms debounce timer.
+3. **Ticket & List Scoping**: Subscriptions are strictly isolated by ticket UUID (`ticket-realtime-<uuid>`) or user role list channel (`farmer-repairs-<farmerId>`, `admin-pipeline-repairs`), preventing cross-ticket or cross-user socket flooding.
+4. **Window Focus Recovery**: In addition to websocket events, window focus listeners ensure that browser tabs running in the background automatically re-sync when brought to the foreground.

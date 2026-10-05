@@ -1,151 +1,89 @@
 # TerraByte — Project State
 
-## 1. Current Phase
+## 1. Current Phase & Engineering Status
 
-- **Current Phase**: **PHASE 5 — COMPLETE** (All Subphases 5.1 through 5.6 Verified & Closed)
-  - **Phase 5.1 — Product Polish & Account Lifecycle**: **COMPLETE** (Commit `a6ff2de`)
-  - **Phase 5.2 — Demo & Data Hygiene**: **COMPLETE**
-  - **Phase 5.3 — Notification & Product Communication Polish**: **COMPLETE**
-  - **Phase 5.4 — Cancellation Approval Workflow**: **COMPLETE** (Commit `d39d821`)
-  - **Phase 5.5 — Communication & Quote Revision Workflow**: **COMPLETE** (Ticket-scoped messaging, Quote v1/v2 comparison, canonical `TB-4489` Quote v1 fixture)
-  - **Phase 5.6 — Handover & Completion Polish**: **COMPLETE** (Admin completion notification, completed/cancelled dashboard separation, closed-state controls, technician "Complete & sign off", farmer copy alignment, end-to-end verification on canonical `TB-8841`, clean demo reset)
-- **Next Phase**: **PHASE 6 — Assistive Multimodal Diagnostics / Production Polish** (Note: Phase 7 remains reserved for broader realtime/session synchronization and production hardening)
-- **Branch**: `phase-5` (connected to Lovable; no destructive Git history operations)
-
----
-
-## 2. Current Project Status
-
-TerraByte is an end-to-end digital agricultural equipment repair ecosystem designed to coordinate the complete journey from machinery breakdown to verified repair and back into the field in Nagpur, Maharashtra (Vidarbha region).
-
-### Completed Work
-
-- **Phase 1 — Codebase Cleanup & Documentation Reset**: Clean baseline established on Supabase Auth & PostgreSQL.
-- **Phase 2 — Domain Database Foundation & Security Hardening**: PostgreSQL schema with RLS across `profiles`, `technician_profiles`, `equipment`, `repair_requests`, `quotes`, `quote_items`, `repair_notes`, `repair_timeline`, `service_history`, and `notifications`.
-- **Phase 3 — Core Repair & Quotation Workflows**: Breakdown reporting, technician assignment matching, itemized quotes, approval/rejection lifecycle, parts hold pauses, testing stages, and completion verification.
-- **Phase 4 — Operational Experience & Notifications**: Role-specific notification queues, real-time toast alerts, technician verification workflow, and service centre command dispatch.
-- **Phase 5.1 — Product Polish & Account Lifecycle**:
-  - Unified Home experience (`/`) with contextual role entry points.
-  - Contextual back navigation preserving state across views.
-  - Profile management (name, phone, village/workshop, brand specializations).
-  - Password management (forgot password, recovery tokens, branded reset email template, change password).
-  - Permanent account deletion via atomic PostgreSQL RPC `public.delete_user_account()` with active-repair and demo-account protections.
-- **Phase 5.2 — Demo & Data Hygiene**:
-  - **Backend Reset Demo RPC**: Secure `public.reset_demo_data()` PostgreSQL RPC with dual-key authorization (`email` in designated set + `demo_code IS NOT NULL`), atomic transaction, TB-4489 fixture preservation, and deterministic fixture restoration.
-  - **Frontend Reset Demo Integration**: `Shell` header button (`RotateCcw`) strictly gated to the 5 designated demo accounts, accessible responsive `AlertDialog` confirmation dialog with loading states, safe error handling, and 7-step post-reset state synchronization.
-  - **Farmer Data Isolation & Nagpur Geography**: Isolated active repairs and equipment directly to authenticated profile UUIDs; eliminated legacy Nashik strings across all fixtures.
-  - **Completed-Repair & Action-Needed Separation**: Excluded completed/cancelled tickets from active repair card stacks; reserved "Action needed" styling for actionable tickets (`QUOTE_PENDING`, `QUOTE_REVISED`, and unassigned `REQUESTED`).
-  - **Loading Performance & Latency Remediation**: Deduplicated startup auth promises, enabled direct profile ID injection, and added database-level active-only query filtering (`{ activeOnly: true }`).
-- **Phase 5.3 — Notification & Product Communication Polish**: **COMPLETE** (Steps 1–3 Implemented and Verified)
-  - **Quote Revised Communication Aligned**: Updated farmer label in `FARMER_LABEL` to `"Revised Quote Ready"` (replacing `"Quote Being Revised"`), establishing clear alignment with orange "Action needed" status and quote revision workflow.
-  - **Completion / Handover Communication Aligned with Persisted Lifecycle**: Unified completion messaging across farmer view (*"Repair Complete & Saved to Service History"*), technician view (*"Repair completed and recorded in equipment service history"*), admin view (*"Repair complete & saved to service history"*), and completion notification copy (*"Repair TB-xxxx has been completed and saved to service history."*). Eliminated contradictory claims of pending handover confirmation when the system auto-commits to service history upon technician completion.
-  - **Canonical Demo Technician Notification Fixture Fixed**: Reassigned seed notification fixture `c7fdc083-fce0-4a73-afb8-f63aa84faf2e` to Ramesh Kumar (`t1` / `tech.nagpur@terrabyte.demo` / `00000000-0000-0000-0002-000000000001`) on repair TB-8841 in `supabase/seed.sql` and created forward migration `20261003160000_phase5_3_demo_technician_notification_fix.sql` updating `public.reset_demo_data()`.
-  - **Notification State Clearing on User Switch / Sign-Out**: Implemented immediate local state reset (`notifications = []`, error, and popover state) in `Shell` (`src/components/tb.tsx`) on sign-out or user switch, preventing previous user notifications from ever displaying to another user.
-  - **Safe Notification Query Limiting & Duplicate Fetch Cleanup**: Bounded initial and polled notification queries to `limit: 25` with newest-first ordering; safely bounded admin SQL queries (`limit: Math.max(limit * 4, 100)`); throttled bell toggle refresh with a 5-second freshness guard to eliminate redundant queries while preserving Supabase Realtime live subscriptions and 15s fallback polling.
-  - **Technician Verification Notification**: Implemented `setTechnicianVerification()` in `src/lib/services/technicians.ts` wired to `src/routes/admin/technicians.tsx`. When an admin approves an unverified technician account, dispatches an idempotent notification to that technician (*"Your technician account has been approved by the Service Centre. You can now accept repair jobs."*, deep-link `/technician`).
-  - **Technician Started-Work Notification**: Updated `startRepair()` in `src/lib/services/repair-requests.ts` to notify the associated farmer when the technician begins disassembly/physical work (*"Technician started repair work on TB-xxxx."*, deep-link `/farmer/repair/:id`), guarded by an idempotency check against repeated clicks or saves.
-  - **New Technician Registration Admin Notification**: Added database trigger `trg_notify_admin_on_technician_registration` on `technician_profiles` insert (migration `20261003170000_phase5_3_technician_registration_notification.sql`) and helper `notifyAdminOnTechnicianRegistration()` in `src/lib/services/technicians.ts`. Notifies Service Centre admins (*"New technician registration: <name> (<workshop>). Pending verification."*, deep-link `/admin/technicians`). Expanded `isActionableServiceCentreNotification()` in `src/lib/services/notifications.ts` to include technician registration patterns in admin notification counts and queues.
-  - **Notification Copy Standardization**: Audited and standardized all notification copy across quotes, repair requests, and technician operations. Enforced consistent sentence casing, concise action-oriented tone, and proper ending punctuation across all system notifications.
-  - **Enhanced Notification Popover Visual Hierarchy**: Redesigned Shell bell popover in `src/components/tb.tsx` with semantic category pill badges and icons (`Breakdown`, `Quote`, `Parts`, `Testing`, `Repair`, `Account`, `Assignment`, `Alert`, `Notice`), distinct unread indicator dot with subtle focus ring, unread background highlight (`bg-primary/[0.04]`), and actionable "View details" cue, preserving all existing interactions.
-
-- **Phase 5.4 — Cancellation Approval**: **COMPLETE** (Committed and pushed: `d39d821`)
-  - **Repair Status Enum Extended**: Added `CANCELLATION_REQUESTED` to `public.repair_status` PostgreSQL enum before `CANCELLED`.
-  - **Cancellation Tracking Columns**: Added `cancellation_reason` (text), `cancellation_note` (text), `cancellation_requested_by` (uuid), `cancellation_requested_at` (timestamptz), `cancellation_previous_status` (public.repair_status), and `cancellation_admin_response` (text) to `public.repair_requests` with a partial index on status `CANCELLATION_REQUESTED`.
-  - **RLS UPDATE Policies Hardened**: Implemented 4 purpose-driven `UPDATE` policies on `public.repair_requests` preventing direct dangerous mutations. Farmers may directly cancel ONLY unassigned `REQUESTED` repairs (verified via `USING` on `OLD` stored row); assigned/in-flight repairs must transition via `CANCELLATION_REQUESTED`; tickets under review are locked (`USING (status != 'CANCELLATION_REQUESTED')`); technicians are strictly prohibited from cancelling or requesting cancellation; and administrative resolution authority is preserved.
-  - **Demo Reset Function Updated**: Enhanced `public.reset_demo_data()` in forward migration `20261004100000_phase5_4_cancellation_approval_foundation.sql` to nullify all 6 cancellation columns on canonical demo repairs while strictly preserving their Phase 5.2 baseline statuses (`TB-8841` $\rightarrow$ `WAITING_FOR_PARTS`, `TB-8902` $\rightarrow$ `QUOTE_PENDING`, `TB-8898` $\rightarrow$ `REQUESTED`, `TB-4489` $\rightarrow$ `QUOTE_REVISED`), keeping real user accounts (such as `Ankit Chamke`) completely untouched.
-  - **Cancellation State Machine & Service Layer**: Implemented `requestCancellation()`, `approveCancellation()`, `rejectCancellation()`, and hardened `cancelRepairRequest()` in `src/lib/services/repair-requests.ts`. Enforced strict direct cancellation isolation (unassigned `REQUESTED` only), active repair governed review, equipment integrity guards, dual-party notification dispatches, and category pattern classification in `src/lib/services/notifications.ts`.
-  - **Farmer Cancellation Dialog & UI**: Implemented accessible Radix Dialog (`@/components/ui/dialog`) in `src/routes/farmer/repair/$id.tsx` replacing browser `confirm()`. Dynamically switches copy and actions between direct cancellation (`status === 'REQUESTED' && !technician_id`) and governed cancellation requests (assigned/active repairs), requiring structured reasons from `CANCELLATION_REASONS`. Added prominent `CANCELLATION_REQUESTED` review banner and `CANCELLED` closed banner, suppressed conflicting active controls, and aligned `Stepper` in `src/components/tb.tsx` to highlight `"Cancellation Pending Review"` with warning pulse on the active step while preserving step index history.
-  - **Admin Approval Workbench & Operations Filter**: Enhanced Service Centre operations dashboard (`src/routes/admin/index.tsx`) with a dedicated `"Cancellation Requests"` filter tab, actionable pending cancellation alert banner, and visual table row highlights with a `"Review"` CTA. Implemented a comprehensive **Cancellation Review Card** on the admin repair detail route (`src/routes/admin/repair/$id.tsx`) displaying job number, farmer, equipment, previous status, reason, notes, request timestamp, and technician hold state. Added accessible Radix confirmation modals for `approveCancellation()` (with optional resolution remarks) and `rejectCancellation()` (with required explanation), guarded by admin role checks, loading states, and error handling.
-  - **Technician Work-Hold UI & Cancellation Awareness**: Enhanced technician dashboard (`src/routes/technician/index.tsx`) with an isolated `"On hold · Cancellation pending"` section, amber hold styling, animated pulse dot, and reason preview, preventing jobs under cancellation review from appearing as normal actionable jobs. Added a prominent **Cancellation Request Under Review** work-hold banner on `/technician/job/:id` detailing reason, note, timestamp, previous status, and work-hold instructions while locking active progression actions (quotes, parts, testing, completion). Added a dedicated **Repair Cancelled** closed banner with admin resolution notes, and an informative **Cancellation Request Declined · Work Resumed** notice when previous status is restored, maintaining full context and assignment history.
-  - **Type Synchronization**: Synchronized TypeScript definitions in `src/integrations/supabase/types.ts`, `src/lib/tb-store.ts`, `src/components/tb.tsx`, and `src/lib/services/repair-requests.ts`.
-
-- **Phase 5.5 — Communication & Quote Revision Workflow**: **COMPLETE** (Steps 1–4 Complete & Verified)
-  - **Step 1 — Database Foundation & Canonical Demo Fixture Completion**: **COMPLETE**
-    - Created forward migration `supabase/migrations/20261005100000_phase5_5_communication_foundation.sql`.
-    - Added `public.repair_messages` table for ticket-scoped farmer/technician/admin messaging with `id`, `repair_request_id`, `sender_id`, `recipient_id`, `message_text`, `created_at`, and `is_read`.
-    - Configured performance indexes on `(repair_request_id, created_at ASC)` and partial index on `(recipient_id, is_read) WHERE is_read = false`.
-    - Hardened RLS policies for `repair_messages`: SELECT for ticket participants and admins, INSERT with caller anti-spoofing (`sender_id = current_profile_id()`) and ticket participation validation, UPDATE strictly for recipient read receipts, and DELETE restricted to administrative moderation.
-    - Added idempotent Supabase Realtime publication hook for `public.repair_messages`.
-    - Updated `public.reset_demo_data()` to clean disposable test messages and extra test quotes while leaving real user records untouched, and restored canonical Quote v1 fixture for `TB-4489` (status `REVISED`, total ₹2,800: Rotavator seal kit ₹1,400 + EP-90 Gearbox Oil ₹600 + Labour ₹800).
-    - Synchronized TypeScript definitions in `src/integrations/supabase/types.ts`.
-  - **Step 2 — Service Layer & State Machine (Quote Revision & Communication)**: **COMPLETE**
-    - Created `src/lib/services/repair-messages.ts` supporting `getRepairMessages()`, `sendRepairMessage()`, `markMessagesAsRead()`, and `getUnreadMessageCount()` with anti-spoofing validation, bounded text limits, counterpart verification, and recipient notifications.
-    - Fixed `reviseQuote()` in `src/lib/services/quotes.ts` to strictly preserve the farmer's original `clarification_note` on `repair_requests` while storing technician explanations separately in `repair_timeline` audit events.
-    - Added `QuoteVersionDetail` and `getQuoteVersions()` to retrieve historical quote versions with line items, totals, timestamps, farmer revision requests, and technician revision explanations across all supported revision reasons.
-    - Added `compareQuoteVersions()` pure diff calculation helper for multi-version UI comparison.
-    - Added `getRepairActionOwnership()` in `src/lib/services/repair-requests.ts` accurately modeling `QUOTE_REVISED` as technician action required and farmer waiting.
-    - Corrected inverted `FARMER_LABEL.QUOTE_REVISED` in `src/lib/tb-store.ts` to `"Revision Requested · Awaiting Technician"` and `STAFF_LABEL.QUOTE_REVISED` to `"Quote revision requested"`.
-  - **Step 3 — Quote Revision UX, Comparison & Ticket-Scoped Communication**: **COMPLETE**
-    - Built `<QuoteComparison />` component (`src/components/quote-comparison.tsx`) rendering summary KPI diff cards, line-by-line item changes (`+ Added`, `- Removed`, `Modified`, `Unchanged`), and distinct farmer revision request / technician explanation callout boxes.
-    - Built `<RepairChat />` ticket communication component (`src/components/repair-chat.tsx`) with real-time Supabase Realtime channel, automatic read receipts, role badges (`Farmer`, `Tech`, `Service Centre`), and bounded composer.
-    - Integrated `<QuoteComparison />` and `<RepairChat />` across technician job route (`src/routes/technician/job/$id.tsx`), farmer repair hub (`src/routes/farmer/repair/$id.tsx`), and admin repair detail (`src/routes/admin/repair/$id.tsx`).
-    - Made technician explanation input universal across all revision reasons; displayed Quote v1 card in technician QuoteBuilder during revision.
-    - Replaced outdated exception text on `/admin` and `/admin/repair/:id` with accurate quote revision workflow copy.
-  - **Step 4 — Final Verification & Review**: **COMPLETE** (Verification suite P5.5-01 through P5.5-14 passed).
-
-- **Phase 5.6 — Handover & Completion Polish**: **COMPLETE** (Steps 1–5 Complete & Verified)
-  - **Step 1 — Lifecycle Audit**: Comprehensive audit established canonical completion lifecycle: `IN_PROGRESS` $\rightarrow$ `TESTING` $\rightarrow$ `COMPLETED` $\rightarrow$ Permanent Service History. Identified absence of a persisted `HANDOVER_PENDING` state and mapped all terminology, notifications, and controls.
-  - **Step 2 — Service Layer & Admin Completion Notification**:
-    - Updated `completeRepair()` in `src/lib/services/repair-requests.ts` to dispatch an actionable notification to Service Centre admins (*"Repair TB-xxxx completed & verified by technician. Ready for review."*, link `/admin/repair/:id`, category `Repair`).
-    - Updated `getNotificationCategory()` in `src/lib/services/notifications.ts` to map completion notices with `"completed & verified"` to category `Repair`.
-    - Idempotency verified: `createServiceHistoryFromRepair()` checks for existing record and produces exactly 0 duplicates.
-  - **Step 3 — Admin Workbench & Dashboard Completion Polish**:
-    - Enhanced Service Centre operations dashboard (`src/routes/admin/index.tsx`) with dedicated `"Completed"` and `"Cancelled"` filter tabs, listing closed jobs while excluding them from active operational queue and metrics.
-    - Enhanced Admin repair detail (`src/routes/admin/repair/$id.tsx`): rendered dedicated **Completion Details** card displaying completion timestamp, testing verification status, final work notes, and equipment status.
-    - Suppressed/hid all technician reassignment and dispatch controls when repair status is `COMPLETED` or `CANCELLED`.
-  - **Step 4 — Technician + Farmer Completion UX**:
-    - Technician CTA renamed from *"Complete & hand over"* to *"Complete & sign off"*.
-    - Updated technician completion modal to clarify that sign-off saves the repair to permanent service history and marks equipment `Operational`.
-    - Farmer repair hub testing copy refined to clarify that testing under operational load is the final verification before completing the repair and saving it to service history, eliminating misleading "before handover" phrasing.
-  - **Step 5 — Final End-to-End Verification & Phase 5 Closeout**:
-    - Executed live completion lifecycle on canonical demo repair `TB-8841` (`WAITING_FOR_PARTS` $\rightarrow$ `IN_PROGRESS` $\rightarrow$ `TESTING` $\rightarrow$ `COMPLETED`).
-    - Verified technician CTA `"Complete & sign off"`, equipment transition to `Operational`, creation of immutable `service_history` record (`INV-TB-8841`), farmer notification, and admin notification (*"Repair TB-8841 completed & verified by technician. Ready for review."*).
-    - Reset demo baseline via `resetDemoData()` as admin: verified pristine restoration of `TB-8841` (`WAITING_FOR_PARTS`, `completion_details: null`, equipment `In Repair`), `TB-8902` (`QUOTE_PENDING`), `TB-8898` (`REQUESTED`), `TB-4489` (`QUOTE_REVISED`).
-    - Verified `TB-4489` Quote v1 fixture intact; real user account Ankit Chamke (`TB-4545` and 16 repairs) completely isolated and untouched.
-    - Static audit, regression audit (5.1–5.6), and `npm run build` all passed cleanly.
-
-### Current Discovered Issues Under Remediation
-
-1. **Farmer Demo Data Isolation**:
-   - *Issue*: Multiple farmer demo accounts (`farmer.nagpur@terrabyte.demo`, `farmer2.nagpur@terrabyte.demo`, `farmer3.nagpur@terrabyte.demo`) and real users were rendering the same demo machine and active repair (`TB-8841` on `Mahindra 575 DI`).
-   - *Root Cause*: `src/routes/farmer/index.tsx` was reading active repairs from local mock state `tb-store` with hardcoded fallback `"f1"`, and service getters lacked explicit `farmer_id` filtering.
-   - *Resolution*: Connected `FarmerHome` directly to live Supabase queries via `getFarmerRepairRequests()` and `getFarmerEquipment()`, scoped service queries strictly to authenticated `profile.id`, and bound `RoleGuard` session to dynamic farmer identity.
-2. **Service Centre Geography Inconsistency**:
-   - *Issue*: Service Centre header rendered `"Nashik Service Centre"` while the dashboard indicated `"NAGPUR DISTRICT · LIVE"`.
-   - *Root Cause*: Seed profile and database RPC fixtures still contained legacy Nashik strings for the admin profile, technicians, and repair locations.
-   - *Resolution*: Synchronized all demo fixtures, admin profile (`"Nagpur Service Centre"`, `"Nagpur Central Command"`), and repair locations to Nagpur agricultural talukas (Katol, Saoner, Umred).
-3. **Completed-Repair / "Action Needed" Classification**:
-   - *Issue*: Real farmer accounts with completed and verified repairs (e.g. `TB-2334`, `TB-7630`, `TB-3272`) displayed them as large orange "Action needed" cards on the farmer home screen.
-   - *Root Cause*: `FarmerHome` checked `!(r.status === "COMPLETED" && r.verified_at)` to filter active repairs, and `(r.status === "COMPLETED" && !r.verified_at)` to mark `needsAction`. Because `verified_at` was `null` in Supabase (the real lifecycle auto-commits permanent service records upon technician completion without a separate manual handover verification mutation), all completed repairs were indefinitely treated as active and flagged as "Action needed".
-   - *Resolution*: Updated `FarmerHome` to strictly filter out `COMPLETED` and `CANCELLED` tickets from the active repairs card stack (`r.status !== "CANCELLED" && r.status !== "COMPLETED"`). Reserved "Action needed" exclusively for tickets awaiting real farmer input (`QUOTE_PENDING`, `QUOTE_REVISED`). Historical completed repairs remain fully accessible via Service History, machine records, and direct repair links without cluttering the active workspace.
-4. **Dashboard Loading Performance & Latency Remediation**:
-   - *Issue*: Farmer dashboard showed sequential loading states ("Checking active repairs...", then "Loading machines..."), and Service Centre dashboard blocked the entire screen on "Loading repair operations..." for too long. Even after initial decoupling, real accounts with many tickets experienced latency.
-   - *Root Cause*:
-     1. Startup promise race in `auth.ts`: Both `onAuthStateChange` and `getSession()` triggered concurrent `loadProfile()` calls, doubling initial network roundtrips.
-     2. Profile resolution in `notifications.ts`: Lacked session fast-path and profile cache in `getAuthenticatedProfile()`.
-     3. Over-fetching in `repair-requests.ts`: `getFarmerRepairRequests()` loaded ALL historical repairs (15 rows for Ankit Chamke with joins across `equipment` and `technician_profiles`), transferring unnecessary rows only to discard them in frontend memory.
-   - *Resolution*: Added in-flight promise deduplication to `loadProfile()` in `auth.ts`; implemented session fast-path and 60-second caching in `notifications.ts`; added optional `{ activeOnly: true }` parameter to `getFarmerRepairRequests()` using database-level `.not("status", "in", '("COMPLETED","CANCELLED")')`. Perceived load time slashed by eliminating 90% of row transfers and halving startup auth roundtrips.
-5. **TB-4545 Repair Action State ("Send Request to Technician")**:
-   - *Issue*: On real farmer account Ankit Chamke, `TB-4545` was displayed as an active repair with status pill *"Finding Your Technician"* and technician *"Not yet assigned"*, even though the farmer had never dispatched or requested a technician.
-   - *Root Cause*: `TB-4545` was in status `REQUESTED` with `technician_id = null` and a single timeline entry ("Breakdown reported"). In `src/routes/farmer/index.tsx`, `needsAction` only checked `QUOTE_PENDING` and `QUOTE_REVISED`. Status `REQUESTED` fell through to default label `"Finding Your Technician"`, falsely implying an automatic dispatch process was underway.
-   - *Resolution*: Updated `src/components/tb.tsx` `StatusPill` to accept `technicianId`. When `audience === "farmer"` and `status === "REQUESTED"` with `!technicianId`, `StatusPill` renders *"Send request to technician"* with accent tone (`bg-accent/25 text-accent-foreground`). Updated `FarmerHome` (`src/routes/farmer/index.tsx`) to flag `r.status === "REQUESTED" && !r.technician_id` as `needsAction = true` (orange border and header) and set the CTA button to *"Send request to technician"*.
-6. **Explicit Real vs Demo Identity Presentation (`DemoTag`)**:
-   - *Issue*: Real farmer Ankit Chamke displayed a `"DEMO DATA"` badge near the dashboard header.
-   - *Root Cause*: `DemoTag` in `src/components/tb.tsx` was hardcoded to unconditionally render `<span>Demo data</span>` regardless of the logged-in user's identity.
-   - *Resolution*: Updated `DemoTag` to check `const { email } = useAuth(); if (!isDesignatedDemoAccount(email)) return null;`. The `"DEMO DATA"` badge now displays strictly and exclusively for the 5 canonical demo accounts (`farmer.nagpur@terrabyte.demo`, `farmer2.nagpur@terrabyte.demo`, `farmer3.nagpur@terrabyte.demo`, `tech.nagpur@terrabyte.demo`, `admin.nagpur@terrabyte.demo`). Real accounts like Ankit Chamke never render demo tags.
-
-### Checkpoint Status
-
-- The five core architecture documents (`PROJECT_STATE.md`, `IMPLEMENTATION_PLAN.md`, `APP_FLOW.md`, `TESTING.md`, `TRD.md`) are synchronized at this Phase 5.6 Step 5 checkpoint.
-- **PHASE 5 IS COMPLETE**. Subphases 5.1 through 5.6 are fully implemented and verified with clean builds (`npm run build`). All verification suites are complete and passing.
-- Working tree is verified on branch `phase-5`.
+- **Status**: **FROZEN / SUBMISSION READY — NAGPUR RISE 2026 STAGE 1**
+- **Branch**: `main` (Connected to Lovable; no destructive Git history operations)
+- **Official Problem Statement**: **"One-Stop Agricultural Equipment Repair"**
+- **Domain**: AgriTech · Agricultural Machinery Maintenance & Operational Coordination
+- **Lifecycle Milestone Summary**:
+  - **Phase 1 — Codebase Cleanup & Documentation Reset**: **COMPLETE**
+  - **Phase 2 — Domain Database Foundation & Security Hardening**: **COMPLETE**
+  - **Phase 3 — Core Repair & Quotation Workflows**: **COMPLETE**
+  - **Phase 4 — Operational Experience & Notifications**: **COMPLETE**
+  - **Phase 5 — Product Polish, Demo Reset, Communication & Completion**: **COMPLETE** (Phases 5.1 through 5.6)
+  - **Phase 6 — Production Readiness & Account Hardening**: **COMPLETE** (Commit `27a1e69`)
+  - **Phase 7 — Realtime Synchronization Foundation & Concurrency Hardening**: **COMPLETE** (Commit `91b7c83` + working tree)
+- **Feature Development Freeze**: Feature engineering is **paused**. The repository is frozen in a submission-ready, highly verified state for the Nagpur RISE 2026 Stage 1 evaluation.
 
 ---
 
-## 3. Locked Technical Decisions
+## 2. Completed Engineering Milestones
 
-1. **Target Regional Geography**: Demo data, crop contexts, machine brands, and regional terminology are strictly anchored in **Nagpur, Maharashtra** (Vidarbha region: cotton, soybean, orange belts; Katol, Saoner, Umred talukas; Mahindra, John Deere, Kubota, Swaraj equipment).
-2. **Backend as Source of Truth**: Live Supabase PostgreSQL is the sole source of truth for persisted workflows. Local mock store state (`tb-store.ts`) must never overwrite authenticated live user data.
+### Phase 1 through Phase 4 Baseline
+- **Clean Architecture Foundation**: Built on native Supabase Auth & PostgreSQL 17 without framework sprawl.
+- **PostgreSQL Relational Schema with RLS**: 11 core tables (`profiles`, `technician_profiles`, `equipment`, `repair_requests`, `quotes`, `quote_items`, `repair_messages`, `repair_notes`, `repair_timeline`, `service_history`, `notifications`) secured by least-privilege RLS policies.
+- **Core State Machine**: Breakdown intake, algorithmic technician matching, itemized quotes, parts hold pauses, testing stages, and completion verification.
+- **Operations & Notifications**: Role-specific notification queues, real-time toast alerts, technician verification gateway, and Service Centre command dispatch.
+
+### Phase 5 — Product Polish & Full Lifecycle Integrity (5.1 – 5.6)
+- **Phase 5.1 (Account Lifecycle)**: Contextual back navigation, profile management, password recovery tokens, branded reset templates, and atomic account deletion RPC (`public.delete_user_account()`).
+- **Phase 5.2 (Demo & Data Hygiene)**:
+  - Atomic `public.reset_demo_data()` PostgreSQL RPC with dual-key authorization (`email` in designated set + `demo_code IS NOT NULL`).
+  - Gated Shell `RotateCcw` reset button for the 5 designated demo accounts.
+  - Strict farmer data isolation and Nagpur taluka geography (Katol, Saoner, Umred).
+  - Clean separation of completed/cancelled repairs from active triage; "Action needed" reserved strictly for actionable tickets (`QUOTE_PENDING`, `QUOTE_REVISED`, unassigned `REQUESTED`).
+  - In-flight auth promise deduplication and database-level active-only query filtering (`{ activeOnly: true }`).
+- **Phase 5.3 (Notification Polish)**: Aligned lifecycle copy (*"Revised Quote Ready"*, unified completion messaging), fixed demo notification fixtures, user-switch notification state clearing, safe query bounds (`limit: 25`), idempotent trigger alerts for registrations/approvals, and redesigned category pill badging.
+- **Phase 5.4 (Cancellation Approval Workflow)**: Added `CANCELLATION_REQUESTED` enum and tracking columns; hardened RLS policies allowing direct farmer cancellation ONLY for unassigned requests; structured governed review for assigned/in-progress tickets; Admin Cancellation Review Card; and technician work-hold banners.
+- **Phase 5.5 (Communication & Quote Revision)**:
+  - `public.repair_messages` table with anti-spoofing RLS, unread tracking, and real-time chat (`<RepairChat />`).
+  - Quote revision lifecycle preserving farmer clarification notes while diffing line-by-line item changes (`<QuoteComparison />`).
+  - Canonical `TB-4489` Quote v1 fixture restoration.
+- **Phase 5.6 (Handover & Completion Polish)**:
+  - Canonical completion lifecycle verified: `IN_PROGRESS` $\rightarrow$ `TESTING` $\rightarrow$ `COMPLETED` $\rightarrow$ permanent `service_history`.
+  - Admin completion notifications dispatched upon sign-off.
+  - Dedicated "Completed" and "Cancelled" dashboard tabs isolating closed records from active operational triage.
+  - Technician CTA aligned to *"Complete & sign off"*, eliminating ambiguous "handover confirmation" states.
+
+### Phase 6 — Production Readiness & Account Hardening
+- **Component Error Boundaries**: Implemented `<ComponentErrorBoundary />` (`src/components/component-error-boundary.tsx`) isolating runtime widget rendering failures.
+- **Robust Profile Management**: Refactored `src/routes/profile.tsx` with resilient error recovery and brand specialization management.
+- **Password Reset Flow**: Hardened password recovery (`/forgot-password`, `/auth/reset-password`) with secure token parsing and user feedback.
+- **Media Lightbox Experience**: Integrated accessible image lightbox modal (`image-lightbox.tsx`) for breakdown photos and quote diagrams.
+- **SEO & Social Metadata**: Centralized dynamic OpenGraph and document metadata configuration (`src/lib/seo.ts`).
+
+### Phase 7 — Realtime Synchronization Foundation & Concurrency Hardening
+- **Realtime Publication Registration**: Forward migration `20261006100000_phase7_1_realtime_publication_foundation.sql` idempotently registering `notifications`, `repair_requests`, `quotes`, and `repair_timeline` in the `supabase_realtime` publication.
+- **Debounced Coalescing Realtime Hooks**:
+  - `useRepairTicketRealtime`: Ticket-scoped hook listening to `postgres_changes` across `repair_requests`, `quotes`, and `repair_timeline` using a 300ms coalescing window. Treats events as signals only and delegates to authoritative refetches.
+  - `useRepairListRealtime`: Queue-scoped hook synchronizing dashboard boards for farmers, technicians, and administrators.
+- **Optimistic Concurrency Control (OCC)**: Hardened service layer mutations in `repair-requests.ts` and `quotes.ts` with precondition row checks (e.g., verifying `technician_id IS NULL` before job acceptance) to prevent multi-device race conditions.
+- **Technician Decline RLS**: Forward migration `20261006110000_phase7_3_technician_decline_rls.sql` permitting assigned technicians to decline an assigned request back to `REQUESTED` while appending their ID to `declined_by`.
+
+---
+
+## 3. Implemented Features vs. Future Roadmap Inventory
+
+| Capability Area | Implemented & Production Ready (Now) | Deferred to Future Roadmap |
+| :--- | :--- | :--- |
+| **Authentication & Roles** | Supabase Auth (Email/Pass), RoleGuard, Profile triggers, Unverified Tech gate | Phone OTP (SMS Gateway), Social OAuth (Google/Apple) |
+| **Machinery Fleet** | Tractors, harvesters, tillers, pumps; Chassis/Serial tracking, Status | CAN bus J1939 telematics dongle integration |
+| **Breakdown Intake** | 2-min intake form, symptom chips, Web Speech voice input, field photos | Offline BackgroundSync ServiceWorker queue |
+| **Diagnostic Intake** | Rule-based symptom assessment, severity, parts categories, safety tips, MCP server | Multimodal Gemini 2.5 Vision image defect classification |
+| **Technician Matching** | Multi-factor scoring (brand 40, skill 30, avail 20, ETA 10) | Real-time GPS technician live turn-by-turn map tracking |
+| **Quotation & Pricing** | Itemized parts, labour, taxes, versioning, Quote v1 vs v2 comparison diff | Integrated UPI / Razorpay escrow payment gateway |
+| **Repair Operations** | 7-step stepper, parts-on-hold delay tracking, load testing, complete & sign-off | Video inspection live stream call |
+| **Communications** | Ticket-scoped chat (`repair_messages`), unread tracking, read receipts | Voice note audio messaging, WhatsApp webhook bot |
+| **Service History** | Permanent equipment maintenance records, downtime hours, invoices | Blockchain NFT maintenance ledger |
+| **Data Hygiene & Demo** | Atomic dual-key `reset_demo_data()` RPC, real user isolation, Nagpur geography | Multi-district cluster tenancy |
+
+---
+
+## 4. Locked Engineering Decisions
+
+1. **Regional Anchor**: Anchored strictly in **Nagpur District, Maharashtra** (Vidarbha region: Katol, Saoner, Umred talukas; cotton, soybean, orange farming contexts).
+2. **Database as Source of Truth**: Live Supabase PostgreSQL is the sole source of truth. Mock store fixtures (`tb-store.ts`) serve solely as fallback reference definitions.
 3. **Data Scoping Discipline**: Every data query must resolve caller identity through authenticated `auth.uid()` $\rightarrow$ `profiles` row $\rightarrow$ `profile.id`, strictly scoped to the authenticated user.
 4. **Demo Account Authorization**: Reset Demo capabilities are strictly restricted on the backend via dual-key authorization to the 5 designated evaluation personas:
    - `farmer.nagpur@terrabyte.demo`
@@ -154,6 +92,5 @@ TerraByte is an end-to-end digital agricultural equipment repair ecosystem desig
    - `tech.nagpur@terrabyte.demo`
    - `admin.nagpur@terrabyte.demo`
 5. **Real User Isolation**: Real user data is strictly isolated by RLS and cannot be modified or cleared by demo reset operations.
-6. **Assistive AI Only**: Machine diagnostics use rule-based reasoning with transparent markers. AI provides decision support; farmers and technicians retain final operational authority.
-7. **Realtime Scope Boundary**: Realtime notification delivery in Phase 5.3 is strictly scoped to the existing Supabase Realtime channel (`postgres_changes` on `public.notifications`) and 15-second background polling fallback. Broader multi-user interactive realtime state synchronization across boards, active forms, and technician assignments is explicitly deferred to **Phase 7 (Realtime Sync & Production Hardening)**.
-
+6. **Assistive AI Boundary**: Machine diagnostics use rule-based reasoning with transparent markers. AI provides decision support; farmers and technicians retain final operational authority.
+7. **Submission Freeze Rule**: Zero new feature initiatives or architecture refactors are permitted during the Nagpur RISE 2026 Stage 1 evaluation period.

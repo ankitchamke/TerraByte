@@ -10,7 +10,7 @@ import { formatEtaDateTime as formatEta, getEtaPresets, toDateTimeLocalString, v
 import { useAuth } from "@/lib/auth";
 import { meta } from "@/lib/seo";
 import { cn } from "@/lib/utils";
-import { supabase } from "@/integrations/supabase/client";
+import { useRepairTicketRealtime } from "@/hooks/use-repair-realtime";
 import {
   acceptRepairRequest,
   completeRepair,
@@ -105,49 +105,13 @@ function Job() {
 
   useEffect(() => {
     void loadData();
+  }, [loadData]);
 
-    const channel = supabase
-      .channel(`technician-job-live-${id}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "repair_requests" },
-        () => {
-          void loadData();
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "quotes" },
-        () => {
-          void loadData();
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "repair_timeline" },
-        () => {
-          void loadData();
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "repair_notes" },
-        () => {
-          void loadData();
-        }
-      )
-      .subscribe();
-
-    const handleFocus = () => {
-      void loadData();
-    };
-    window.addEventListener("focus", handleFocus);
-
-    return () => {
-      void supabase.removeChannel(channel);
-      window.removeEventListener("focus", handleFocus);
-    };
-  }, [id, loadData]);
+  // Scoped Supabase Realtime synchronization with debounced coalescing
+  useRepairTicketRealtime({
+    repairId: r?.id || id,
+    onUpdate: loadData,
+  });
 
   if (loading) {
     return (

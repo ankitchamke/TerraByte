@@ -1,12 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ChevronRight, Clock, Inbox } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Card, DemoTag, StatusPill } from "@/components/tb";
 import { ago } from "@/lib/tb-store";
 import { useAuth } from "@/lib/auth";
 import { meta } from "@/lib/seo";
 import { cn } from "@/lib/utils";
+import { useRepairListRealtime } from "@/hooks/use-repair-realtime";
 import {
   getTechnicianRepairRequests,
   type RepairRequestWithEquipment,
@@ -30,9 +31,13 @@ function TechHome() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const hasLoadedRef = useRef(false);
+
   const loadData = useCallback(async () => {
     try {
-      setLoading(true);
+      if (!hasLoadedRef.current) {
+        setLoading(true);
+      }
       setError(null);
       const [techData, repairsData] = await Promise.all([
         getMyTechnicianProfile().catch(() => null),
@@ -43,9 +48,12 @@ function TechHome() {
         setAvailable(Boolean(techData.is_available));
       }
       setRepairs(repairsData);
+      hasLoadedRef.current = true;
     } catch (err: any) {
       console.error("[TerraByte] Failed to load technician data:", err);
-      setError(err?.message || "Failed to load technician jobs");
+      if (!hasLoadedRef.current) {
+        setError(err?.message || "Failed to load technician jobs");
+      }
     } finally {
       setLoading(false);
     }
@@ -54,6 +62,13 @@ function TechHome() {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  // Live synchronization of technician's incoming and active jobs
+  useRepairListRealtime({
+    channelName: `technician-pipeline-${profile?.id || "tech"}`,
+    onUpdate: loadData,
+    enabled: Boolean(profile?.id),
+  });
 
   const handleToggleAvailability = async (v: boolean) => {
     try {

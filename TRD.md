@@ -28,18 +28,18 @@ TerraByte is a specialized digital agricultural equipment repair ecosystem desig
 | Layer | Technology | Status | Implementation Details |
 | :--- | :--- | :--- | :--- |
 | **Frontend Framework** | TanStack Start v1 / React 19 | **Implemented** | Modern React SSR-ready framework with Vite 8 bundler |
-| **Routing** | TanStack Router v1 | **Implemented** | 14 client/server routes with type-safe route trees and guards |
-| **Language & Typings** | TypeScript 5 | **Implemented** | Strict typing across components, stores, and Supabase client |
-| **Styling & Design System** | Tailwind CSS 4 | **Implemented** | High-contrast palette (`soil`, `primary`, `accent`, `warning`) |
+| **Routing** | TanStack Router v1 | **Implemented** | Type-safe route trees, dynamic segments, search params, and role-based guards |
+| **Language & Typings** | TypeScript 5 | **Implemented** | Strict typing across components, service layer, and Supabase client |
+| **Styling & Design System** | Tailwind CSS 4 | **Implemented** | High-contrast agricultural palette (`soil`, `primary`, `accent`, `warning`) |
 | **UI Components** | Radix UI + Lucide React | **Implemented** | Accessible headless primitives and agricultural iconography |
-| **State & Cache Management**| TanStack Query v5 + Local Store | **Hybrid** | Local store (`tb-store.ts`) for business demo; Query ready for live data |
-| **Authentication** | Supabase Auth (Native) | **Implemented** | Email/Password, auto-restored sessions, database trigger profile creation |
-| **Identity Database** | Supabase (PostgreSQL 17) | **Implemented** | `profiles`, `technician_profiles`, `app_role` enum, RLS policies |
-| **Domain Database** | Supabase (PostgreSQL 17) | **Planned (Phase 2)** | `equipment`, `repairs`, `quotes`, `quote_parts`, `service_records` |
-| **Object Storage** | Supabase Storage | **Planned (Phase 2)** | Buckets for equipment media, breakdown evidence, repair completion photos |
-| **AI / Diagnostic Engine** | Deterministic Rules / Gemini | **Hybrid** | Local rules engine active; Google Gemini API integration planned (Phase 8) |
-| **Model Context Protocol** | `@lovable.dev/mcp-js` | **Implemented** | MCP server at `/mcp` exposing symptoms, assessment, and matching tools |
-| **Hosting & Deployment** | Cloudflare Workers / Vercel | **Planned (Phase 9)** | Production deployment with automated CI/CD build gates |
+| **State & Cache Management**| TanStack Query v5 + React Hooks | **Implemented** | Cache invalidation, query deduplication, and optimistic feedback |
+| **Authentication** | Supabase Auth (Native) | **Implemented** | Email/Password, session restoration, role redirects, unverified tech gate |
+| **Database & Schema** | Supabase (PostgreSQL 17) | **Implemented** | 11 relational tables, transactional RPCs, triggers, and comprehensive RLS |
+| **Realtime Synchronization**| Supabase Realtime (WebSocket) | **Implemented** | Scoped `postgres_changes` subscriptions with 300ms client debouncing |
+| **Object Storage** | Supabase Storage | **Implemented** | Storage URLs for equipment media, breakdown evidence, and completion photos |
+| **Assistive Diagnostic Engine**| Deterministic Rules & Keywords | **Implemented** | Symptom assessment, urgency classification, and parts category recommendations |
+| **Model Context Protocol** | `@lovable.dev/mcp-js` | **Implemented** | MCP server at `/mcp` exposing diagnostic and matching tools |
+| **Hosting & Deployment** | Nitro / Cloudflare Workers | **Implemented** | SSR build preset (`cloudflare-module` compatible) via `vite build` |
 
 ---
 

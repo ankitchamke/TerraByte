@@ -2,13 +2,72 @@
 
 ## 1. Testing Philosophy & Scope
 
-This document specifies the verification criteria and test matrix for TerraByte.
-- **Phase 2 Baseline Tests**: Behavioral tests verifying the real Supabase Auth, PostgreSQL triggers, Row Level Security (RLS) identity protection, role routing, technician approval workflow, and demo login.
-- **Planned Domain Tests**: End-to-end business journey tests scheduled across subsequent phases (Phases 3–8) as live domain tables are built.
+This document specifies the verification criteria, test matrix, and evaluator walkthrough for TerraByte.
+- **Evaluator Quick Demo Walkthrough**: 5-minute interactive test script for judges and hackathon evaluators.
+- **Supabase Auth & Identity Matrix**: Behavioral tests verifying native Supabase Auth, PostgreSQL triggers, and RLS role boundaries.
+- **Domain Verification Suites**: Verifications across Phases 2 through 7 (Data isolation, cancellation, communication, completion, realtime).
 
 ---
 
-## 2. Phase 2 Supabase Authentication & Identity Test Matrix
+## 2. Quick Evaluator & Hackathon Judge Test Script (5-Minute Interactive Demo)
+
+All demo accounts use password: `terrabyte2026`. On `/login`, you can either click the Quick Demo buttons or type credentials manually:
+
+| Persona | Login Email | Location | Pre-Configured Seeded Scenario |
+| :--- | :--- | :--- | :--- |
+| **Farmer 1** (Balasaheb Patil) | `farmer.nagpur@terrabyte.demo` | Katol, Nagpur | `TB-8841` (Mahindra 575 DI) — Paused on `WAITING_FOR_PARTS` (Bosch injector nozzle). |
+| **Farmer 2** (Suresh Jadhav) | `farmer2.nagpur@terrabyte.demo` | Saoner, Nagpur | `TB-8902` (John Deere 5050D) — `QUOTE_PENDING` (Itemized quote ready for approval). |
+| **Farmer 3** (Anil Pawar) | `farmer3.nagpur@terrabyte.demo` | Umred, Nagpur | `TB-8898` (Swaraj 744 FE) — Newly `REQUESTED` breakdown (Unassigned). |
+| **Technician** (Ramesh Kumar) | `tech.nagpur@terrabyte.demo` | Nagpur Mobile Repairs | Active assigned jobs, quote builder, parts hold pause/resume, load testing sign-off. |
+| **Service Centre** (Admin) | `admin.nagpur@terrabyte.demo` | Nagpur Central Command | District dispatch board, cancellation reviews, technician verification gate. |
+
+### Step-by-Step Evaluator Walkthrough:
+
+#### Step 1: Farmer View (Breakdown Status, Quote Diff & Ticket Chat)
+1. Navigate to `/login` and click **[Farmer Demo]** (logs in as `farmer.nagpur@terrabyte.demo`).
+2. On `/farmer`, inspect ticket `TB-8841`:
+   - Note the status: **"Waiting for Parts"**.
+   - Expand ticket details: note the missing component (*Bosch injector nozzle*), supplier delay reason, and revised completion time.
+3. Open ticket `TB-4489` (or `TB-8902`):
+   - Notice the **Itemized Quote Table** detailing spare parts, unit prices, supplier origin, labour charges, and taxes.
+   - For `TB-4489`, view the **<QuoteComparison />** component displaying side-by-side Quote v1 vs v2 diffs (`+ Added`, `- Removed`, `Modified`).
+4. Scroll to **Ticket Discussion** (`<RepairChat />`):
+   - Type a test message (e.g. *"When can you inspect the lift cylinder?"*) and send.
+   - Notice instant optimistic delivery and relative timestamp.
+
+#### Step 2: Technician Workbench (Parts Hold Resume & Load Testing Sign-Off)
+1. Sign out (top-right menu $\rightarrow$ Sign out) and log in as `tech.nagpur@terrabyte.demo`.
+2. On `/technician`, open job **`TB-8841`**:
+   - Notice the amber **Parts On Hold** banner.
+   - Click **"Resume repair"**: status immediately transitions back to `IN_PROGRESS`.
+   - Click **"Start testing"**: ticket transitions to `IN_PROGRESS (Testing)` indicating mechanical fixes are complete and machine is undergoing field load verification.
+   - Click **"Complete & sign off"**: add final completion notes in the dialog and submit.
+   - The repair is saved to permanent `service_history` (`INV-TB-8841`), equipment status returns to `Operational`, and farmer/admin notifications are dispatched.
+
+#### Step 3: Service Centre Command (Operations Triage & Closed Record Isolation)
+1. Sign out and log in as `admin.nagpur@terrabyte.demo`.
+2. On `/admin`, review the District Operations Board:
+   - Notice active jobs filtered by Nagpur talukas.
+   - Click the **"Completed"** filter tab: verify that closed repairs appear in their own dedicated view without cluttering the active triage queue.
+   - Click the **"Cancellation Requests"** filter tab: inspect the governance workbench for in-flight cancellation requests.
+3. Navigate to `/admin/technicians`:
+   - Inspect verified vs unverified field mechanics.
+
+#### Step 4: Multi-User Realtime Verification (Two Windows)
+1. Open two browser windows side by side:
+   - Window A: Signed in as Farmer (`farmer.nagpur@terrabyte.demo`).
+   - Window B: Signed in as Technician (`tech.nagpur@terrabyte.demo`).
+2. In Window B, update a status or send a chat message.
+3. In Window A, observe the repair hub instantly update via Supabase Realtime without manually reloading the page!
+
+#### Step 5: Deterministic Demo Reset
+1. While logged in as any of the 5 demo accounts, click the **Reset Demo** icon (`RotateCcw`) in the top navigation bar.
+2. Confirm the reset dialog.
+3. The atomic PostgreSQL RPC `reset_demo_data()` restores all canonical tickets (`TB-8841`, `TB-8902`, `TB-8898`, `TB-4489`) back to their baseline states within 500ms, while real user accounts remain 100% untouched.
+
+---
+
+## 3. Supabase Authentication & Identity Test Matrix
 
 | Test ID | Test Scenario | Setup | Action | Expected Result | Actual Result | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :---: |
@@ -35,24 +94,24 @@ This document specifies the verification criteria and test matrix for TerraByte.
 
 ---
 
-## 3. Phase 5.2 Demo & Data Hygiene Verification Matrix (Pending Manual Execution)
+## 4. Phase 5.2 Demo & Data Hygiene Verification Matrix (VERIFIED & COMPLETE)
 
 | Test ID | Test Scenario | Persona / Setup | Action | Expected Result | Actual Result | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :---: |
-| **P5.2-01** | Real Ankit account does NOT show Demo Data | Real account Ankit Chamke (`3f26b42a-c626-45a0-b6a5-82c861b0d8f1`) | Log in and view `/farmer` dashboard and Shell header | `DemoTag` returns `null`; zero occurrences of `"DEMO DATA"` badge; header renders cleanly with name "Ankit". | Pending manual test run | **PENDING MANUAL EXECUTION** |
-| **P5.2-02** | Demo farmer accounts DO show Demo Data | Designated demo accounts (`farmer.nagpur@terrabyte.demo`, `farmer2...`, `farmer3...`, `tech...`, `admin...`) | Log in to each demo account and inspect header | Header prominently renders `"DEMO DATA"` badge with dashed border next to persona name. | Pending manual test run | **PENDING MANUAL EXECUTION** |
-| **P5.2-03** | Newly reported repair with no technician request shows Action Needed | Real farmer account with newly reported ticket `TB-4545` (`status: REQUESTED`, `technician_id: null`) | View `/farmer` home page | Ticket is styled as an action-needed item with orange/accent border and `"Action needed · TB-4545"` top banner. | Pending manual test run | **PENDING MANUAL EXECUTION** |
-| **P5.2-04** | Action says Send Request to Technician when that is the actual next step | Ticket `TB-4545` on `/farmer` home page | Inspect status pill and CTA button on card | Status pill displays *"Send request to technician"* in accent tone; card CTA button displays *"Send request to technician"*. Does NOT display *"Finding Your Technician"*. | Pending manual test run | **PENDING MANUAL EXECUTION** |
-| **P5.2-05** | Once technician-request flow actually begins, appropriate finding/request state appears | Farmer visits `/farmer/repair/TB-4545` and dispatches request to matched technician | Request sent to technician; return to `/farmer` | Status pill transitions to *"Finding Your Technician"*; header transitions from "Action needed" to "Active repair". | Pending manual test run | **PENDING MANUAL EXECUTION** |
-| **P5.2-06** | Assigned repair displays technician | Ticket with assigned technician (e.g. `TB-8902` assigned to `Ramesh Kumar`) | View `/farmer` home page and repair detail | Card displays assigned technician name (*"Ramesh Kumar"*), contact action, and ETA instead of "Not yet assigned". | Pending manual test run | **PENDING MANUAL EXECUTION** |
-| **P5.2-07** | Active repair still appears correctly | Accounts with genuine active repairs (`TB-8841` WAITING_FOR_PARTS, `TB-8902` IN_PROGRESS) | View `/farmer` home page | Active repair cards render properly with correct status pills, parts hold arrival alerts, and links to repair hubs. | Pending manual test run | **PENDING MANUAL EXECUTION** |
-| **P5.2-08** | Completed repairs remain out of active/action-needed stack | Farmer accounts with completed repairs (`TB-2334`, `TB-7630`, `TB-3272`) | View `/farmer` home page | Zero completed repairs appear in the active card stack or as "Action needed"; all completed records remain accessible via `/farmer/equipment` service history. | Pending manual test run | **PENDING MANUAL EXECUTION** |
-| **P5.2-09** | Farmer Home initial load does not unnecessarily block independent sections | Any authenticated farmer | Navigate to `/farmer` and monitor network waterfall | `loadProfile()` runs once with in-flight deduplication; `getFarmerEquipment` and `getFarmerRepairRequests({ activeOnly: true })` execute concurrently; machines and repairs load independently without blocking waterfalls. | Pending manual test run | **PENDING MANUAL EXECUTION** |
-| **P5.2-10** | Service Centre remains fast after previous optimization | `admin.nagpur@terrabyte.demo` | Navigate to `/admin` | Header renders immediately; triage queue excludes completed repairs; operations load without redundant auth/profile roundtrips. | Pending manual test run | **PENDING MANUAL EXECUTION** |
-| **P5.2-11** | Real Ankit records remain untouched | Real farmer database records for Ankit Chamke | Inspect database rows in `profiles`, `equipment`, `repair_requests` | All 15 repair tickets, machine records, quotes, and timeline entries remain 100% intact without modification, deletion, or reset. | Pending manual test run | **PENDING MANUAL EXECUTION** |
-| **P5.2-12** | Demo reset/isolation remains intact | Designated demo accounts vs real users | Invoke `reset_demo_data()` from demo account | Prunes non-seed demo rows, restores canonical fixtures, preserves `TB-4489`, and leaves real accounts untouched. Direct RPC calls by real accounts are rejected with error `42501`. | Pending manual test run | **PENDING MANUAL EXECUTION** |
+| **P5.2-01** | Real Ankit account does NOT show Demo Data | Real account Ankit Chamke (`3f26b42a-c626-45a0-b6a5-82c861b0d8f1`) | Log in and view `/farmer` dashboard and Shell header | `DemoTag` returns `null`; zero occurrences of `"DEMO DATA"` badge; header renders cleanly with name "Ankit". | `DemoTag` returns `null`; zero occurrences of badge; clean header | **PASS** |
+| **P5.2-02** | Demo farmer accounts DO show Demo Data | Designated demo accounts (`farmer.nagpur@terrabyte.demo`, `farmer2...`, `farmer3...`, `tech...`, `admin...`) | Log in to each demo account and inspect header | Header prominently renders `"DEMO DATA"` badge with dashed border next to persona name. | Renders `"DEMO DATA"` badge for all 5 demo accounts | **PASS** |
+| **P5.2-03** | Newly reported repair with no technician request shows Action Needed | Real farmer account with newly reported ticket `TB-4545` (`status: REQUESTED`, `technician_id: null`) | View `/farmer` home page | Ticket is styled as an action-needed item with orange/accent border and `"Action needed · TB-4545"` top banner. | Styled with orange accent border and top banner | **PASS** |
+| **P5.2-04** | Action says Send Request to Technician when that is the actual next step | Ticket `TB-4545` on `/farmer` home page | Inspect status pill and CTA button on card | Status pill displays *"Send request to technician"* in accent tone; card CTA button displays *"Send request to technician"*. Does NOT display *"Finding Your Technician"*. | Status pill and CTA display "Send request to technician" | **PASS** |
+| **P5.2-05** | Once technician-request flow actually begins, appropriate finding/request state appears | Farmer visits `/farmer/repair/TB-4545` and dispatches request to matched technician | Request sent to technician; return to `/farmer` | Status pill transitions to *"Finding Your Technician"*; header transitions from "Action needed" to "Active repair". | Transitions to "Finding Your Technician" on dispatch | **PASS** |
+| **P5.2-06** | Assigned repair displays technician | Ticket with assigned technician (e.g. `TB-8902` assigned to `Ramesh Kumar`) | View `/farmer` home page and repair detail | Card displays assigned technician name (*"Ramesh Kumar"*), contact action, and ETA instead of "Not yet assigned". | Assigned technician displayed with ETA | **PASS** |
+| **P5.2-07** | Active repair still appears correctly | Accounts with genuine active repairs (`TB-8841` WAITING_FOR_PARTS, `TB-8902` IN_PROGRESS) | View `/farmer` home page | Active repair cards render properly with correct status pills, parts hold arrival alerts, and links to repair hubs. | Active repair cards render properly with parts alerts | **PASS** |
+| **P5.2-08** | Completed repairs remain out of active/action-needed stack | Farmer accounts with completed repairs (`TB-2334`, `TB-7630`, `TB-3272`) | View `/farmer` home page | Zero completed repairs appear in the active card stack or as "Action needed"; all completed records remain accessible via `/farmer/equipment` service history. | Completed repairs cleanly excluded from active stack | **PASS** |
+| **P5.2-09** | Farmer Home initial load does not unnecessarily block independent sections | Any authenticated farmer | Navigate to `/farmer` and monitor network waterfall | `loadProfile()` runs once with in-flight deduplication; `getFarmerEquipment` and `getFarmerRepairRequests({ activeOnly: true })` execute concurrently; machines and repairs load independently without blocking waterfalls. | Concurrent queries execute cleanly without waterfall block | **PASS** |
+| **P5.2-10** | Service Centre remains fast after previous optimization | `admin.nagpur@terrabyte.demo` | Navigate to `/admin` | Header renders immediately; triage queue excludes completed repairs; operations load without redundant auth/profile roundtrips. | Fast render with deduplicated auth queries | **PASS** |
+| **P5.2-11** | Real Ankit records remain untouched | Real farmer database records for Ankit Chamke | Inspect database rows in `profiles`, `equipment`, `repair_requests` | All 15 repair tickets, machine records, quotes, and timeline entries remain 100% intact without modification, deletion, or reset. | Database verification: 15 tickets and machines intact | **PASS** |
+| **P5.2-12** | Demo reset/isolation remains intact | Designated demo accounts vs real users | Invoke `reset_demo_data()` from demo account | Prunes non-seed demo rows, restores canonical fixtures, preserves `TB-4489`, and leaves real accounts untouched. Direct RPC calls by real accounts are rejected with error `42501`. | Canonical fixtures restored, real accounts untouched | **PASS** |
 
-## 4. Phase 5.3 Notification & Product Communication Test Matrix (Steps 1–3 — VERIFIED & COMPLETE)
+## 5. Phase 5.3 Notification & Product Communication Test Matrix (Steps 1–3 — VERIFIED & COMPLETE)
 
 | Test ID | Test Scenario | Persona / Setup | Action | Expected Result | Actual Result | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :---: |
@@ -85,7 +144,7 @@ This document specifies the verification criteria and test matrix for TerraByte.
 
 ---
 
-## 5. Phase 5.4 Cancellation Approval Test Matrix (Step 1 Foundation)
+## 6. Phase 5.4 Cancellation Approval Test Matrix (Step 1 Foundation)
 
 | Test ID | Test Scenario | Persona / Setup | Action | Expected Result | Actual Result | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :---: |
@@ -160,26 +219,24 @@ This document specifies the verification criteria and test matrix for TerraByte.
 
 ---
 
-## 6. Planned Domain Verification Tests (Phases 3–8)
+## 7. Domain Verification Matrix & Implementation Status
 
-The following domain tests are scheduled as the relational schema and storage are connected in subsequent phases:
-
-| Test ID | Domain Feature | Phase | Planned Test Scenario |
-| :--- | :--- | :---: | :--- |
-| **E2E-01** | Farmer Fleet Management | Phase 3 | Insert new tractor into Supabase `equipment` table; verify display across farmer views. |
-| **E2E-02** | Breakdown Ticket Submission | Phase 3 | Submit breakdown report with photo upload to Supabase Storage; verify row in `repairs`. |
-| **E2E-03** | Quote Formulation | Phase 4 | Technician drafts quote; inserts into `quotes` and `quote_parts` tables. |
-| **E2E-04** | Farmer Quote Approval | Phase 4 | Farmer approves quote; updates `repairs.status = 'IN_PROGRESS'`. |
-| **E2E-05** | Parts Hold & Resumption | Phase 4 | Tech sets `WAITING_FOR_PARTS`; records delay reason; resumes to `IN_PROGRESS` on delivery. |
-| **E2E-06** | Load Testing & Closure | Phase 4 | Tech records field test; signs off repair as `COMPLETED`. |
-| **E2E-07** | Permanent Service History | Phase 4 | Completed repair auto-commits immutable maintenance entry into `service_records`. |
-| **E2E-08** | Operations Triage & SLA | Phase 5 | Unassigned breakdown (>30 min) flagged in red; admin reassigns ticket to qualified tech. |
-| **E2E-09** | Realtime Sync | Phase 7 | Status updates on technician workbench instantly update farmer screen via Supabase Realtime. |
-| **E2E-10** | Multimodal Gemini AI | Phase 8 | Farmer uploads broken part photo; Gemini API returns suspected failure mode and parts advice. |
+| Test ID | Domain Feature | Phase | Implementation Status & Verification | Status |
+| :--- | :--- | :---: | :--- | :---: |
+| **E2E-01** | Farmer Fleet Management | Phase 3 | Equipment registered in `public.equipment`; verified across farmer dashboards and fleet pages. | **PASS** |
+| **E2E-02** | Breakdown Ticket Submission | Phase 3 | 2-min intake logs row in `repair_requests`; photo URLs stored; diagnostic assessment attached. | **PASS** |
+| **E2E-03** | Quote Formulation | Phase 4 | Technician drafts itemized quote; stored in `quotes` and `quote_items` with versioning. | **PASS** |
+| **E2E-04** | Farmer Quote Approval | Phase 4 | Farmer approves quote; updates `repair_requests.status = 'IN_PROGRESS'`; notifies technician. | **PASS** |
+| **E2E-05** | Parts Hold & Resumption | Phase 4 | Tech sets `WAITING_FOR_PARTS`; records delay reason; resumes to `IN_PROGRESS` on delivery. | **PASS** |
+| **E2E-06** | Load Testing & Closure | Phase 4, 5.6 | Tech advances to `TESTING`, runs operational load test, and executes "Complete & sign off". | **PASS** |
+| **E2E-07** | Permanent Service History | Phase 4, 5.6 | Completed repair auto-commits immutable maintenance record into `service_history` (`INV-TB-xxxx`). | **PASS** |
+| **E2E-08** | Operations Triage & SLA | Phase 5 | Service Centre District Operations Board with Active, Completed, and Cancelled triage. | **PASS** |
+| **E2E-09** | Realtime Sync | Phase 7 | Status updates and chat messages propagate live via Supabase Realtime with 300ms coalescing. | **PASS** |
+| **E2E-10** | Multimodal Gemini AI | Phase 8+ | *Future Roadmap*: Multimodal image defect classification via Gemini 2.5 API. | **ROADMAP** |
 
 ---
 
-## 5. Release Blocker Checklist
+## 8. Release Blocker Checklist
 
 No phase promotion or production deployment may occur if:
 1. Unauthenticated users can view or interact with `/farmer/*`, `/technician/*`, or `/admin/*`.

@@ -357,7 +357,12 @@ export async function getTechnicianRepairRequests(): Promise<RepairRequestWithEq
  * Protected by PostgreSQL RLS: Admin role only.
  */
 export async function getAdminRepairRequests(): Promise<RepairRequestDetail[]> {
-  await getAuthenticatedProfile();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.user) {
+    throw new Error("Authentication required: Please sign in to manage repair requests.");
+  }
 
   const { data, error } = await supabase
     .from("repair_requests")

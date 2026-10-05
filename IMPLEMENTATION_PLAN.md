@@ -23,7 +23,9 @@ flowchart TD
     P53 --> P54["PHASE 5.4: Cancellation Approval<br/>(STATUS: COMPLETE — Commit d39d821)"]
     P54 --> P55["PHASE 5.5: Communication & Quote Revision<br/>(STATUS: COMPLETE)"]
     P55 --> P56["PHASE 5.6: Handover & Completion Polish<br/>(STATUS: COMPLETE)"]
-    P56 --> P6["PHASE 6: Assistive Multimodal Diagnostics"]
+    P56 --> P6["PHASE 6: Production Readiness & Hardening<br/>(STATUS: COMPLETE — Commit 27a1e69)"]
+    P6 --> P7["PHASE 7: Realtime Foundation & Concurrency<br/>(STATUS: COMPLETE — Commit 91b7c83)"]
+    P7 --> FREEZE["MILESTONE: NAGPUR RISE 2026 SUBMISSION FREEZE<br/>(STATUS: FROZEN / SUBMISSION READY)"]
 ```
 
 ---
@@ -300,3 +302,32 @@ flowchart TD
   4. Demo baseline reset via `resetDemoData()` as admin: verified pristine restoration of `TB-8841` (`WAITING_FOR_PARTS`, `completion_details: null`, equipment `In Repair`), `TB-8902`, `TB-8898`, `TB-4489`.
   5. Real user Ankit Chamke account (`TB-4545`) isolated and 100% untouched.
   6. Phase 5.1–5.6 regression test suite, static audit, and `npm run build` all passing cleanly.
+
+---
+
+### PHASE 6 — Production Readiness & Account Hardening
+- **Status**: **COMPLETE** (Committed in `27a1e69`)
+- **Objective**: Harden frontend stability, provide runtime isolation with error boundaries, and solidify account lifecycle management.
+- **Deliverables Completed**:
+  1. **Component Error Boundary**: Created `<ComponentErrorBoundary />` (`src/components/component-error-boundary.tsx`) isolating runtime widget rendering issues without crashing full route trees.
+  2. **Profile & Brand Management**: Hardened `src/routes/profile.tsx` with error recovery and technician brand specializations.
+  3. **Password Recovery Flow**: Refactored `/forgot-password` and `/auth/reset-password` supporting branded recovery email templates and token verification.
+  4. **Media Lightbox Experience**: Integrated accessible image lightbox modal (`image-lightbox.tsx`) for breakdown photos and quote diagrams.
+  5. **Dynamic Document SEO**: Integrated centralized metadata utility (`src/lib/seo.ts`).
+
+---
+
+### PHASE 7 — Realtime Foundation & Concurrency Hardening
+- **Status**: **COMPLETE** (Committed in `91b7c83` + working tree)
+- **Objective**: Establish robust, multi-user real-time state synchronization with debounced event coalescing and optimistic concurrency protection.
+- **Deliverables Completed**:
+  1. **Realtime Publication Registration**: Migration `supabase/migrations/20261006100000_phase7_1_realtime_publication_foundation.sql` registering `notifications`, `repair_requests`, `quotes`, and `repair_timeline` in `supabase_realtime`.
+  2. **Debounced Coalescing Realtime Hooks**: Built `useRepairTicketRealtime` and `useRepairListRealtime` in `src/hooks/use-repair-realtime.ts`. Treats websocket payloads as invalidation signals, applies a 300ms coalescing window, and triggers authoritative refetches.
+  3. **Concurrency Hardening (OCC)**: Updated `repair-requests.ts` and `quotes.ts` with precondition row checks (e.g. verifying `technician_id IS NULL` before job acceptance) preventing race conditions across concurrent sessions.
+  4. **Technician Decline RLS Policy**: Migration `supabase/migrations/20261006110000_phase7_3_technician_decline_rls.sql` permitting assigned technicians to decline an assigned request back to `REQUESTED` while appending their ID to `declined_by`.
+
+---
+
+### MILESTONE — NAGPUR RISE 2026 STAGE 1 SUBMISSION FREEZE
+- **Status**: **FROZEN / SUBMISSION READY**
+- **Action**: Feature development is officially frozen. The application is verified on branch `main` for submission under the problem statement: **"One-Stop Agricultural Equipment Repair"**.

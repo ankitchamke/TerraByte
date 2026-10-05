@@ -47,223 +47,13 @@ export const Route = createFileRoute("/")({
  */
 function AgriculturalHeroVisual({ isCompact }: { isCompact?: boolean }) {
   return (
-    <div className="relative w-full h-full select-none overflow-hidden bg-card">
-      <svg
-        viewBox="0 0 540 340"
+    <div className="relative w-full h-full select-none overflow-hidden bg-card flex items-center justify-center">
+      <img
+        src="/terrabyte-hero.png"
+        alt="Illustration showing a field technician and farmer repairing agricultural equipment"
         className="w-full h-full object-cover"
-        xmlns="http://www.w3.org/2000/svg"
-        role="img"
-        aria-label="Illustration showing a field technician and farmer repairing agricultural equipment"
-      >
-        <defs>
-          <linearGradient id="skyGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="#fdfbf7" />
-            <stop offset="55%" stopColor="#f8efe2" />
-            <stop offset="100%" stopColor="#eedec8" />
-          </linearGradient>
-          <linearGradient id="soilGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#452f20" />
-            <stop offset="45%" stopColor="#382417" />
-            <stop offset="100%" stopColor="#25160d" />
-          </linearGradient>
-          <linearGradient id="cropGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor="#2b6b2e" />
-            <stop offset="100%" stopColor="#1a451d" />
-          </linearGradient>
-          <linearGradient id="tractorBody" x1="0%" y1="0%" x2="100%" y2="50%">
-            <stop offset="0%" stopColor="#dc2626" />
-            <stop offset="65%" stopColor="#b91c1c" />
-            <stop offset="100%" stopColor="#831818" />
-          </linearGradient>
-          <linearGradient id="tireRubber" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#373737" />
-            <stop offset="60%" stopColor="#222222" />
-            <stop offset="100%" stopColor="#111111" />
-          </linearGradient>
-          <linearGradient id="storyBarBg" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.95" />
-            <stop offset="100%" stopColor="#f8fafc" stopOpacity="0.9" />
-          </linearGradient>
-        </defs>
-
-        {/* 1. Warm Rural Morning Sky & Sun */}
-        <rect width="540" height="340" fill="url(#skyGradient)" />
-        <circle cx="450" cy="55" r="70" fill="#fde68a" opacity="0.5" />
-
-        {/* Distant farm countryside contours */}
-        <path
-          d="M0 135 Q90 125 180 132 T360 128 T540 134 L540 185 L0 185 Z"
-          fill="#d8c5b0"
-          opacity="0.65"
-        />
-        <path
-          d="M0 152 Q130 142 260 148 T540 144 L540 200 L0 200 Z"
-          fill="#cbb399"
-          opacity="0.8"
-        />
-
-        {/* 2. Contoured Soil Furrows & Crop Vegetation */}
-        <path
-          d="M0 175 Q160 160 340 178 T540 168 L540 340 L0 340 Z"
-          fill="url(#cropGradient)"
-          opacity="0.9"
-        />
-        <path
-          d="M0 195 Q140 180 300 196 T540 186 L540 340 L0 340 Z"
-          fill="url(#soilGradient)"
-        />
-
-        {/* Furrow perspective lines */}
-        <path d="M-15 340 L160 196" stroke="#25160d" strokeWidth="3.5" opacity="0.6" />
-        <path d="M80 340 L230 197" stroke="#25160d" strokeWidth="3" opacity="0.5" />
-        <path d="M210 340 L310 198" stroke="#25160d" strokeWidth="3.5" opacity="0.55" />
-        <path d="M370 340 L390 198" stroke="#25160d" strokeWidth="3" opacity="0.45" />
-
-        {/* 3. The Agricultural Tractor (Mahindra-style farm workhorse) */}
-        <g id="tractor-assembly" transform="translate(45, 95)">
-          {/* Rear Hitch / Linkage */}
-          <path d="M85 125 L65 135 L60 148" stroke="#475569" strokeWidth="3.5" fill="none" />
-
-          {/* Engine & Body Chassis */}
-          <rect x="120" y="105" width="125" height="38" rx="5" fill="#1e293b" />
-          <path
-            d="M120 102 L130 62 Q135 56 145 56 L245 56 Q255 58 258 68 L260 110 L120 110 Z"
-            fill="url(#tractorBody)"
-          />
-
-          {/* Radiator Grill & Front Nose */}
-          <path d="M245 62 L258 68 L258 108 L245 108 Z" fill="#991b1b" />
-          <line x1="252" y1="72" x2="252" y2="104" stroke="#fca5a5" strokeWidth="1.5" strokeDasharray="3 2" />
-          <circle cx="253" cy="76" r="4" fill="#fef08a" stroke="#ca8a04" strokeWidth="1" />
-
-          {/* Open Engine Inspection Compartment */}
-          <rect x="165" y="72" width="44" height="26" rx="2" fill="#0f172a" stroke="#f59e0b" strokeWidth="1.5" />
-          <path d="M170 82 L185 82 M170 88 L198 88 M190 76 L190 94" stroke="#f59e0b" strokeWidth="1.6" />
-          <circle cx="200" cy="82" r="3" fill="#10b981" />
-
-          {/* Vertical Exhaust Pipe */}
-          <rect x="220" y="26" width="5.5" height="32" rx="2" fill="#334155" />
-          <ellipse cx="223" cy="26" rx="3.5" ry="1.8" fill="#475569" />
-
-          {/* Driver Cabin ROPS Frame */}
-          <path
-            d="M118 102 L124 20 Q126 16 132 16 L175 16 Q180 16 182 20 L190 58"
-            stroke="#1e293b"
-            strokeWidth="4.5"
-            fill="none"
-            strokeLinecap="round"
-          />
-          <path d="M116 16 L182 13" stroke="#b91c1c" strokeWidth="3.5" strokeLinecap="round" />
-
-          {/* Front Steering Tire */}
-          <g transform="translate(225, 116)">
-            <circle cx="20" cy="20" r="22" fill="url(#tireRubber)" />
-            <circle cx="20" cy="20" r="13" fill="#eab308" stroke="#a16207" strokeWidth="2" />
-            <circle cx="20" cy="20" r="4.5" fill="#1e293b" />
-          </g>
-
-          {/* Heavy-Duty Rear Ag-Tread Tire */}
-          <g transform="translate(80, 70)">
-            <circle cx="44" cy="44" r="44" fill="url(#tireRubber)" />
-            {[0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330].map((deg) => (
-              <line
-                key={deg}
-                x1="44"
-                y1="3"
-                x2="44"
-                y2="10"
-                stroke="#52525b"
-                strokeWidth="3.5"
-                strokeLinecap="round"
-                transform={`rotate(${deg} 44 44)`}
-              />
-            ))}
-            <circle cx="44" cy="44" r="27" fill="#eab308" stroke="#a16207" strokeWidth="2.5" />
-            <circle cx="44" cy="44" r="11" fill="#1e293b" />
-          </g>
-        </g>
-
-        {/* 4. Technician Actively Inspecting & Servicing with Tools */}
-        <g id="technician-working" transform="translate(285, 175)">
-          {/* Shadow */}
-          <ellipse cx="25" cy="85" rx="22" ry="5" fill="#1c120c" opacity="0.4" />
-
-          {/* Technician Figure in Work Overalls */}
-          <path d="M18 36 L12 80 L20 80 L24 58 L28 80 L36 80 L30 36 Z" fill="#1e3a8a" />
-          <path d="M14 34 Q24 28 34 34 L32 55 L16 55 Z" fill="#2563eb" />
-          <path d="M15 42 L33 42" stroke="#f59e0b" strokeWidth="2.5" />
-          {/* Head & Cap */}
-          <circle cx="24" cy="20" r="8" fill="#fed7aa" />
-          <path d="M16 18 Q24 12 32 18 L35 19 L36 22 L24 21 Z" fill="#1e3a8a" />
-          {/* Arm holding wrench towards engine */}
-          <path d="M16 38 L4 44 L-8 38" stroke="#2563eb" strokeWidth="4" strokeLinecap="round" fill="none" />
-          {/* Spanner/wrench */}
-          <line x1="-8" y1="38" x2="-22" y2="30" stroke="#94a3b8" strokeWidth="3" strokeLinecap="round" />
-          <circle cx="-22" cy="30" r="3" fill="#cbd5e1" stroke="#64748b" strokeWidth="1" />
-
-          {/* Mobile Tool Box on the Ground */}
-          <rect x="36" y="65" width="22" height="15" rx="2" fill="#b91c1c" stroke="#7f1d1d" strokeWidth="1" />
-          <rect x="42" y="62" width="10" height="3" rx="1" fill="#334155" />
-        </g>
-
-        {/* 5. Farmer Alongside Technician (Partnership & Clear Understanding) */}
-        <g id="farmer-present" transform="translate(370, 168)">
-          {/* Shadow */}
-          <ellipse cx="22" cy="92" rx="20" ry="5" fill="#1c120c" opacity="0.35" />
-
-          {/* Farmer Figure in Rural Workwear */}
-          <path d="M16 38 L10 88 L18 88 L22 64 L26 88 L34 88 L28 38 Z" fill="#475569" />
-          <path d="M12 36 Q22 30 32 36 L30 58 L14 58 Z" fill="#15803d" />
-          {/* Head */}
-          <circle cx="22" cy="22" r="8.5" fill="#fed7aa" />
-          {/* Arm holding clipboard / phone reviewing repair */}
-          <path d="M28 42 L38 48 L35 56" stroke="#15803d" strokeWidth="3.5" strokeLinecap="round" fill="none" />
-          <rect x="32" y="52" width="12" height="16" rx="1.5" fill="#f8fafc" stroke="#64748b" strokeWidth="1" />
-          <line x1="35" y1="56" x2="41" y2="56" stroke="#15803d" strokeWidth="1.2" />
-          <line x1="35" y1="60" x2="41" y2="60" stroke="#64748b" strokeWidth="1" />
-        </g>
-
-        {/* 6. Clean Visual Workflow Strip (Breakdown -> Repair -> Back to Work) */}
-        {!isCompact ? (
-          <g transform="translate(40, 282)">
-            <rect
-              width="460"
-              height="44"
-              rx="12"
-              fill="url(#storyBarBg)"
-              stroke="#e2e8f0"
-              strokeWidth="1.2"
-            />
-
-            {/* Step 1 */}
-            <circle cx="36" cy="22" r="10" fill="#fee2e2" />
-            <path d="M36 17 L36 23 M36 26 L36 27" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" />
-            <text x="54" y="26" fill="#1e293b" fontSize="12" fontWeight="bold" fontFamily="sans-serif">
-              Breakdown Reported
-            </text>
-
-            {/* Arrow 1 */}
-            <path d="M190 22 L205 22 M200 18 L205 22 L200 26" stroke="#94a3b8" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-
-            {/* Step 2 */}
-            <circle cx="232" cy="22" r="10" fill="#fef3c7" />
-            <path d="M228 22 L236 22 M232 18 L232 26" stroke="#d97706" strokeWidth="1.8" strokeLinecap="round" />
-            <text x="250" y="26" fill="#1e293b" fontSize="12" fontWeight="bold" fontFamily="sans-serif">
-              On-Site Repair
-            </text>
-
-            {/* Arrow 2 */}
-            <path d="M348 22 L363 22 M358 18 L363 22 L358 26" stroke="#94a3b8" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-
-            {/* Step 3 */}
-            <circle cx="388" cy="22" r="10" fill="#dcfce7" />
-            <path d="M384 22 L387 25 L393 18" stroke="#16a34a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-            <text x="406" y="26" fill="#15803d" fontSize="12" fontWeight="bold" fontFamily="sans-serif">
-              Back to Work
-            </text>
-          </g>
-        ) : null}
-      </svg>
+        loading="eager"
+      />
     </div>
   );
 }
@@ -413,7 +203,7 @@ function HomePage() {
                 </p>
 
                 {/* Mobile-only compact visual placement so context is immediate without extra scroll */}
-                <div className="block lg:hidden my-4 h-40 sm:h-48 w-full rounded-2xl overflow-hidden border border-border/80 bg-card shadow-xs">
+                <div className="block lg:hidden my-4 w-full aspect-[3/2] rounded-2xl overflow-hidden border border-border/80 bg-card shadow-xs">
                   <AgriculturalHeroVisual isCompact />
                 </div>
 
@@ -506,7 +296,7 @@ function HomePage() {
 
               {/* Right Column: Desktop Agricultural Repair Illustration */}
               <div className="hidden lg:block lg:col-span-5">
-                <div className="w-full aspect-[4/3] rounded-3xl overflow-hidden border border-border/80 bg-card shadow-md">
+                <div className="w-full aspect-[3/2] rounded-3xl overflow-hidden border border-border/80 bg-card shadow-md">
                   <AgriculturalHeroVisual />
                 </div>
               </div>

@@ -1,10 +1,13 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { AlertOctagon, AlertTriangle, ChevronDown, ChevronRight, ChevronUp, Users } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Card, DemoTag, StatusPill } from "@/components/tb";
 import { ago } from "@/lib/tb-store";
+import { useAuth } from "@/lib/auth";
 import { meta } from "@/lib/seo";
 import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useRepairListRealtime } from "@/hooks/use-repair-realtime";
 import {
   getAdminRepairRequests,
   type RepairRequestDetail,
@@ -67,27 +70,56 @@ function Admin() {
   const [showAllTechs, setShowAllTechs] = useState(false);
   const [, tick] = useState(0);
 
+  const hasLoadedRef = useRef(false);
+  const inFlightRef = useRef<Promise<void> | null>(null);
+
   const loadData = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const [repairsData, techsData] = await Promise.all([
-        getAdminRepairRequests(),
-        getVerifiedTechnicians().catch(() => []),
-      ]);
-      setRepairs(repairsData);
-      setTechnicians(techsData);
-    } catch (err: any) {
-      console.error("[TerraByte] Failed to load admin operations data:", err);
-      setError(err?.message || "Failed to load repair operations");
-    } finally {
-      setLoading(false);
+    if (inFlightRef.current) {
+      return inFlightRef.current;
     }
+
+    const promise = (async () => {
+      try {
+        if (!hasLoadedRef.current) {
+          setLoading(true);
+        }
+        setError(null);
+        const [repairsData, techsData] = await Promise.all([
+          getAdminRepairRequests(),
+          getVerifiedTechnicians().catch(() => []),
+        ]);
+        setRepairs(repairsData);
+        setTechnicians(techsData);
+        hasLoadedRef.current = true;
+      } catch (err: any) {
+        console.error("[TerraByte] Failed to load admin operations data:", err);
+        if (!hasLoadedRef.current) {
+          setError(err?.message || "Failed to load repair operations");
+        }
+      } finally {
+        setLoading(false);
+        inFlightRef.current = null;
+      }
+    })();
+
+    inFlightRef.current = promise;
+    return promise;
   }, []);
 
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  const { profile } = useAuth();
+  const adminId = profile?.id;
+  const isAdmin = profile?.role === "service_centre" || (profile?.role as string) === "admin";
+
+  // Live synchronization of administrative repair pipeline (strictly scoped to authenticated admin context)
+  useRepairListRealtime({
+    channelName: adminId ? `admin-pipeline-repairs-${adminId}` : "admin-pipeline-repairs",
+    onUpdate: loadData,
+    enabled: Boolean(adminId && isAdmin),
+  });
 
   useEffect(() => {
     const i = setInterval(() => tick((x) => x + 1), 30000);
@@ -175,7 +207,32 @@ function Admin() {
       </div>
 
       {loading ? (
-        <div className="py-12 text-center text-muted-foreground">Loading repair operations…</div>
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="rounded-2xl border border-border bg-card p-4 space-y-2">
+                <Skeleton className="h-3 w-28" />
+                <Skeleton className="h-9 w-16" />
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <Skeleton key={i} className="h-10 w-28 rounded-full" />
+            ))}
+          </div>
+          <div className="overflow-hidden rounded-2xl border border-border bg-card p-4 space-y-3">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} className="flex items-center justify-between gap-4 py-2 border-b border-border/40 last:border-0">
+                <Skeleton className="h-4 w-20" />
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-4 w-24 hidden sm:block" />
+                <Skeleton className="h-6 w-24 rounded-full" />
+                <Skeleton className="h-8 w-20 rounded-lg" />
+              </div>
+            ))}
+          </div>
+        </div>
       ) : error ? (
         <Card className="text-destructive">
           <p>Failed to load operations data: {error}</p>

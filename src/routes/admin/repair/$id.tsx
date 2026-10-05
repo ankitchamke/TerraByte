@@ -11,7 +11,7 @@ import {
   PackageSearch,
   XCircle,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AssessmentCard, QuoteTable } from "@/components/repair-parts";
 import {
@@ -37,7 +37,7 @@ import { useAuth } from "@/lib/auth";
 import type { Assessment } from "@/lib/assessment";
 import { meta } from "@/lib/seo";
 import { cn } from "@/lib/utils";
-import { supabase } from "@/integrations/supabase/client";
+import { useRepairTicketRealtime } from "@/hooks/use-repair-realtime";
 import {
   getServiceHistoryForRepair,
   type ServiceHistoryRow,
@@ -211,9 +211,13 @@ function AdminRepair() {
 
   const [reviewActionBusy, setReviewActionBusy] = useState<"approve" | "reject" | null>(null);
 
+  const hasLoadedRef = useRef(false);
+
   const loadData = useCallback(async () => {
     try {
-      setLoading(true);
+      if (!hasLoadedRef.current) {
+        setLoading(true);
+      }
       setError(null);
 
       // 1. Try loading from real Supabase database
@@ -242,6 +246,7 @@ function AdminRepair() {
         setQuoteVersions(versionsData);
         setTechMatches(eligibleData);
         setServiceRecord(shData);
+        hasLoadedRef.current = true;
         return;
       }
 
@@ -274,13 +279,18 @@ function AdminRepair() {
         } else {
           setServiceRecord(null);
         }
+        hasLoadedRef.current = true;
         return;
       }
 
-      setError("Repair request not found");
+      if (!hasLoadedRef.current) {
+        setError("Repair request not found");
+      }
     } catch (err: any) {
       console.error("[TerraByte] Failed to load repair details:", err);
-      setError(err?.message || "Failed to load repair details");
+      if (!hasLoadedRef.current) {
+        setError(err?.message || "Failed to load repair details");
+      }
     } finally {
       setLoading(false);
     }
@@ -290,27 +300,11 @@ function AdminRepair() {
     void loadData();
   }, [loadData]);
 
-  // Real-time updates subscription on repair ticket
-  useEffect(() => {
-    if (!dbRepair?.id) return;
-    const channel = supabase
-      .channel(`admin-repair-${dbRepair.id}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "repair_requests", filter: `id=eq.${dbRepair.id}` },
-        () => { void loadData(); }
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "repair_timeline", filter: `repair_request_id=eq.${dbRepair.id}` },
-        () => { void loadData(); }
-      )
-      .subscribe();
-
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [dbRepair?.id, loadData]);
+  // Scoped Supabase Realtime synchronization with debounced coalescing
+  useRepairTicketRealtime({
+    repairId: dbRepair?.id || id,
+    onUpdate: loadData,
+  });
 
   if (loading) {
     return (

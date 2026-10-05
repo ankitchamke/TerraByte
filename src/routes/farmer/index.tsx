@@ -1,8 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { AlertTriangle, ChevronRight, Clock, History, Phone, Plus, Tractor } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { btn, Card, DemoTag, Label, StatusPill } from "@/components/tb";
 import { useAuth } from "@/lib/auth";
+import { useRepairListRealtime } from "@/hooks/use-repair-realtime";
 import { getFarmerEquipment, type EquipmentRow } from "@/lib/services/equipment";
 import { getFarmerRepairRequests, type RepairRequestWithEquipment } from "@/lib/services/repair-requests";
 import { meta } from "@/lib/seo";
@@ -21,6 +22,18 @@ function FarmerHome() {
   const [equipment, setEquipment] = useState<EquipmentRow[]>([]);
   const [loadingEquipment, setLoadingEquipment] = useState(true);
 
+  const fetchRepairs = useCallback(() => {
+    if (!farmerId) return;
+    getFarmerRepairRequests(farmerId, { activeOnly: true })
+      .then((repData) => {
+        setRepairs(repData);
+        setLoadingRepairs(false);
+      })
+      .catch((err) => {
+        console.error("Failed to load farmer repairs:", err);
+      });
+  }, [farmerId]);
+
   useEffect(() => {
     let mounted = true;
 
@@ -38,23 +51,20 @@ function FarmerHome() {
         setLoadingEquipment(false);
       });
 
-    getFarmerRepairRequests(farmerId, { activeOnly: true })
-      .then((repData) => {
-        if (!mounted) return;
-        setRepairs(repData);
-        setLoadingRepairs(false);
-      })
-      .catch((err) => {
-        console.error("Failed to load farmer repairs:", err);
-        if (!mounted) return;
-        setRepairs([]);
-        setLoadingRepairs(false);
-      });
+    fetchRepairs();
 
     return () => {
       mounted = false;
     };
-  }, [farmerId]);
+  }, [farmerId, fetchRepairs]);
+
+  // Live synchronization of farmer's repair requests
+  useRepairListRealtime({
+    channelName: `farmer-repairs-${farmerId}`,
+    filter: farmerId ? `farmer_id=eq.${farmerId}` : undefined,
+    onUpdate: fetchRepairs,
+    enabled: Boolean(farmerId),
+  });
 
   const farmerName = profile?.full_name?.trim()
     ? profile.full_name.trim().split(" ")[0]

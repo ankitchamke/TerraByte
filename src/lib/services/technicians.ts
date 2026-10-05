@@ -356,7 +356,12 @@ export async function updateTechnicianAvailability(isAvailable: boolean): Promis
  * Fetches all registered technicians for Service Centre operations and workload overview.
  */
 export async function getVerifiedTechnicians(): Promise<VerifiedTechnicianWithProfile[]> {
-  await getAuthenticatedProfile();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.user) {
+    throw new Error("Authentication required: Please sign in.");
+  }
 
   const { data, error } = await supabase
     .from("technician_profiles")

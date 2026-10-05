@@ -41,7 +41,8 @@ TerraByte is architected around three dedicated operational portals sharing a un
 
 ```mermaid
 flowchart LR
-    subgraph Farmer Portal
+    subgraph FP["Farmer Portal"]
+        direction TB
         F1["2-Min Breakdown Intake<br/>(Voice + Photo + Symptoms)"]
         F2["Assistive Diagnostic Summary"]
         F3["Live 7-Step Repair Stepper"]
@@ -49,7 +50,8 @@ flowchart LR
         F5["Permanent Service History"]
     end
 
-    subgraph Service Centre Command
+    subgraph SC["Service Centre Command"]
+        direction TB
         SC1["District Operations Board"]
         SC2["Algorithmic Dispatch & Triage"]
         SC3["Technician Verification Gate"]
@@ -57,7 +59,8 @@ flowchart LR
         SC5["Regional Fleet Oversight"]
     end
 
-    subgraph Technician Workbench
+    subgraph TW["Technician Workbench"]
+        direction TB
         T1["Incoming Job Feed"]
         T2["On-Site Job Workbench"]
         T3["Itemized Quotation Builder"]
@@ -65,9 +68,12 @@ flowchart LR
         T5["Load Testing & Sign-Off"]
     end
 
-    Farmer Portal <--> Service Centre Command
-    Service Centre Command <--> Technician Workbench
-    Farmer Portal <--> Technician Workbench
+    F1 --> SC2
+    SC2 --> T1
+    T3 --> F4
+    F4 --> T2
+    T5 --> F5
+    T5 --> SC1
 ```
 
 ### 1. 🧑‍🌾 Farmer Portal (`/farmer`)

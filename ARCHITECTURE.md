@@ -10,7 +10,7 @@ TerraByte is architected as an integrated full-stack web application designed fo
 
 ```mermaid
 flowchart TD
-    subgraph Client Tier ["Client Tier (Browser / PWA)"]
+    subgraph Client_Tier ["Client Tier (Browser / PWA)"]
         F_UI["Farmer Interface (/farmer)"]
         T_UI["Technician Workbench (/technician)"]
         A_UI["Service Centre Command (/admin)"]
@@ -18,17 +18,17 @@ flowchart TD
         Store["Local Form State & TanStack Query Cache"]
     end
 
-    subgraph App Server Tier ["Application Server Tier (TanStack Start / Nitro)"]
+    subgraph App_Server_Tier ["Application Server Tier (TanStack Start / Nitro)"]
         SSR["Server-Side Rendering & Streaming"]
         Router["TanStack Router (File-Based Routes & RoleGuards)"]
         MCP["MCP Server Endpoint (/mcp via @lovable.dev/mcp-js)"]
     end
 
-    subgraph Backend Infrastructure Tier ["Supabase Managed Cloud Tier"]
+    subgraph Backend_Tier ["Supabase Managed Cloud Tier"]
         Auth["Supabase Auth (JWT, Email/Password, Recovery)"]
         Realtime["Supabase Realtime (WebSockets / postgres_changes)"]
         
-        subgraph PostgreSQL Engine ["PostgreSQL 17 Relational Engine"]
+        subgraph PostgreSQL_Engine ["PostgreSQL 17 Relational Engine"]
             RLS["Row Level Security (RLS Policies)"]
             Triggers["Integrity Triggers (Privilege Guard, Notifications)"]
             RPC["Secure Database RPCs (reset_demo_data, delete_user_account)"]
@@ -43,7 +43,7 @@ flowchart TD
     Hooks --> Store
     Store --> Tables
     F_UI & T_UI & A_UI --> Auth
-    App Server Tier --> MCP
+    App_Server_Tier --> MCP
     MCP --> Tables
     Tables --> RLS
     RLS --> Triggers
@@ -124,8 +124,8 @@ erDiagram
         uuid id PK
         uuid profile_id FK
         string workshop_name
-        string[] brands_serviced
-        string[] skills
+        string_array brands_serviced
+        string_array skills
         boolean is_available
         float rating
         int jobs_completed
@@ -151,9 +151,9 @@ erDiagram
         uuid technician_id FK
         string status
         boolean is_testing
-        string[] symptoms
+        string_array symptoms
         text description
-        text[] photo_urls
+        text_array photo_urls
         jsonb diagnostic_assessment
         text cancellation_reason
         text cancellation_note
@@ -332,7 +332,7 @@ sequenceDiagram
 
     Tech->>DB: Updates repair: WAITING_FOR_PARTS -> IN_PROGRESS
     DB-->>RT: postgres_changes broadcast (repair_requests)
-    RT-->>Farmer: Push event to channel ticket-realtime-<id>
+    RT-->>Farmer: Push event to channel ticket-realtime-(id)
     Note over Farmer: useRepairTicketRealtime catches event
     Farmer->>Farmer: 300ms Coalesce Timer (Bundles burst events)
     Farmer->>DB: Authoritative refetch: getFarmerRepairRequests()

@@ -384,9 +384,9 @@ sequenceDiagram
     participant DB as PostgreSQL Database
     actor Tech as Technician Workbench (/technician/job/:id)
 
-    Note over Farmer,Tech: Both users connected to channel: ticket-realtime-<id>
+    Note over Farmer,Tech: Both users connected to channel: ticket-realtime-(id)
     Tech->>DB: Technician updates status: WAITING_FOR_PARTS -> IN_PROGRESS
-    DB-->>RT: postgres_changes event on repair_requests (filter: id=eq.<id>)
+    DB-->>RT: postgres_changes event on repair_requests (filter: id=eq.ticketId)
     RT-->>Farmer: Realtime event delivered via WebSocket
     Note over Farmer: useRepairTicketRealtime catches event
     Farmer->>Farmer: 300ms Coalesce Timer (bundles timeline, quotes, request events)

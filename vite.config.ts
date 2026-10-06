@@ -9,6 +9,9 @@ import { mcpPlugin } from "@lovable.dev/mcp-js/stacks/tanstack/vite";
 
 export default defineConfig({
   vite: { plugins: [mcpPlugin()] },
+  nitro: {
+    preset: "vercel",
+  },
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this

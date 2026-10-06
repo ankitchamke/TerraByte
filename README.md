@@ -8,6 +8,14 @@
 
 ---
 
+## 🚀 Live Prototype
+
+**Live Demo:** https://terra-byte-woad.vercel.app
+
+> **Note:** TerraByte is currently an evolving prototype under active development. Core Farmer, Technician, and Service Centre workflows are functional.
+
+---
+
 ## 🌾 Official Problem Statement Alignment
 
 - **Competition**: Nagpur RISE 2026 — Stage 1
@@ -23,6 +31,7 @@ In rural agriculture—particularly across Vidarbha's cotton, soybean, and citru
 
 ## 📑 Quick Navigation
 
+- [Live Prototype](#-live-prototype)
 - [Key Capabilities & Portals](#-key-capabilities--portals)
 - [System Architecture & Tech Stack](#-system-architecture--tech-stack)
 - [The 7-Step Repair Lifecycle](#-the-7-step-repair-lifecycle)

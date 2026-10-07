@@ -113,6 +113,8 @@ flowchart LR
 
 ## 🏛 System Architecture & Tech Stack
 
+**Interactive architecture diagram:** [View the unlisted architecture visualization](https://terra-byte-woad.vercel.app/architecture).
+
 ```mermaid
 graph TD
     User["Web & Mobile Browser"] --> SSR["TanStack Start SSR / Nitro Worker"]

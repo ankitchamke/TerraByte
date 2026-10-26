@@ -21,6 +21,7 @@ import { Route as TechnicianRouteImport } from './routes/technician'
 import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminTechniciansRouteImport } from './routes/admin/technicians'
+import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as AuthConfirmRouteImport } from './routes/auth/confirm'
 import { Route as AuthResetPasswordRouteImport } from './routes/auth/reset-password'
 import { Route as FarmerIndexRouteImport } from './routes/farmer/index'
@@ -95,6 +96,11 @@ const AdminTechniciansRoute = AdminTechniciansRouteImport.update({
   id: '/technicians',
   path: '/technicians',
   getParentRoute: () => AdminRoute,
+} as any)
+const ApiHealthRoute = ApiHealthRouteImport.update({
+  id: '/api/health',
+  path: '/api/health',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AuthConfirmRoute = AuthConfirmRouteImport.update({
   id: '/auth/confirm',
@@ -174,6 +180,7 @@ export interface FileRoutesByFullPath {
   '/technician': typeof TechnicianRouteWithChildren
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin/technicians': typeof AdminTechniciansRoute
+  '/api/health': typeof ApiHealthRoute
   '/auth/confirm': typeof AuthConfirmRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/farmer/report-breakdown': typeof FarmerReportBreakdownRoute
@@ -198,6 +205,7 @@ export interface FileRoutesByTo {
   '/service-centre': typeof ServiceCentreRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin/technicians': typeof AdminTechniciansRoute
+  '/api/health': typeof ApiHealthRoute
   '/auth/confirm': typeof AuthConfirmRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/farmer/report-breakdown': typeof FarmerReportBreakdownRoute
@@ -226,6 +234,7 @@ export interface FileRoutesById {
   '/technician': typeof TechnicianRouteWithChildren
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin/technicians': typeof AdminTechniciansRoute
+  '/api/health': typeof ApiHealthRoute
   '/auth/confirm': typeof AuthConfirmRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/farmer/report-breakdown': typeof FarmerReportBreakdownRoute
@@ -255,6 +264,7 @@ export interface FileRouteTypes {
     | '/technician'
     | '/.well-known/oauth-protected-resource'
     | '/admin/technicians'
+    | '/api/health'
     | '/auth/confirm'
     | '/auth/reset-password'
     | '/farmer/report-breakdown'
@@ -279,6 +289,7 @@ export interface FileRouteTypes {
     | '/service-centre'
     | '/.well-known/oauth-protected-resource'
     | '/admin/technicians'
+    | '/api/health'
     | '/auth/confirm'
     | '/auth/reset-password'
     | '/farmer/report-breakdown'
@@ -306,6 +317,7 @@ export interface FileRouteTypes {
     | '/technician'
     | '/.well-known/oauth-protected-resource'
     | '/admin/technicians'
+    | '/api/health'
     | '/auth/confirm'
     | '/auth/reset-password'
     | '/farmer/report-breakdown'
@@ -333,6 +345,7 @@ export interface RootRouteChildren {
   ServiceCentreRoute: typeof ServiceCentreRoute
   TechnicianRoute: typeof TechnicianRouteWithChildren
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  ApiHealthRoute: typeof ApiHealthRoute
   AuthConfirmRoute: typeof AuthConfirmRoute
   AuthResetPasswordRoute: typeof AuthResetPasswordRoute
   RegisterFarmerRoute: typeof RegisterFarmerRoute
@@ -424,6 +437,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/technicians'
       preLoaderRoute: typeof AdminTechniciansRouteImport
       parentRoute: typeof AdminRoute
+    }
+    '/api/health': {
+      id: '/api/health'
+      path: '/api/health'
+      fullPath: '/api/health'
+      preLoaderRoute: typeof ApiHealthRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/auth/confirm': {
       id: '/auth/confirm'
@@ -580,6 +600,7 @@ const rootRouteChildren: RootRouteChildren = {
   TechnicianRoute: TechnicianRouteWithChildren,
   Char91DotwellKnownChar93OauthProtectedResourceRoute:
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
+  ApiHealthRoute: ApiHealthRoute,
   AuthConfirmRoute: AuthConfirmRoute,
   AuthResetPasswordRoute: AuthResetPasswordRoute,
   RegisterFarmerRoute: RegisterFarmerRoute,

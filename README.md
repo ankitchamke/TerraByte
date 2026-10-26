@@ -4,7 +4,7 @@
 [![Framework](https://img.shields.io/badge/TanStack%20Start-React%2019-blue?style=for-the-badge)](https://tanstack.com/start)
 [![Database](https://img.shields.io/badge/Supabase-PostgreSQL%2017-3ECF8E?style=for-the-badge&logo=supabase)](https://supabase.com)
 [![Protocol](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-orange?style=for-the-badge)](https://modelcontextprotocol.io)
-[![Status](https://img.shields.io/badge/Stage-Submission%20Ready%20(Frozen)-darkgreen?style=for-the-badge)]()
+[![Status](https://img.shields.io/badge/Stage-Active%20Development%20(Phase%208)-forestgreen?style=for-the-badge)]()
 
 ---
 
@@ -142,7 +142,7 @@ graph TD
 | **Authentication** | **Supabase Auth (Native)** | Secure email/password authentication, JWT token persistence, and role-based redirect guards. |
 | **Realtime Sync** | **Supabase Realtime (WebSocket)** | Live postgres changes broadcast with 300ms client debounced coalescing and 15s fallback polling. |
 | **Agent / Protocol** | **Model Context Protocol (MCP)** | `@lovable.dev/mcp-js` server exposing diagnostic assessment and technician matching at `/mcp`. |
-| **Hosting Target** | **Cloudflare Workers / Node.js** | Nitro production build preset (`cloudflare-module` compatible). |
+| **Hosting Target** | **Vercel Serverless / Node.js** | Nitro production build preset (`vercel`) via `vite build`. |
 
 ---
 
@@ -299,16 +299,22 @@ npm install
 ```
 
 ### 2. Configure Environment Variables
-Copy `.env.example` to `.env`:
+Copy `.env.example` to `.env.local` (or `.env`):
 ```bash
-cp .env.example .env
+cp .env.example .env.local
 ```
 Fill in your Supabase project credentials:
 ```env
 # Supabase API Configuration (Supabase Dashboard -> Project Settings -> API)
 VITE_SUPABASE_URL=https://your-project-id.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key-here
+
+# Server-Side Operational Configuration (Vercel Project Settings)
+# Required for scheduled /api/health probes invoked via Vercel Cron
+CRON_SECRET=your-secure-cron-secret
 ```
+
+> **Note on Environment Variables:** Client components access Supabase using `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`. In server runtime environments (such as Vercel serverless functions), `CRON_SECRET` must remain strictly server-side (never prefixed with `VITE_`) to protect health probe authorization.
 
 ### 3. Run Development Server
 ```bash

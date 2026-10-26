@@ -330,4 +330,30 @@ flowchart TD
 
 ### MILESTONE — NAGPUR RISE 2026 STAGE 1 SUBMISSION FREEZE
 - **Status**: **FROZEN / SUBMISSION READY**
-- **Action**: Feature development is officially frozen. The application is verified on branch `main` for submission under the problem statement: **"One-Stop Agricultural Equipment Repair"**.
+- **Action**: Feature development for Phases 1–7 is officially frozen and preserved.
+
+---
+
+### PHASE 8 — Stabilization and Deployment Operations
+- **Status**: **IN PROGRESS** (Code complete; local smoke tests passing; live Vercel environment verification pending)
+- **Objective**: Harden deployment keep-alive and health monitoring, eliminate hardcoded credentials, enforce fail-closed Bearer auth, restore repository baseline files, and establish robust operational documentation.
+- **Deliverables**:
+  1. **Repository Baseline Preservation**: Restored exact HEAD versions of `.env.example` and `AGENTS.md` on branch `codex/phase-8-stabilization`.
+  2. **Secured Health Endpoint (`/api/health`) (Phase 8A)**:
+     - Requires `Authorization: Bearer <CRON_SECRET>` verified via generated helper `authenticateCronRequest` (accepts `CRON_SECRET` or `TERRABYTE_CRON_SECRET`, plus rotation aliases).
+     - Returns HTTP 500 plain text (`"Server configuration error"`) if all current-secret aliases are unset.
+     - Strictly rejects query-string tokens (`?secret=`, `?token=`) and invalid Bearer headers with HTTP 401 plain text (`"Unauthorized"`) when a current secret is configured.
+     - Emits minimal sanitized response (`{ status: "healthy" | "unhealthy", timestamp, checks: { database }, message?: string }`) without leaking raw PostgreSQL errors in responses or server logs.
+  3. **Low-Privilege Supabase Probe**:
+     - Stripped hardcoded credentials and URL fallbacks.
+     - Validates candidate keys to ensure they are strictly public (`sb_publishable_...` or legacy JWT with decoded `role: "anon"`). Strictly rejects `sb_secret_`, non-anon roles, and service-role keys.
+     - Queries `profiles.id` with `limit(1)`; live `anon` SELECT grant unconfirmed in migrations and remains pending owner verification.
+  4. **Liveness / Readiness Decoupling**:
+     - `HEAD /api/health` returns HTTP 200 without database probing or auth requirement, acting strictly as a server process liveness indicator.
+  5. **Unified Monitoring Strategy**:
+     - Retained Vercel Cron (`vercel.json`) at `0 5 * * 1,3,5` invoking `/api/health`.
+     - Omitted untracked GitHub workflow, resolving credential leakage risks and redundant triggers.
+  6. **Static Verification & Build**:
+     - TypeScript compilation: 0 errors.
+     - Targeted ESLint: 0 errors.
+     - Production build: Clean Nitro Vercel generation under `.output/` and `.vercel/`.

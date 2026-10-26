@@ -14,7 +14,8 @@
   - **Phase 5 — Product Polish, Demo Reset, Communication & Completion**: **COMPLETE** (Phases 5.1 through 5.6)
   - **Phase 6 — Production Readiness & Account Hardening**: **COMPLETE** (Commit `27a1e69`)
   - **Phase 7 — Realtime Synchronization Foundation & Concurrency Hardening**: **COMPLETE** (Commit `91b7c83` + working tree)
-- **Feature Development Freeze**: Feature engineering is **paused**. The repository is frozen in a submission-ready, highly verified state for the Nagpur RISE 2026 Stage 1 evaluation.
+  - **Phase 8 — Stabilization and Deployment Operations**: **IN PROGRESS** (Implementation complete & static verification passing; live Vercel environment verification pending)
+- **Feature Development Status**: Original Phases 1–7 preserved. Phase 8 stabilization underway on branch `codex/phase-8-stabilization`. Phase 9 planned upon Phase 8 finalization.
 
 ---
 
@@ -60,6 +61,28 @@
   - `useRepairListRealtime`: Queue-scoped hook synchronizing dashboard boards for farmers, technicians, and administrators.
 - **Optimistic Concurrency Control (OCC)**: Hardened service layer mutations in `repair-requests.ts` and `quotes.ts` with precondition row checks (e.g., verifying `technician_id IS NULL` before job acceptance) to prevent multi-device race conditions.
 - **Technician Decline RLS**: Forward migration `20261006110000_phase7_3_technician_decline_rls.sql` permitting assigned technicians to decline an assigned request back to `REQUESTED` while appending their ID to `declined_by`.
+
+### Phase 8 — Stabilization and Deployment Operations (In Progress — Phase 8A Code Complete)
+- **Repository Baseline Protection**: Restored exact HEAD versions of `.env.example` and `AGENTS.md` on branch `codex/phase-8-stabilization`.
+- **Health Endpoint Security Hardening (Phase 8A)**:
+  - Reused generated helper `authenticateCronRequest` (`src/integrations/supabase/cron-auth.ts`) to enforce timing-safe Bearer secret authentication before any client creation or database query; accepts `CRON_SECRET` or `TERRABYTE_CRON_SECRET` (with previous-secret rotation aliases).
+  - Returns HTTP 500 plain text (`"Server configuration error"`) if all current-secret aliases are unset; rejects missing, malformed, or query-string credentials (`?secret=` / `?token=`) with HTTP 401 plain text (`"Unauthorized"`) without probing the database (when a current secret is configured).
+  - Returns a minimal sanitized payload (`{ status: "healthy" | "unhealthy", timestamp, checks: { database: "operational" | "error" }, message?: string }`) without exposing raw database error strings in responses or server logs.
+- **Low-Privilege Supabase Health Probe**:
+  - Probes database strictly via verified public keys (`sb_publishable_...` or legacy JWT with decoded `role: "anon"`); explicitly rejects `sb_secret_`, non-anon roles (such as `service_role`), and unverified key formats even if configured under publishable-named environment variables. Never reads or logs service-role credentials.
+  - Implemented `createSupabaseFetch` wrapper consistent with `auth-middleware.ts` and `client.ts` for clean publishable key header management.
+  - Probes `profiles.id` with `limit(1)`; live `anon` table SELECT permission remains unconfirmed in migrations and is pending owner verification.
+- **Liveness vs Readiness Separation**:
+  - `HEAD /api/health` returns HTTP 200 lightweight liveness indicator without querying Supabase or requiring bearer auth. Documented as liveness-only.
+- **Unified Scheduled Monitoring**:
+  - Retained Vercel Cron (`vercel.json`) at `0 5 * * 1,3,5` as the sole scheduled health check.
+  - Omitted untracked GitHub Actions workflow, eliminating credential exposure risk and redundant triggers.
+- **Verification Status**:
+  - `npx tsc --noEmit`: PASS (0 errors).
+  - Targeted ESLint: PASS (0 errors).
+  - `npm run build`: PASS (clean Nitro Vercel output).
+  - Out-of-tree scratch smoke check: Verified 6 security scenarios via temporary local node script; repository manual QA pending.
+  - Live deployment verification: PENDING project owner verification of Vercel production environment variables.
 
 ---
 

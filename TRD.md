@@ -39,7 +39,7 @@ TerraByte is a specialized digital agricultural equipment repair ecosystem desig
 | **Object Storage** | Supabase Storage | **Implemented** | Storage URLs for equipment media, breakdown evidence, and completion photos |
 | **Assistive Diagnostic Engine**| Deterministic Rules & Keywords | **Implemented** | Symptom assessment, urgency classification, and parts category recommendations |
 | **Model Context Protocol** | `@lovable.dev/mcp-js` | **Implemented** | MCP server at `/mcp` exposing diagnostic and matching tools |
-| **Hosting & Deployment** | Nitro / Cloudflare Workers | **Implemented** | SSR build preset (`cloudflare-module` compatible) via `vite build` |
+| **Hosting & Deployment** | Nitro / Vercel Serverless | **Implemented** | SSR build preset (`vercel`) via `vite build` |
 
 ---
 

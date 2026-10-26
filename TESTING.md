@@ -28,7 +28,7 @@ All demo accounts use password: `terrabyte2026`. On `/login`, you can either cli
 2. On `/farmer`, inspect ticket `TB-8841`:
    - Note the status: **"Waiting for Parts"**.
    - Expand ticket details: note the missing component (*Bosch injector nozzle*), supplier delay reason, and revised completion time.
-3. Open ticket `TB-4489` (or `TB-8902`):
+3. Open ticket `TB-4489`:
    - Notice the **Itemized Quote Table** detailing spare parts, unit prices, supplier origin, labour charges, and taxes.
    - For `TB-4489`, view the **<QuoteComparison />** component displaying side-by-side Quote v1 vs v2 diffs (`+ Added`, `- Removed`, `Modified`).
 4. Scroll to **Ticket Discussion** (`<RepairChat />`):
@@ -232,7 +232,30 @@ All demo accounts use password: `terrabyte2026`. On `/login`, you can either cli
 | **E2E-07** | Permanent Service History | Phase 4, 5.6 | Completed repair auto-commits immutable maintenance record into `service_history` (`INV-TB-xxxx`). | **PASS** |
 | **E2E-08** | Operations Triage & SLA | Phase 5 | Service Centre District Operations Board with Active, Completed, and Cancelled triage. | **PASS** |
 | **E2E-09** | Realtime Sync | Phase 7 | Status updates and chat messages propagate live via Supabase Realtime with 300ms coalescing. | **PASS** |
-| **E2E-10** | Multimodal Gemini AI | Phase 8+ | *Future Roadmap*: Multimodal image defect classification via Gemini 2.5 API. | **ROADMAP** |
+| **P8-01** | Health Auth Gate | Phase 8 | With current secret configured, `GET /api/health` with missing/invalid token returns HTTP 401 plain text (`"Unauthorized"`) without database probe. | **PENDING QA** |
+| **P8-02** | Health Fail-Closed Config | Phase 8 | In local/test environment with all current-secret aliases unset (`CRON_SECRET`, `TERRABYTE_CRON_SECRET`), `GET` returns HTTP 500 plain text (`"Server configuration error"`). | **PENDING QA** |
+| **P8-03** | Query Secret Rejection | Phase 8 | With current secret configured, `GET /api/health?secret=dummy-test-value` or `?token=dummy-test-value` strictly rejected with HTTP 401 plain text (`"Unauthorized"`) without database probe. *(Security Note: Real secrets must never be placed in URLs or query parameters because URLs are captured in access logs, proxy caches, and browser history).* | **PENDING QA** |
+| **P8-04** | Response Sanitization | Phase 8 | Authenticated response emits minimal sanitized payload (`{ status, timestamp, checks: { database }, message?: string }`); zero raw errors in response or logs. | **PENDING QA** |
+| **P8-05** | Low-Privilege Probe | Phase 8 | Probe strictly requires validated public key (`sb_publishable_` or legacy JWT with decoded `role: "anon"`); rejects `sb_secret_` and non-anon roles; probes `profiles.id` with `limit(1)`. Live anon SELECT grant unconfirmed. | **PENDING LIVE QA** |
+| **P8-06** | Decoupled Liveness HEAD | Phase 8 | `HEAD /api/health` returns HTTP 200 without database query or auth requirement (liveness only). | **PENDING QA** |
+| **E2E-10** | Multimodal Gemini AI | Future | *Deferred Roadmap*: Multimodal image defect classification via Gemini 2.5 API. | **ROADMAP** |
+
+---
+
+### 7.1 Phase 8A Manual Verification Checklist (Pending Owner Execution)
+
+The following read-only manual verifications can be executed using local or preview deployments for manually calling and testing `/api/health`. Real secrets must never be committed, shared, or passed in query strings:
+
+1. **Health GET Auth Gate**: With a current secret configured (`CRON_SECRET` or `TERRABYTE_CRON_SECRET`), call `GET /api/health` without an `Authorization` header, and with `Authorization: Bearer wrong-secret`. Expect HTTP 401 plain text (`"Unauthorized"`). Confirm no database query is initiated.
+2. **Query Parameter Token Rejection**: With a current secret configured, call `GET /api/health?secret=dummy-test-value` or `GET /api/health?token=dummy-test-value` without an `Authorization` header. Expect HTTP 401 plain text (`"Unauthorized"`). *(Security Warning: Real secrets must never be placed in URLs or query strings as URLs are recorded in server access logs and browser histories).*
+3. **Missing Server Secret (Fail-Closed)**: In a local/test environment, unset all current-secret aliases (`CRON_SECRET` and `TERRABYTE_CRON_SECRET`). Call `GET /api/health` with any Bearer token. Expect HTTP 500 plain text (`"Server configuration error"`). Confirm no database probe occurs.
+4. **Valid Bearer Token & Low-Privilege Database Probe**: With a current secret configured and valid public key in environment, call `GET /api/health` with `Authorization: Bearer <CONFIGURED_SECRET>`. Expect HTTP 200 sanitized JSON (`{ status: "healthy", timestamp, checks: { database: "operational" } }`) if low-privilege `profiles.id` read is permitted; otherwise a sanitized HTTP 503 (`{ status: "unhealthy", timestamp, checks: { database: "error" }, message?: string }`). If a permission error occurs (SQLSTATE `42501` / PostgREST 403 on `profiles`), stop and report it; do not alter grants or RLS policies.
+5. **Lightweight HEAD Liveness**: Call `HEAD /api/health` without an `Authorization` header. Expect HTTP 200, empty body, header `X-Liveness-Only: true`, and zero database queries.
+6. **Farmer Portal Regression & Cross-User Isolation**: Log in as Farmer 1 (`farmer.nagpur@terrabyte.demo`), inspect owned ticket `TB-8841` (status "Waiting for Parts"). Then attempt direct navigation to Farmer 2's ticket `/farmer/repair/TB-8902` in the browser bar; expect access to be blocked / not found.
+7. **Technician Workbench Regression**: Log in as Technician (`tech.nagpur@terrabyte.demo`), inspect assigned job `TB-8841` with parts-on-hold banner. Take no repair action.
+8. **Service Centre Admin Regression**: Log in as Admin (`admin.nagpur@terrabyte.demo`), inspect `/admin` District Operations Board and filter tabs ("Completed" / "Cancelled"). Make no changes.
+9. **Vercel Cron Verification (Production Only)**: Local and preview deployments remain available options for manually calling and testing `/api/health`, but scheduled Vercel Cron jobs run only for production deployments, not previews. Navigate to the project's Vercel Settings $\rightarrow$ Cron Jobs page and inspect runtime logs for the production deployment. Confirm Vercel automatically supplies `Authorization: Bearer <CRON_SECRET>` when configured. (Note: exact invocation timing depends on the Vercel plan queues and scheduling windows; do not expose secret values in reports). If a production deployment is not available, leave scheduled-cron verification pending. Do not deploy, promote, trigger, or change Vercel settings.
+10. **Realtime Regression**: No realtime test is required for this health-only change.
 
 ---
 
@@ -245,3 +268,4 @@ No phase promotion or production deployment may occur if:
 4. Any client request can read or modify another user's private profile.
 5. Farmer dashboards render mock data or cross-contaminate data across different farmers.
 6. TypeScript errors (`tsc --noEmit`) or Vite build failures exist.
+7. Secrets or credentials are committed in repository files, or health/telemetry probes bypass authentication or RLS.

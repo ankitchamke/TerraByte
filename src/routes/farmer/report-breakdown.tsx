@@ -3,8 +3,10 @@ import {
   ArrowLeft,
   ArrowRight,
   Camera,
+  CheckCircle2,
   CloudOff,
   Loader2,
+  MapPin,
   Mic,
   Plus,
   Sparkles,
@@ -13,9 +15,16 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { btn, Card, input, useOnline } from "@/components/tb";
+import { btn, Card, input, Label, useOnline } from "@/components/tb";
 import { assess, SYMPTOMS } from "@/lib/assessment";
 import { useAuth } from "@/lib/auth";
+import {
+  formatCoarseLocation,
+  formatGpsAccuracy,
+  isValidGpsCoordinate,
+  NAGPUR_TAHSILS,
+} from "@/lib/location";
+import { ago } from "@/lib/tb-store";
 import { fileToSmallDataUrl } from "@/lib/image";
 import { getFarmerEquipment, type EquipmentRow } from "@/lib/services/equipment";
 import { createRepairRequest } from "@/lib/services/repair-requests";
@@ -38,6 +47,8 @@ type Draft = {
   symptoms: string[];
   description: string;
   photos: string[];
+  village: string;
+  tahsil: string;
 };
 
 function Report() {
@@ -56,11 +67,90 @@ function Report() {
     symptoms: [],
     description: "",
     photos: [],
+    village: "",
+    tahsil: "",
   });
   const [restored, setRestored] = useState(false);
   const [listening, setListening] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const recRef = useRef<{ stop: () => void } | null>(null);
+
+  // In-memory one-time GPS capture (Never persisted to localStorage)
+  interface CapturedGps {
+    latitude: number;
+    longitude: number;
+    accuracy: number | null;
+    capturedAt: string;
+  }
+  const [gps, setGps] = useState<CapturedGps | null>(null);
+  const [gpsState, setGpsState] = useState<
+    "idle" | "requesting" | "captured" | "error" | "unsupported"
+  >("idle");
+  const [gpsError, setGpsError] = useState<string | null>(null);
+
+  const requestLocation = () => {
+    if (typeof window === "undefined" || !navigator?.geolocation) {
+      setGpsState("unsupported");
+      setGpsError(
+        "Browser geolocation is not supported on this device. You can continue with village and tahsil manually.",
+      );
+      return;
+    }
+
+    setGpsState("requesting");
+    setGpsError(null);
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude, accuracy } = pos.coords;
+        if (!isValidGpsCoordinate(latitude, longitude)) {
+          setGpsState("error");
+          setGpsError(
+            "Received invalid coordinates from device. Please enter village and tahsil manually.",
+          );
+          return;
+        }
+        setGps({
+          latitude,
+          longitude,
+          accuracy: typeof accuracy === "number" && Number.isFinite(accuracy) ? accuracy : null,
+          capturedAt: new Date(pos.timestamp || Date.now()).toISOString(),
+        });
+        setGpsState("captured");
+        setGpsError(null);
+        toast.success("Current location captured.");
+      },
+      (err) => {
+        setGpsState("error");
+        if (err.code === 1) {
+          setGpsError(
+            "Location permission was denied. You can continue with village and tahsil, or allow location access in your browser settings.",
+          );
+        } else if (err.code === 2) {
+          setGpsError(
+            "GPS position unavailable. Please ensure device location is enabled, or continue with village and tahsil.",
+          );
+        } else if (err.code === 3) {
+          setGpsError(
+            "Location request timed out. You can retry or continue with village and tahsil.",
+          );
+        } else {
+          setGpsError(err.message || "Failed to capture location.");
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 30000,
+      },
+    );
+  };
+
+  const clearGps = () => {
+    setGps(null);
+    setGpsState("idle");
+    setGpsError(null);
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -92,9 +182,24 @@ function Report() {
     const raw = localStorage.getItem(DRAFT);
     if (raw && !pre) {
       try {
-        const x = JSON.parse(raw) as Draft;
-        if (x.equipmentId || x.symptoms.length) {
-          setD(x);
+        const x = JSON.parse(raw) as Partial<Draft>;
+        if (
+          x.equipmentId ||
+          (Array.isArray(x.symptoms) && x.symptoms.length > 0) ||
+          x.village ||
+          x.tahsil ||
+          x.description
+        ) {
+          setD((prev) => ({
+            ...prev,
+            step: typeof x.step === "number" ? x.step : prev.step,
+            equipmentId: typeof x.equipmentId === "string" ? x.equipmentId : prev.equipmentId,
+            symptoms: Array.isArray(x.symptoms) ? x.symptoms : prev.symptoms,
+            description: typeof x.description === "string" ? x.description : prev.description,
+            photos: Array.isArray(x.photos) ? x.photos : prev.photos,
+            village: typeof x.village === "string" ? x.village : prev.village,
+            tahsil: typeof x.tahsil === "string" ? x.tahsil : prev.tahsil,
+          }));
           setRestored(true);
         }
       } catch {
@@ -102,6 +207,27 @@ function Report() {
       }
     }
   }, [pre]);
+
+  // Prefill village from farmer profile only when available (do not infer tahsil)
+  useEffect(() => {
+    if (profile?.village && !d.village) {
+      const raw = localStorage.getItem(DRAFT);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (typeof parsed.village === "string" && parsed.village.length > 0) {
+            return;
+          }
+        } catch (_err) {
+          /* ignore parse error */
+        }
+      }
+      setD((prev) => ({
+        ...prev,
+        village: prev.village || profile.village?.trim() || "",
+      }));
+    }
+  }, [profile?.village, d.village]);
 
   useEffect(() => {
     try {
@@ -193,8 +319,21 @@ function Report() {
         symptoms: d.symptoms,
         description: d.description.trim().slice(0, 1000),
         photos: d.photos.filter(Boolean),
-        location: profile?.village?.trim() || "On-site / Field",
+        location:
+          formatCoarseLocation(d.village, d.tahsil) ||
+          profile?.village?.trim() ||
+          "On-site / Field",
         assessment: assessment as unknown as Json,
+        ...(gps
+          ? {
+              gpsLocation: {
+                latitude: gps.latitude,
+                longitude: gps.longitude,
+                accuracy: gps.accuracy,
+                captured_at: gps.capturedAt,
+              },
+            }
+          : {}),
       });
 
       localStorage.removeItem(DRAFT);
@@ -231,7 +370,9 @@ function Report() {
     <div className="space-y-5">
       <div className="flex items-center gap-3">
         <button
-          aria-label={d.step > 1 ? "Previous step" : pre ? "Back to machine record" : "Back to home"}
+          aria-label={
+            d.step > 1 ? "Previous step" : pre ? "Back to machine record" : "Back to home"
+          }
           disabled={submitting}
           onClick={() => {
             if (d.step > 1) {
@@ -252,7 +393,7 @@ function Report() {
               key={k}
               className={cn(
                 "h-2 flex-1 rounded-full",
-                k <= d.step ? "bg-destructive" : "bg-border"
+                k <= d.step ? "bg-destructive" : "bg-border",
               )}
             />
           ))}
@@ -266,7 +407,16 @@ function Report() {
           <button
             className="ml-auto font-semibold underline"
             onClick={() => {
-              setD({ step: 1, equipmentId: "", symptoms: [], description: "", photos: [] });
+              setD({
+                step: 1,
+                equipmentId: "",
+                symptoms: [],
+                description: "",
+                photos: [],
+                village: profile?.village?.trim() || "",
+                tahsil: "",
+              });
+              clearGps();
               setRestored(false);
             }}
           >
@@ -311,7 +461,7 @@ function Report() {
                     "flex w-full items-center gap-4 rounded-2xl border-2 p-4 text-left disabled:opacity-50",
                     d.equipmentId === e.id
                       ? "border-destructive bg-destructive/5"
-                      : "border-border bg-card"
+                      : "border-border bg-card",
                   )}
                 >
                   <span className="grid h-14 w-14 shrink-0 place-items-center rounded-xl bg-muted">
@@ -344,7 +494,7 @@ function Report() {
                 "min-h-16 rounded-2xl border-2 p-3 text-left font-semibold",
                 d.symptoms.includes(sym)
                   ? "border-destructive bg-destructive text-destructive-foreground"
-                  : "border-border bg-card"
+                  : "border-border bg-card",
               )}
             >
               {sym}
@@ -354,22 +504,139 @@ function Report() {
       )}
 
       {d.step === 3 && (
-        <div className="space-y-3">
-          <textarea
-            rows={6}
-            maxLength={1000}
-            className={input}
-            placeholder='e.g. "Tractor lost pulling power in field, heavy black smoke from exhaust and engine sputtering under load"'
-            value={d.description}
-            onChange={(e) => up({ description: e.target.value })}
-          />
-          <button onClick={voice} className={cn(listening ? btn.urgent : btn.ghost, "w-full")}>
-            <Mic className="h-5 w-5" />
-            {listening ? "Listening… tap to stop" : "Speak instead of typing"}
-          </button>
-          <p className="text-sm text-muted-foreground">
-            Optional, but it helps the technician come prepared.
-          </p>
+        <div className="space-y-4">
+          <div className="space-y-3 rounded-2xl border-2 border-border bg-card p-4">
+            <div className="flex items-center gap-2">
+              <MapPin className="h-5 w-5 text-primary" />
+              <h2 className="text-base font-bold text-foreground">Breakdown Location</h2>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Provide your village and tahsil so the nearest technician can find you.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <Label>Village / Locality</Label>
+                <input
+                  type="text"
+                  className={input}
+                  placeholder="e.g. Dorli, Mohpa"
+                  value={d.village}
+                  onChange={(e) => up({ village: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>Tahsil (Nagpur District)</Label>
+                <select
+                  className={cn(input, "cursor-pointer bg-background")}
+                  value={d.tahsil}
+                  onChange={(e) => up({ tahsil: e.target.value })}
+                >
+                  <option value="">Select Tahsil...</option>
+                  {NAGPUR_TAHSILS.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* One-time Browser Geolocation Capture */}
+            <div className="pt-2 border-t border-border/60">
+              {gpsState === "idle" && (
+                <button
+                  type="button"
+                  onClick={requestLocation}
+                  className={cn(btn.ghost, "w-full flex items-center justify-center gap-2 text-sm")}
+                >
+                  <MapPin className="h-4 w-4 text-primary" /> Use my current location (GPS)
+                </button>
+              )}
+
+              {gpsState === "requesting" && (
+                <button
+                  type="button"
+                  disabled
+                  className={cn(
+                    btn.ghost,
+                    "w-full flex items-center justify-center gap-2 text-sm opacity-70",
+                  )}
+                >
+                  <Loader2 className="h-4 w-4 animate-spin text-primary" /> Acquiring GPS location…
+                </button>
+              )}
+
+              {gpsState === "captured" && gps && (
+                <div className="rounded-xl bg-success/10 border border-success/30 p-3 text-sm flex items-start justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <p className="font-semibold text-success flex items-center gap-1.5">
+                      <CheckCircle2 className="h-4 w-4 shrink-0" /> Exact GPS Attached
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatGpsAccuracy(gps.accuracy)
+                        ? `${formatGpsAccuracy(gps.accuracy)} accuracy · `
+                        : ""}
+                      captured {ago(new Date(gps.capturedAt).getTime())} ago
+                    </p>
+                    <p className="text-[11px] text-muted-foreground/80 italic">
+                      Private: Accessible strictly by you, your assigned technician, and Service
+                      Centre.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={clearGps}
+                    className="text-xs text-muted-foreground hover:text-destructive underline shrink-0"
+                  >
+                    Remove
+                  </button>
+                </div>
+              )}
+
+              {(gpsState === "error" || gpsState === "unsupported") && (
+                <div className="rounded-xl bg-destructive/10 border border-destructive/20 p-3 text-xs text-destructive space-y-1.5">
+                  <p className="font-medium leading-relaxed">{gpsError}</p>
+                  <div className="flex gap-2">
+                    {gpsState === "error" && (
+                      <button
+                        type="button"
+                        onClick={requestLocation}
+                        className="font-semibold underline text-foreground"
+                      >
+                        Retry GPS
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={clearGps}
+                      className="text-muted-foreground hover:text-foreground underline ml-auto"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Problem Description</Label>
+            <textarea
+              rows={5}
+              maxLength={1000}
+              className={input}
+              placeholder='e.g. "Tractor lost pulling power in field, heavy black smoke from exhaust and engine sputtering under load"'
+              value={d.description}
+              onChange={(e) => up({ description: e.target.value })}
+            />
+            <button onClick={voice} className={cn(listening ? btn.urgent : btn.ghost, "w-full")}>
+              <Mic className="h-5 w-5" />
+              {listening ? "Listening… tap to stop" : "Speak instead of typing"}
+            </button>
+            <p className="text-sm text-muted-foreground">
+              Optional, but it helps the technician come prepared.
+            </p>
+          </div>
         </div>
       )}
 
@@ -378,7 +645,9 @@ function Report() {
           <label className="flex h-40 cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-border bg-card text-center">
             <Camera className="h-10 w-10 text-muted-foreground" />
             <span className="font-semibold">Take photo / video</span>
-            <span className="text-xs text-muted-foreground">Photos are compressed for slow networks</span>
+            <span className="text-xs text-muted-foreground">
+              Photos are compressed for slow networks
+            </span>
             <input
               type="file"
               accept="image/*,video/*"
@@ -419,7 +688,20 @@ function Report() {
           <p>
             <b>Symptoms:</b> {d.symptoms.join(", ")}
           </p>
-          {d.description && <p><b>Description:</b> {d.description}</p>}
+          <p>
+            <b>Location:</b> {formatCoarseLocation(d.village, d.tahsil) || "On-site / Field"}
+            {gps ? (
+              <span className="ml-2 inline-flex items-center gap-1 rounded-md bg-success/15 px-2 py-0.5 text-xs font-semibold text-success">
+                <MapPin className="h-3 w-3" /> Exact GPS attached ({formatGpsAccuracy(gps.accuracy)}
+                )
+              </span>
+            ) : null}
+          </p>
+          {d.description && (
+            <p>
+              <b>Description:</b> {d.description}
+            </p>
+          )}
           <p>
             <b>Photos:</b> {d.photos.length}
           </p>
@@ -440,7 +722,10 @@ function Report() {
             type="button"
             disabled={submitting}
             onClick={submit}
-            className={cn(btn.urgent, "w-full flex items-center justify-center gap-2 disabled:opacity-50")}
+            className={cn(
+              btn.urgent,
+              "w-full flex items-center justify-center gap-2 disabled:opacity-50",
+            )}
           >
             {submitting ? (
               <>

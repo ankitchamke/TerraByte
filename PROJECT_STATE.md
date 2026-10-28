@@ -14,7 +14,8 @@
   - **Phase 5 — Product Polish, Demo Reset, Communication & Completion**: **COMPLETE** (Phases 5.1 through 5.6)
   - **Phase 6 — Production Readiness & Account Hardening**: **COMPLETE** (Commit `27a1e69`)
   - **Phase 7 — Realtime Synchronization Foundation & Concurrency Hardening**: **COMPLETE** (Commit `91b7c83` + working tree)
-- **Feature Development Freeze**: Feature engineering is **paused**. The repository is frozen in a submission-ready, highly verified state for the Nagpur RISE 2026 Stage 1 evaluation.
+  - **Phase 8 — Stabilization and Deployment Operations**: **IN PROGRESS** (Phase 8A committed on branch `phase-8`; automated smoke tests passing; live Vercel environment verification pending)
+- **Feature Development Status**: Original Phases 1–7 preserved. Phase 8 stabilization underway on branch `phase-8`. Phase 9 planned upon Phase 8 finalization.
 
 ---
 
@@ -61,6 +62,44 @@
 - **Optimistic Concurrency Control (OCC)**: Hardened service layer mutations in `repair-requests.ts` and `quotes.ts` with precondition row checks (e.g., verifying `technician_id IS NULL` before job acceptance) to prevent multi-device race conditions.
 - **Technician Decline RLS**: Forward migration `20261006110000_phase7_3_technician_decline_rls.sql` permitting assigned technicians to decline an assigned request back to `REQUESTED` while appending their ID to `declined_by`.
 
+### Phase 8 — Stabilization and Deployment Operations (In Progress — Phase 8A Committed on branch `phase-8`)
+- **Repository Baseline Protection**: Restored exact HEAD versions of `.env.example` and `AGENTS.md` on branch `phase-8`.
+- **Health Endpoint Security Hardening (Phase 8A)**:
+  - Reused generated helper `authenticateCronRequest` (`src/integrations/supabase/cron-auth.ts`) to enforce timing-safe Bearer secret authentication before any client creation or database query; accepts `CRON_SECRET` or `TERRABYTE_CRON_SECRET` (with previous-secret rotation aliases).
+  - Returns HTTP 500 plain text (`"Server configuration error"`) if all current-secret aliases are unset; rejects missing, malformed, or query-string credentials (`?secret=` / `?token=`) with HTTP 401 plain text (`"Unauthorized"`) without probing the database (when a current secret is configured).
+  - Returns a minimal sanitized payload (`{ status: "healthy" | "unhealthy", timestamp, checks: { database: "operational" | "error" }, message?: string }`) without exposing raw database error strings in responses or server logs.
+- **Low-Privilege Supabase Health Probe**:
+  - Probes database strictly via verified public keys (`sb_publishable_...` or legacy JWT with decoded `role: "anon"`); explicitly rejects `sb_secret_`, non-anon roles (such as `service_role`), and unverified key formats even if configured under publishable-named environment variables. Never reads or logs service-role credentials.
+  - Implemented `createSupabaseFetch` wrapper consistent with `auth-middleware.ts` and `client.ts` for clean publishable key header management.
+  - Probes `profiles.id` with `limit(1)`; live `anon` table SELECT permission remains unconfirmed in migrations and is pending owner verification.
+- **Liveness vs Readiness Separation**:
+  - `HEAD /api/health` returns HTTP 200 lightweight liveness indicator without querying Supabase or requiring bearer auth. Documented as liveness-only.
+- **Unified Scheduled Monitoring**:
+  - Retained Vercel Cron (`vercel.json`) at `0 5 * * 1,3,5` as the sole scheduled health check.
+  - Omitted untracked GitHub Actions workflow, eliminating credential exposure risk and redundant triggers.
+- **Verification Status**:
+  - `npx tsc --noEmit`: PASS (0 errors).
+  - Targeted ESLint: PASS (0 errors).
+  - `npm run build`: PASS (clean Nitro Vercel output).
+  - Out-of-tree scratch smoke check: Verified 6 security scenarios via temporary local node script; repository manual QA pending.
+  - Live deployment verification: PENDING project owner verification of Vercel production environment variables.
+
+### Phase 8B — Doorstep & Mobile Repair (Phase 8B.1 & Demo Cleanup Complete)
+- **Phase 8B.1 — Service Location Intake, Optional GPS & Technician Directions**:
+  - Implemented coarse location intake on `/farmer/report-breakdown`: farmer enters village name and selects from official 14 Nagpur District Tahsils (`src/lib/location.ts`).
+  - Village is prefilled from farmer profile if available; tahsil is never inferred.
+  - Optional one-time browser GPS capture (`navigator.geolocation.getCurrentPosition`) with permission handling, accuracy tracking, error/retry feedback, and in-memory isolation (never stored in `localStorage` drafts, URLs, or logs).
+  - Migration `20261027100000_phase8b_1_dispatch_locations.sql` applied to development project `hwdrypkvszwrcraujctw` and recorded in `supabase_migrations.schema_migrations`: creates table `public.repair_dispatch_locations`, grants, and 4 subquery RLS policies.
+  - PostgREST API schema resolution verified: read query returns HTTP 200 OK (resolving prior `PGRST205` error).
+  - Multi-step mutation compensation: `createRepairRequest` invokes authorized `cancelRepairRequest` on failed dispatch location writes to guarantee state-machine and equipment consistency.
+  - Directions to service location via Google Maps universal navigation link with explicit external disclosure dialog (`rel="noopener noreferrer"`, `target="_blank"`), plus fallback area search when GPS is absent.
+  - Differentiated 3-state GPS visibility UI: (a) tickets created without GPS (coarse search fallback), (b) tickets with exact GPS captured and viewer authorized, (c) private coordinates restricted to assigned technician/farmer/admin (open queue sees coarse location only).
+  - Server-mediated in-app driving distance & ETA estimation via free public OSRM service (`router.project-osrm.org`, transient calculation, zero API keys required, explicit pre-action disclosure).
+  - Resilient ticket ID resolution: `getRepairDispatchLocation` and `/api/route-estimate` handle both UUIDs and human-readable job numbers (e.g. `TB-7524`), eliminating route param lookup failures.
+  - Rendered on Farmer repair detail (`/farmer/repair/$id`), Technician job detail (`/technician/job/$id`), and Admin repair detail (`/admin/repair/$id`).
+  - Signup address autofill, reverse geocoding, and dynamic account-distance matching remain deferred to future roadmap.
+  - Verification: 0 TypeScript errors (`npx tsc --noEmit`), clean Vite/Nitro production build (`npm run build`), clean lint, 21 automated route-estimate tests passing (`tests/route-estimate.test.mjs`), and 4 automated cleanup-verification tests passing (`tests/cleanup-verification.test.mjs`). OSRM routing/distance and demo-data cleanup are owner-confirmed working. Status: **COMPLETE (Ready for Commit)**.
+
 ---
 
 ## 3. Implemented Features vs. Future Roadmap Inventory
@@ -85,12 +124,10 @@
 1. **Regional Anchor**: Anchored strictly in **Nagpur District, Maharashtra** (Vidarbha region: Katol, Saoner, Umred talukas; cotton, soybean, orange farming contexts).
 2. **Database as Source of Truth**: Live Supabase PostgreSQL is the sole source of truth. Mock store fixtures (`tb-store.ts`) serve solely as fallback reference definitions.
 3. **Data Scoping Discipline**: Every data query must resolve caller identity through authenticated `auth.uid()` $\rightarrow$ `profiles` row $\rightarrow$ `profile.id`, strictly scoped to the authenticated user.
-4. **Demo Account Authorization**: Reset Demo capabilities are strictly restricted on the backend via dual-key authorization to the 5 designated evaluation personas:
-   - `farmer.nagpur@terrabyte.demo`
-   - `farmer2.nagpur@terrabyte.demo`
-   - `farmer3.nagpur@terrabyte.demo`
-   - `tech.nagpur@terrabyte.demo`
-   - `admin.nagpur@terrabyte.demo`
+4. **Demo Account Authorization**: Reset Demo capabilities are strictly restricted on the backend via dual-key authorization to the 3 designated evaluation personas:
+   - `farmer.nagpur@terrabyte.demo` (Balasaheb Patil)
+   - `tech.nagpur@terrabyte.demo` (Ramesh Kumar)
+   - `admin.nagpur@terrabyte.demo` (Nagpur Service Centre)
 5. **Real User Isolation**: Real user data is strictly isolated by RLS and cannot be modified or cleared by demo reset operations.
 6. **Assistive AI Boundary**: Machine diagnostics use rule-based reasoning with transparent markers. AI provides decision support; farmers and technicians retain final operational authority.
 7. **Submission Freeze Rule**: Zero new feature initiatives or architecture refactors are permitted during the Nagpur RISE 2026 Stage 1 evaluation period.

@@ -8,12 +8,15 @@ import {
   Clock,
   History,
   Loader2,
+  MapPin,
   PackageSearch,
   XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AssessmentCard, QuoteTable } from "@/components/repair-parts";
+import { DirectionsButton } from "@/components/directions-button";
+import { formatGpsAccuracy } from "@/lib/location";
 import {
   btn,
   CallButton,
@@ -48,6 +51,8 @@ import {
   getRepairRequestById,
   rejectCancellation,
   updatePartsEta,
+  getRepairDispatchLocation,
+  type RepairDispatchLocation,
   type RepairRequestDetail,
 } from "@/lib/services/repair-requests";
 import {
@@ -210,6 +215,7 @@ function AdminRepair() {
   const [rejectError, setRejectError] = useState<string | null>(null);
 
   const [reviewActionBusy, setReviewActionBusy] = useState<"approve" | "reject" | null>(null);
+  const [dispatchLocation, setDispatchLocation] = useState<RepairDispatchLocation | null>(null);
 
   const hasLoadedRef = useRef(false);
 
@@ -233,19 +239,21 @@ function AdminRepair() {
         }
 
         // Concurrently fetch quotes, quote versions, eligible technicians, and service history (if completed)
-        const [quotesData, eligibleData, versionsData, shData] = await Promise.all([
+        const [quotesData, eligibleData, versionsData, shData, dispatchLocData] = await Promise.all([
           getQuotesForRepair(realRepair.id).catch(() => []),
           getEligibleTechnicians(realRepair.id).catch(() => []),
           getQuoteVersions(realRepair.id).catch(() => []),
           realRepair.status === "COMPLETED"
             ? getServiceHistoryForRepair(realRepair.id).catch(() => null)
             : Promise.resolve(null),
+          getRepairDispatchLocation(realRepair.id).catch(() => null),
         ]);
 
         setQuotes(quotesData);
         setQuoteVersions(versionsData);
         setTechMatches(eligibleData);
         setServiceRecord(shData);
+        setDispatchLocation(dispatchLocData);
         hasLoadedRef.current = true;
         return;
       }
@@ -598,8 +606,13 @@ function AdminRepair() {
           <h1 className="text-3xl font-bold">
             {equipmentMake} {equipmentModel}
           </h1>
-          <p className="text-sm text-muted-foreground">
-            {farmerName} · {location}
+          <p className="text-sm text-muted-foreground flex flex-wrap items-center gap-1.5 mt-0.5">
+            <span>{farmerName} · {location}</span>
+            {dispatchLocation && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                <MapPin className="h-3 w-3" /> Exact GPS saved ({formatGpsAccuracy(dispatchLocation.accuracy)})
+              </span>
+            )}
           </p>
         </div>
         <StatusPill r={{ status, testing: isTesting }} audience="staff" />
@@ -1028,9 +1041,9 @@ function AdminRepair() {
         </div>
 
         <div className="space-y-5">
-          {/* Contacts */}
+          {/* Contacts & Dispatch */}
           <Card>
-            <h2 className="mb-3 text-lg font-bold">Contacts</h2>
+            <h2 className="mb-3 text-lg font-bold">Contacts & Directions</h2>
             <div className="grid gap-2">
               {farmerPhone ? (
                 <CallButton phone={farmerPhone} label={`Farmer · ${farmerName}`} />
@@ -1042,6 +1055,11 @@ function AdminRepair() {
               ) : technicianName ? (
                 <p className="text-sm text-muted-foreground">Technician: {technicianName}</p>
               ) : null}
+              <DirectionsButton
+                dispatchLocation={dispatchLocation}
+                fallbackLocation={location}
+                label="Get directions"
+              />
             </div>
           </Card>
 

@@ -28,7 +28,7 @@ All demo accounts use password: `terrabyte2026`. On `/login`, you can either cli
 2. On `/farmer`, inspect ticket `TB-8841`:
    - Note the status: **"Waiting for Parts"**.
    - Expand ticket details: note the missing component (*Bosch injector nozzle*), supplier delay reason, and revised completion time.
-3. Open ticket `TB-4489` (or `TB-8902`):
+3. Open ticket `TB-4489`:
    - Notice the **Itemized Quote Table** detailing spare parts, unit prices, supplier origin, labour charges, and taxes.
    - For `TB-4489`, view the **<QuoteComparison />** component displaying side-by-side Quote v1 vs v2 diffs (`+ Added`, `- Removed`, `Modified`).
 4. Scroll to **Ticket Discussion** (`<RepairChat />`):
@@ -232,7 +232,71 @@ All demo accounts use password: `terrabyte2026`. On `/login`, you can either cli
 | **E2E-07** | Permanent Service History | Phase 4, 5.6 | Completed repair auto-commits immutable maintenance record into `service_history` (`INV-TB-xxxx`). | **PASS** |
 | **E2E-08** | Operations Triage & SLA | Phase 5 | Service Centre District Operations Board with Active, Completed, and Cancelled triage. | **PASS** |
 | **E2E-09** | Realtime Sync | Phase 7 | Status updates and chat messages propagate live via Supabase Realtime with 300ms coalescing. | **PASS** |
-| **E2E-10** | Multimodal Gemini AI | Phase 8+ | *Future Roadmap*: Multimodal image defect classification via Gemini 2.5 API. | **ROADMAP** |
+| **P8-01** | Health Auth Gate | Phase 8 | With current secret configured, `GET /api/health` with missing/invalid token returns HTTP 401 plain text (`"Unauthorized"`) without database probe. | **LOCAL PASS** |
+| **P8-02** | Health Fail-Closed Config | Phase 8 | In local/test environment with all current-secret aliases unset (`CRON_SECRET`, `TERRABYTE_CRON_SECRET`), `GET` returns HTTP 500 plain text (`"Server configuration error"`). | **LOCAL PASS** |
+| **P8-03** | Query Secret Rejection | Phase 8 | With current secret configured, `GET /api/health?secret=dummy-test-value` or `?token=dummy-test-value` strictly rejected with HTTP 401 plain text (`"Unauthorized"`) without database probe. *(Security Note: Real secrets must never be placed in URLs or query parameters because URLs are captured in access logs, proxy caches, and browser history).* | **LOCAL PASS** |
+| **P8-04** | Response Sanitization | Phase 8 | Authenticated response emits minimal sanitized payload (`{ status, timestamp, checks: { database }, message?: string }`); zero raw errors in response or logs. | **LOCAL PASS** |
+| **P8-05** | Low-Privilege Probe | Phase 8 | Probe strictly requires validated public key (`sb_publishable_` or legacy JWT with decoded `role: "anon"`); rejects `sb_secret_` and non-anon roles; probes `profiles.id` with `limit(1)`. Live anon SELECT grant unconfirmed. | **PENDING LIVE QA** |
+| **P8-06** | Decoupled Liveness HEAD | Phase 8 | `HEAD /api/health` returns HTTP 200 without database query or auth requirement (liveness only). | **LOCAL PASS** |
+| **E2E-10** | Multimodal Gemini AI | Future | *Deferred Roadmap*: Multimodal image defect classification via Gemini 2.5 API. | **ROADMAP** |
+
+---
+
+### 7.1 Phase 8A Manual Verification Checklist (Pending Owner Execution)
+
+> [!NOTE]
+> **Automated Verification Status**: The local health route handlers have been exercised and verified via automated smoke tests (`P8-01` auth gate, `P8-02` fail-closed 500, `P8-03` query credential rejection, `P8-04` response sanitization, and `P8-06` decoupled HEAD 200). These do not require repeating.
+>
+> **Scope Exclusions**: User-facing Farmer, Technician, and Service Centre portal flows, as well as multi-user Realtime synchronization, are unaffected by this isolated server-to-server health endpoint and require no regression testing.
+
+The remaining checks require live environment access:
+
+1. **Lightweight HEAD Liveness (Safe Check)**:
+   - Command: `curl -I https://<deploy-or-local-url>/api/health`
+   - Expected Result: HTTP 200, empty body, header `X-Liveness-Only: true`. Zero secrets needed, zero database queries initiated.
+2. **Low-Privilege Supabase Health Probe (`P8-05`)**:
+   - In a preview or live environment with Supabase keys configured, invoke `GET /api/health` with `Authorization: Bearer <CRON_SECRET>`.
+   - Expected Result: HTTP 200 sanitized JSON (`{ status: "healthy", timestamp, checks: { database: "operational" } }`) if low-privilege `profiles.id` read is permitted; otherwise HTTP 503 (`{ status: "unhealthy", timestamp, checks: { database: "error" }, message?: string }`). If SQLSTATE `42501` (permission denied) occurs, report it; do not alter database grants or RLS policies.
+3. **Vercel Cron Runtime Verification (Production Only)**:
+   - Scheduled Vercel Cron jobs (`0 5 * * 1,3,5` configured in `vercel.json`) execute strictly on production deployments, not on local or preview deployments.
+   - Inspect Vercel Dashboard $\rightarrow$ Settings $\rightarrow$ Cron Jobs logs on the production deployment. Confirm Vercel automatically sends `Authorization: Bearer <CRON_SECRET>`.
+   - *Status*: If a production deployment is not yet available, leave Cron runtime verification as **PENDING LIVE QA**. Do not deploy, promote, or trigger manual production requests.
+
+---
+
+### 7.2 Phase 8B.1 Service Location Intake, Optional GPS & Technician Directions Matrix & Checklist
+
+| Test ID | Test Scenario | Persona / Setup | Action | Expected Result | Actual Result | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :---: |
+| **P8B.1-01** | Static Type Check & Build | System | Run `npx tsc --noEmit` and `npm run build` | Zero TypeScript errors; clean production build with Nitro Vercel output. | 0 type errors; build clean in 1.16s | **AUTOMATED PASS** |
+| **P8B.1-02** | Targeted Code Hygiene & Lint | System | Run targeted `eslint` and `git diff --check` on modified files | Clean linting with zero whitespace or formatting errors. | Clean lint on modified files; zero diff check warnings | **AUTOMATED PASS** |
+| **P8B.1-03** | Automated Location & RLS Simulation | System | Run Phase 8B.1 test suite (`scratch/test-phase8b1.mjs`) | 14 official tahsils verified; coordinate bounds/Null Island tested; URL encoding checked; RLS logic verified across 6 persona states. | 7/7 test suites passed | **AUTOMATED PASS** |
+| **P8B.1-04** | Farmer Draft Persistence with Village & Tahsil | Farmer demo account (`farmer.nagpur@terrabyte.demo`) | On `/farmer/report-breakdown`, enter village and select tahsil; reload browser | Restored banner appears; village and tahsil inputs restore exactly as entered. GPS is NOT in draft. | Awaiting manual QA | **PENDING MANUAL QA** |
+| **P8B.1-05** | Optional GPS Capture & In-Memory Isolation | Farmer demo account | Click "Use Current Location" in Step 3; test grant/denial | If granted: displays accuracy badge and clear button. Not saved to localStorage or URL. | Awaiting manual QA | **PENDING MANUAL QA** |
+| **P8B.1-06** | Database Migration & API Resolution | System | Verify `public.repair_dispatch_locations` in `hwdrypkvszwrcraujctw` | Table exists; migration recorded; PostgREST returns HTTP 200 OK. | Verified in PostgreSQL catalogs & PostgREST API | **VERIFIED PASS** |
+| **P8B.1-07** | Breakdown Submission with GPS | Farmer demo account | Submit ticket with coarse location + GPS | Ticket created; GPS row created in `repair_dispatch_locations`; header badge displays. | Awaiting manual QA | **PENDING MANUAL QA** |
+| **P8B.1-07** | Technician Open-Queue Privacy Boundary | Technician demo account (`tech.nagpur@terrabyte.demo`) | View unassigned open jobs on `/technician` | Job card displays coarse location text ONLY; exact GPS is filtered by database RLS. | Awaiting manual QA | **PENDING MANUAL QA** |
+| **P8B.1-08** | Assigned Technician Directions & Google Maps Modal | Technician demo account | Open assigned job on `/technician/job/:id` | Displays "Exact GPS saved" badge and "Get directions" button; modal confirms external link to Google Maps. | Awaiting manual QA | **PENDING MANUAL QA** |
+| **P8B.1-09** | Admin Dispatch Supervision & Directions | Admin demo account (`admin.nagpur@terrabyte.demo`) | View repair on `/admin/repair/:id` | Displays coarse location, GPS badge, and "Get directions" button in Contacts card. | Awaiting manual QA | **PENDING MANUAL QA** |
+| **P8B.1-10** | Cross-Farmer RLS Isolation | Farmer 2 demo account (`farmer2.nagpur@terrabyte.demo`) | Attempt direct URL access to Farmer 1's newly created repair | Request blocked / not found under RLS; private data isolated. | Awaiting manual QA | **PENDING MANUAL QA** |
+| **P8B.1-11** | Legacy Fixtures & Demo Reset Compatibility | System / Demo Accounts | Inspect demo fixtures (`reset_demo_data()`) | Demo tickets TB-8841, TB-8902, and TB-8898 remain compatible with single text `location` column; zero schema drift. | Verified against migrations & types | **VERIFIED PASS** |
+| **P8B.1-12** | Server-Side Route Estimation Engine & Resolution | System | Run `node tests/route-estimate.test.mjs` | Metric conversion, OSRM public routing service (`TRAFFIC_UNAWARE`), 3-state GPS visibility partition, and UUID vs job_number resolution. | 21/21 tests passing | **AUTOMATED PASS** |
+| **P8B.1-13** | Technician Job Detail ID Resolution (`TB-7524` Fix) | Technician demo account (`tech.nagpur@terrabyte.demo`) | View assigned job via `/technician/job/:id` with job number | Successfully resolves UUID from job number string; loads private `repair_dispatch_locations` record. | 0 type errors; verified via unit tests | **VERIFIED AUTOMATED** |
+| **P8B.1-14** | Demo-Data Cleanup & Restricted Reset RPC | System | Run `node tests/cleanup-verification.test.mjs` | Validates 3 retained personas, clean seed baseline, candidate filter guard, and dual-key RPC constraints. | 4/4 tests passing | **AUTOMATED PASS** |
+
+> [!NOTE]
+> **Owner-Confirmed Baseline**: The product owner has confirmed that OSRM in-app route calculation/distance and the demo-data cleanup are working in manual testing. Granular checklist items below remain documented for reference; do not repeat tests without a concrete reason.
+
+#### Manual QA Execution Checklist for Product Owner:
+1. **New Request Submission with GPS (Farmer Balasaheb)**: Sign in as `farmer.nagpur@terrabyte.demo` / password `terrabyte-demo`. Navigate to `/farmer/report-breakdown`. Select equipment, pick symptoms, enter village (e.g. "Dorli"), select tahsil (e.g. "Katol"), and click **"Use Current Location"** (grant browser geolocation permission). Verify green badge `Exact GPS attached (±Xm)` appears. Complete summary and submit. Confirm farmer repair detail on `/farmer/repair/:id` displays **`Exact GPS saved (±Xm)`** in the subtitle.
+2. **Assigned Technician Navigation (Technician Ramesh Kumar)**: Sign in as `tech.nagpur@terrabyte.demo` / password `terrabyte-demo`. Open the newly created job on `/technician/job/:id` (assigned to Ramesh). Confirm the Farmer card displays **`Exact GPS saved (±Xm)`** and the **"Get directions"** button. Click "Get directions": confirm the modal displays the exact latitude and longitude, area, and an **"Open Google Maps"** action directing to those exact coordinates.
+3. **In-App Distance & ETA Estimate**: In the same assigned job view on `/technician/job/:id`, locate the driving estimate card below the contacts. Confirm the pre-action disclosure is displayed. Click **"Get driving distance & ETA"** and allow browser location. Confirm distance (km) and driving time (mins/hrs) render, with standard disclaimer: *"Standard estimate (traffic not factored)."*
+4. **Deny Location Permission**: In an incognito or separate window, open the job and click "Get driving distance & ETA", then click "Block" or "Deny" when prompted for location. Confirm a friendly error appears ("Location permission was denied...") and the external "Get directions" button remains fully available and functional.
+5. **Privacy Boundary Enforcement**:
+   - As an **unassigned technician** (or signed in as a technician who is NOT assigned to this job): Confirm the job cannot be opened (`"This job isn't assigned to you"`), and on the open queue cards only the coarse village/tahsil appears.
+   - As a **different farmer** (`farmer2.nagpur@terrabyte.demo`): Confirm navigating directly to the ticket URL is blocked by RLS.
+6. **Admin Supervision (Service Centre Admin)**: Sign in as `admin.nagpur@terrabyte.demo` / password `terrabyte-demo`. Navigate to `/admin/repair/:id` for the new ticket. Confirm both the `Exact GPS saved` badge and "Get directions" button are available and functional in the Contacts card.
+7. **Note on TB-7524**: During earlier testing, a demo data reset (`reset_demo_data()`) was executed which restored baseline demo tickets and cleaned up transient test records, cascade-deleting `TB-7524`. The underlying issue (where `getRepairDispatchLocation` was passed human-readable `TB-7524` instead of UUID) has been resolved in code. The product owner must submit a **new request** following Step 1 above for manual QA verification.
 
 ---
 
@@ -245,3 +309,4 @@ No phase promotion or production deployment may occur if:
 4. Any client request can read or modify another user's private profile.
 5. Farmer dashboards render mock data or cross-contaminate data across different farmers.
 6. TypeScript errors (`tsc --noEmit`) or Vite build failures exist.
+7. Secrets or credentials are committed in repository files, or health/telemetry probes bypass authentication or RLS.

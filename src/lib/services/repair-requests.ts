@@ -17,6 +17,24 @@ export interface CreateRepairRequestInput {
   photos?: string[];
   location: string;
   assessment?: Json;
+  gpsLocation?:
+    | {
+        latitude: number;
+        longitude: number;
+        accuracy?: number | null | undefined;
+        captured_at?: string | undefined;
+      }
+    | undefined;
+}
+
+export interface RepairDispatchLocation {
+  id: string;
+  repair_request_id: string;
+  latitude: number;
+  longitude: number;
+  accuracy: number | null;
+  captured_at: string;
+  created_at: string;
 }
 
 export interface RepairRequestWithEquipment extends RepairRequestRow {
@@ -56,7 +74,8 @@ export interface RejectCancellationInput {
   adminResponse: string;
 }
 
-let cachedProfile: { auth_user_id: string; id: string; role: string; expiresAt: number } | null = null;
+let cachedProfile: { auth_user_id: string; id: string; role: string; expiresAt: number } | null =
+  null;
 
 /**
  * Resolves the authenticated user's profile ID and role.
@@ -68,7 +87,12 @@ async function getAuthenticatedProfile(): Promise<{ id: string; role: string }> 
   } = await supabase.auth.getSession();
   const sessionUser = session?.user;
 
-  if (sessionUser && cachedProfile && cachedProfile.auth_user_id === sessionUser.id && Date.now() < cachedProfile.expiresAt) {
+  if (
+    sessionUser &&
+    cachedProfile &&
+    cachedProfile.auth_user_id === sessionUser.id &&
+    Date.now() < cachedProfile.expiresAt
+  ) {
     return { id: cachedProfile.id, role: cachedProfile.role };
   }
 
@@ -78,7 +102,11 @@ async function getAuthenticatedProfile(): Promise<{ id: string; role: string }> 
     throw new Error("Authentication required: Please sign in to manage repair requests.");
   }
 
-  if (cachedProfile && cachedProfile.auth_user_id === user.id && Date.now() < cachedProfile.expiresAt) {
+  if (
+    cachedProfile &&
+    cachedProfile.auth_user_id === user.id &&
+    Date.now() < cachedProfile.expiresAt
+  ) {
     return { id: cachedProfile.id, role: cachedProfile.role };
   }
 
@@ -132,7 +160,9 @@ async function generateUniqueJobNumber(): Promise<string> {
  * Validates ownership, ensures equipment is not already under active repair,
  * generates a unique job number, advances equipment status, and writes the initial timeline event.
  */
-export async function createRepairRequest(input: CreateRepairRequestInput): Promise<RepairRequestRow> {
+export async function createRepairRequest(
+  input: CreateRepairRequestInput,
+): Promise<RepairRequestRow> {
   const profile = await getAuthenticatedProfile();
 
   if (profile.role !== "farmer" && profile.role !== "admin") {
@@ -169,7 +199,7 @@ export async function createRepairRequest(input: CreateRepairRequestInput): Prom
 
   if (equipment.status === "In Repair") {
     throw new Error(
-      `Cannot report breakdown: ${equipment.make} ${equipment.model} is already marked as 'In Repair'.`
+      `Cannot report breakdown: ${equipment.make} ${equipment.model} is already marked as 'In Repair'.`,
     );
   }
 
@@ -200,6 +230,38 @@ export async function createRepairRequest(input: CreateRepairRequestInput): Prom
     throw new Error(`Failed to create repair ticket: ${insertError.message}`);
   }
 
+  // 3b. Optional secure dispatch location (protected by RLS, isolated from open queue)
+  if (input.gpsLocation) {
+    const { error: locError } = await supabase.from("repair_dispatch_locations").insert({
+      repair_request_id: repair.id,
+      latitude: input.gpsLocation.latitude,
+      longitude: input.gpsLocation.longitude,
+      accuracy: input.gpsLocation.accuracy ?? null,
+      captured_at: input.gpsLocation.captured_at || now,
+    });
+
+    if (locError) {
+      console.error("[TerraByte] Failed to save secure dispatch location:", locError);
+      // Compensating cancellation: Client mutations are multi-step, not atomic database transactions.
+      // Farmers lack DELETE privileges under RLS, so cancel the ticket via the authorized state machine
+      // to ensure equipment status and open queue consistency without leaving an orphan REQUESTED ticket.
+      try {
+        await cancelRepairRequest(repair.id, {
+          reason: "Failed to persist secure GPS location",
+          note: locError.message,
+        });
+      } catch (cleanupErr) {
+        console.error(
+          "[TerraByte] Failed to execute compensating cancellation on failed GPS write:",
+          cleanupErr,
+        );
+      }
+      throw new Error(
+        `Failed to save secure GPS location: ${locError.message}. Breakdown report was not submitted.`,
+      );
+    }
+  }
+
   // 4. Coordinated state updates: update equipment status to 'In Repair'
   const { error: eqUpdateError } = await supabase
     .from("equipment")
@@ -207,22 +269,24 @@ export async function createRepairRequest(input: CreateRepairRequestInput): Prom
     .eq("id", input.equipment_id);
 
   if (eqUpdateError) {
-    console.warn(`[TerraByte] Warning: Failed to advance equipment ${input.equipment_id} status: ${eqUpdateError.message}`);
+    console.warn(
+      `[TerraByte] Warning: Failed to advance equipment ${input.equipment_id} status: ${eqUpdateError.message}`,
+    );
   }
 
   // 5. Coordinated state updates: write initial audit timeline entry
-  const { error: timelineError } = await supabase
-    .from("repair_timeline")
-    .insert({
-      repair_request_id: repair.id,
-      status: "REQUESTED",
-      note: "Breakdown reported",
-      created_by_role: "farmer",
-      created_by_id: profile.id,
-    });
+  const { error: timelineError } = await supabase.from("repair_timeline").insert({
+    repair_request_id: repair.id,
+    status: "REQUESTED",
+    note: "Breakdown reported",
+    created_by_role: "farmer",
+    created_by_id: profile.id,
+  });
 
   if (timelineError) {
-    console.warn(`[TerraByte] Warning: Failed to record initial timeline entry: ${timelineError.message}`);
+    console.warn(
+      `[TerraByte] Warning: Failed to record initial timeline entry: ${timelineError.message}`,
+    );
   }
 
   // 6. Notify Service Centre Admin of new breakdown request
@@ -246,7 +310,7 @@ export async function createRepairRequest(input: CreateRepairRequestInput): Prom
  */
 export async function getFarmerRepairRequests(
   farmerId?: string,
-  options?: { activeOnly?: boolean }
+  options?: { activeOnly?: boolean },
 ): Promise<RepairRequestWithEquipment[]> {
   const resolvedFarmerId = farmerId || (await getAuthenticatedProfile()).id;
 
@@ -284,7 +348,9 @@ export async function getRepairRequestById(id: string): Promise<RepairRequestDet
   // Allow lookup by UUID or human-readable job_number (case-insensitive for resilience)
   const query = supabase
     .from("repair_requests")
-    .select("*, equipment(*), repair_timeline(*, created_by:created_by_id(id, full_name, role)), technician:technician_id(id, full_name, phone, village), farmer:farmer_id(id, full_name, phone, village)")
+    .select(
+      "*, equipment(*), repair_timeline(*, created_by:created_by_id(id, full_name, role)), technician:technician_id(id, full_name, phone, village), farmer:farmer_id(id, full_name, phone, village)",
+    )
     .order("created_at", { referencedTable: "repair_timeline", ascending: true });
 
   const { data, error } = isUuid
@@ -340,7 +406,9 @@ export async function getTechnicianRepairRequests(): Promise<RepairRequestWithEq
 
   const { data, error } = await supabase
     .from("repair_requests")
-    .select("*, equipment(*), farmer:farmer_id(id, full_name, phone, village), technician:technician_id(id, full_name, phone, village)")
+    .select(
+      "*, equipment(*), farmer:farmer_id(id, full_name, phone, village), technician:technician_id(id, full_name, phone, village)",
+    )
     .eq("technician_id", profile.id)
     .order("created_at", { ascending: false });
 
@@ -366,7 +434,9 @@ export async function getAdminRepairRequests(): Promise<RepairRequestDetail[]> {
 
   const { data, error } = await supabase
     .from("repair_requests")
-    .select("*, equipment(*), farmer:farmer_id(id, full_name, phone, village), technician:technician_id(id, full_name, phone, village)")
+    .select(
+      "*, equipment(*), farmer:farmer_id(id, full_name, phone, village), technician:technician_id(id, full_name, phone, village)",
+    )
     .order("created_at", { ascending: false });
 
   if (error) {
@@ -386,7 +456,7 @@ export async function getAdminRepairRequests(): Promise<RepairRequestDetail[]> {
  */
 export async function cancelRepairRequest(
   id: string,
-  options?: { reason?: string | undefined; note?: string | undefined }
+  options?: { reason?: string | undefined; note?: string | undefined },
 ): Promise<RepairRequestRow> {
   const profile = await getAuthenticatedProfile();
 
@@ -410,7 +480,7 @@ export async function cancelRepairRequest(
       throw new Error(
         `Direct cancellation is only permitted for unassigned requested repairs. This repair is ${
           repair.technician_id ? "assigned to a technician" : `in '${repair.status}' status`
-        }; please submit a cancellation request for Service Centre review.`
+        }; please submit a cancellation request for Service Centre review.`,
       );
     }
   } else {
@@ -435,10 +505,7 @@ export async function cancelRepairRequest(
     updatePayload.cancellation_note = options.note.trim();
   }
 
-  let updateQuery = supabase
-    .from("repair_requests")
-    .update(updatePayload)
-    .eq("id", repair.id);
+  let updateQuery = supabase.from("repair_requests").update(updatePayload).eq("id", repair.id);
 
   if (profile.role !== "admin") {
     updateQuery = updateQuery.eq("status", "REQUESTED").is("technician_id", null);
@@ -446,9 +513,7 @@ export async function cancelRepairRequest(
     updateQuery = updateQuery.neq("status", "COMPLETED").neq("status", "CANCELLED");
   }
 
-  const { data: updated, error: updateError } = await updateQuery
-    .select()
-    .maybeSingle();
+  const { data: updated, error: updateError } = await updateQuery.select().maybeSingle();
 
   if (updateError) {
     throw new Error(`Failed to cancel repair request: ${updateError.message}`);
@@ -458,7 +523,7 @@ export async function cancelRepairRequest(
     throw new Error(
       profile.role === "admin"
         ? "This repair request could not be cancelled because its status changed. Please refresh."
-        : "This repair request could not be cancelled because its status or assignment changed. Please refresh."
+        : "This repair request could not be cancelled because its status or assignment changed. Please refresh.",
     );
   }
 
@@ -469,18 +534,18 @@ export async function cancelRepairRequest(
       ? `Cancelled by Service Centre${reasonText}`
       : `Cancelled by farmer before assignment${reasonText}`;
 
-  const { error: timelineError } = await supabase
-    .from("repair_timeline")
-    .insert({
-      repair_request_id: repair.id,
-      status: "CANCELLED",
-      note: timelineNote,
-      created_by_role: profile.role,
-      created_by_id: profile.id,
-    });
+  const { error: timelineError } = await supabase.from("repair_timeline").insert({
+    repair_request_id: repair.id,
+    status: "CANCELLED",
+    note: timelineNote,
+    created_by_role: profile.role,
+    created_by_id: profile.id,
+  });
 
   if (timelineError) {
-    console.warn(`[TerraByte] Warning: Failed to record cancellation timeline entry: ${timelineError.message}`);
+    console.warn(
+      `[TerraByte] Warning: Failed to record cancellation timeline entry: ${timelineError.message}`,
+    );
   }
 
   // 5. Restore equipment to 'Operational' if no other active repairs are underway
@@ -498,7 +563,9 @@ export async function cancelRepairRequest(
       .eq("id", repair.equipment_id);
 
     if (eqRestoreError) {
-      console.warn(`[TerraByte] Warning: Failed to restore equipment status to Operational: ${eqRestoreError.message}`);
+      console.warn(
+        `[TerraByte] Warning: Failed to restore equipment status to Operational: ${eqRestoreError.message}`,
+      );
     }
   }
 
@@ -543,7 +610,7 @@ export async function cancelRepairRequest(
  */
 export async function requestCancellation(
   id: string,
-  input: RequestCancellationInput
+  input: RequestCancellationInput,
 ): Promise<RepairRequestRow> {
   const trimmedReason = input.reason?.trim();
   if (!trimmedReason) {
@@ -564,7 +631,9 @@ export async function requestCancellation(
   }
 
   if (repair.farmer_id !== profile.id && profile.role !== "admin") {
-    throw new Error("Unauthorized: You can only request cancellation for your own repair requests.");
+    throw new Error(
+      "Unauthorized: You can only request cancellation for your own repair requests.",
+    );
   }
 
   // 2. Validate current status
@@ -580,7 +649,10 @@ export async function requestCancellation(
 
   // 3. If unassigned and still in REQUESTED status, perform immediate direct cancellation
   if (repair.status === "REQUESTED" && !repair.technician_id) {
-    return cancelRepairRequest(repair.id, { reason: trimmedReason, note: trimmedNote || undefined });
+    return cancelRepairRequest(repair.id, {
+      reason: trimmedReason,
+      note: trimmedNote || undefined,
+    });
   }
 
   // 4. Active / assigned repair: transition to CANCELLATION_REQUESTED
@@ -612,7 +684,7 @@ export async function requestCancellation(
 
   if (!updated) {
     throw new Error(
-      "This repair request changed while submitting your cancellation request. Please refresh."
+      "This repair request changed while submitting your cancellation request. Please refresh.",
     );
   }
 
@@ -621,18 +693,18 @@ export async function requestCancellation(
     ? `Cancellation requested: ${trimmedReason} — ${trimmedNote}`
     : `Cancellation requested: ${trimmedReason}`;
 
-  const { error: timelineError } = await supabase
-    .from("repair_timeline")
-    .insert({
-      repair_request_id: repair.id,
-      status: "CANCELLATION_REQUESTED",
-      note: timelineNote,
-      created_by_role: profile.role,
-      created_by_id: profile.id,
-    });
+  const { error: timelineError } = await supabase.from("repair_timeline").insert({
+    repair_request_id: repair.id,
+    status: "CANCELLATION_REQUESTED",
+    note: timelineNote,
+    created_by_role: profile.role,
+    created_by_id: profile.id,
+  });
 
   if (timelineError) {
-    console.warn(`[TerraByte] Warning: Failed to record cancellation request timeline entry: ${timelineError.message}`);
+    console.warn(
+      `[TerraByte] Warning: Failed to record cancellation request timeline entry: ${timelineError.message}`,
+    );
   }
 
   // 6. Notify Service Centre (admin) of actionable cancellation request
@@ -643,7 +715,10 @@ export async function requestCancellation(
       link_target: `/admin/repair/${repair.id}`,
     });
   } catch (notifErr) {
-    console.warn("[TerraByte] Warning: Failed to dispatch cancellation request notification:", notifErr);
+    console.warn(
+      "[TerraByte] Warning: Failed to dispatch cancellation request notification:",
+      notifErr,
+    );
   }
 
   return updated;
@@ -657,12 +732,14 @@ export async function requestCancellation(
  */
 export async function approveCancellation(
   id: string,
-  input?: ApproveCancellationInput
+  input?: ApproveCancellationInput,
 ): Promise<RepairRequestRow> {
   const profile = await getAuthenticatedProfile();
 
   if (profile.role !== "admin") {
-    throw new Error("Unauthorized: Only Service Centre administrators can approve cancellation requests.");
+    throw new Error(
+      "Unauthorized: Only Service Centre administrators can approve cancellation requests.",
+    );
   }
 
   // 1. Fetch current repair ticket state
@@ -677,7 +754,7 @@ export async function approveCancellation(
 
   if (repair.status !== "CANCELLATION_REQUESTED") {
     throw new Error(
-      `Cannot approve cancellation: Ticket is in '${repair.status}' status (must be CANCELLATION_REQUESTED).`
+      `Cannot approve cancellation: Ticket is in '${repair.status}' status (must be CANCELLATION_REQUESTED).`,
     );
   }
 
@@ -703,7 +780,7 @@ export async function approveCancellation(
 
   if (!updated) {
     throw new Error(
-      "This cancellation request is no longer pending or was already processed. Please refresh."
+      "This cancellation request is no longer pending or was already processed. Please refresh.",
     );
   }
 
@@ -712,18 +789,18 @@ export async function approveCancellation(
     ? `Cancellation approved by Service Centre: ${input.adminResponse.trim()}`
     : "Cancellation approved by Service Centre";
 
-  const { error: timelineError } = await supabase
-    .from("repair_timeline")
-    .insert({
-      repair_request_id: repair.id,
-      status: "CANCELLED",
-      note: timelineNote,
-      created_by_role: "admin",
-      created_by_id: profile.id,
-    });
+  const { error: timelineError } = await supabase.from("repair_timeline").insert({
+    repair_request_id: repair.id,
+    status: "CANCELLED",
+    note: timelineNote,
+    created_by_role: "admin",
+    created_by_id: profile.id,
+  });
 
   if (timelineError) {
-    console.warn(`[TerraByte] Warning: Failed to record cancellation approval timeline entry: ${timelineError.message}`);
+    console.warn(
+      `[TerraByte] Warning: Failed to record cancellation approval timeline entry: ${timelineError.message}`,
+    );
   }
 
   // 4. Restore equipment to 'Operational' if no other active repairs exist
@@ -741,7 +818,9 @@ export async function approveCancellation(
       .eq("id", repair.equipment_id);
 
     if (eqRestoreError) {
-      console.warn(`[TerraByte] Warning: Failed to restore equipment status to Operational: ${eqRestoreError.message}`);
+      console.warn(
+        `[TerraByte] Warning: Failed to restore equipment status to Operational: ${eqRestoreError.message}`,
+      );
     }
   }
 
@@ -763,7 +842,10 @@ export async function approveCancellation(
       });
     }
   } catch (notifErr) {
-    console.warn("[TerraByte] Warning: Failed to dispatch cancellation approval notifications:", notifErr);
+    console.warn(
+      "[TerraByte] Warning: Failed to dispatch cancellation approval notifications:",
+      notifErr,
+    );
   }
 
   return updated;
@@ -778,12 +860,14 @@ export async function approveCancellation(
  */
 export async function rejectCancellation(
   id: string,
-  input: RejectCancellationInput
+  input: RejectCancellationInput,
 ): Promise<RepairRequestRow> {
   const profile = await getAuthenticatedProfile();
 
   if (profile.role !== "admin") {
-    throw new Error("Unauthorized: Only Service Centre administrators can decline cancellation requests.");
+    throw new Error(
+      "Unauthorized: Only Service Centre administrators can decline cancellation requests.",
+    );
   }
 
   const adminResponse = input?.adminResponse?.trim();
@@ -803,7 +887,7 @@ export async function rejectCancellation(
 
   if (repair.status !== "CANCELLATION_REQUESTED") {
     throw new Error(
-      `Cannot decline cancellation: Ticket is in '${repair.status}' status (must be CANCELLATION_REQUESTED).`
+      `Cannot decline cancellation: Ticket is in '${repair.status}' status (must be CANCELLATION_REQUESTED).`,
     );
   }
 
@@ -811,7 +895,7 @@ export async function rejectCancellation(
   const targetStatus: RepairStatus = repair.cancellation_previous_status || "ACCEPTED";
   if (!isLegalRepairTransition("CANCELLATION_REQUESTED", targetStatus)) {
     throw new Error(
-      `Illegal state transition: Cannot restore status from 'CANCELLATION_REQUESTED' to '${targetStatus}'.`
+      `Illegal state transition: Cannot restore status from 'CANCELLATION_REQUESTED' to '${targetStatus}'.`,
     );
   }
 
@@ -836,23 +920,23 @@ export async function rejectCancellation(
 
   if (!updated) {
     throw new Error(
-      "This cancellation request is no longer pending or was already processed. Please refresh."
+      "This cancellation request is no longer pending or was already processed. Please refresh.",
     );
   }
 
   // 4. Log rejection event in timeline
-  const { error: timelineError } = await supabase
-    .from("repair_timeline")
-    .insert({
-      repair_request_id: repair.id,
-      status: targetStatus,
-      note: `Cancellation request declined by Service Centre: ${adminResponse}`,
-      created_by_role: "admin",
-      created_by_id: profile.id,
-    });
+  const { error: timelineError } = await supabase.from("repair_timeline").insert({
+    repair_request_id: repair.id,
+    status: targetStatus,
+    note: `Cancellation request declined by Service Centre: ${adminResponse}`,
+    created_by_role: "admin",
+    created_by_id: profile.id,
+  });
 
   if (timelineError) {
-    console.warn(`[TerraByte] Warning: Failed to record cancellation rejection timeline entry: ${timelineError.message}`);
+    console.warn(
+      `[TerraByte] Warning: Failed to record cancellation rejection timeline entry: ${timelineError.message}`,
+    );
   }
 
   // 5. Equipment remains In Repair — no equipment update needed.
@@ -875,7 +959,10 @@ export async function rejectCancellation(
       });
     }
   } catch (notifErr) {
-    console.warn("[TerraByte] Warning: Failed to dispatch cancellation rejection notifications:", notifErr);
+    console.warn(
+      "[TerraByte] Warning: Failed to dispatch cancellation rejection notifications:",
+      notifErr,
+    );
   }
 
   return updated;
@@ -905,7 +992,10 @@ export const LEGAL_REPAIR_TRANSITIONS: Record<RepairStatus, readonly RepairStatu
   CANCELLED: [],
 };
 
-export function isLegalRepairTransition(currentStatus: RepairStatus, targetStatus: RepairStatus): boolean {
+export function isLegalRepairTransition(
+  currentStatus: RepairStatus,
+  targetStatus: RepairStatus,
+): boolean {
   return LEGAL_REPAIR_TRANSITIONS[currentStatus]?.includes(targetStatus) ?? false;
 }
 
@@ -1073,10 +1163,16 @@ export async function acceptRepairRequest(repairRequestId: string): Promise<Repa
     throw new Error("Unauthorized: Unverified technicians cannot accept repair jobs.");
   }
 
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairRequestId);
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    repairRequestId,
+  );
   const { data: repair, error: repairError } = isUuid
     ? await supabase.from("repair_requests").select("*").eq("id", repairRequestId).maybeSingle()
-    : await supabase.from("repair_requests").select("*").eq("job_number", repairRequestId).maybeSingle();
+    : await supabase
+        .from("repair_requests")
+        .select("*")
+        .eq("job_number", repairRequestId)
+        .maybeSingle();
 
   if (repairError || !repair) {
     throw new Error("Repair request not found or inaccessible.");
@@ -1087,11 +1183,15 @@ export async function acceptRepairRequest(repairRequestId: string): Promise<Repa
   }
 
   if (repair.status !== "REQUESTED") {
-    throw new Error(`Cannot accept job: Repair ticket is in '${repair.status}' status (must be REQUESTED).`);
+    throw new Error(
+      `Cannot accept job: Repair ticket is in '${repair.status}' status (must be REQUESTED).`,
+    );
   }
 
   if (!isLegalRepairTransition(repair.status, "ACCEPTED")) {
-    throw new Error(`Illegal state transition: Cannot transition from '${repair.status}' to 'ACCEPTED'.`);
+    throw new Error(
+      `Illegal state transition: Cannot transition from '${repair.status}' to 'ACCEPTED'.`,
+    );
   }
 
   const now = new Date().toISOString();
@@ -1108,9 +1208,7 @@ export async function acceptRepairRequest(repairRequestId: string): Promise<Repa
     updateQuery = updateQuery.eq("technician_id", profile.id);
   }
 
-  const { data: updated, error: updateError } = await updateQuery
-    .select()
-    .maybeSingle();
+  const { data: updated, error: updateError } = await updateQuery.select().maybeSingle();
 
   if (updateError) {
     throw new Error(`Failed to accept repair request: ${updateError.message}`);
@@ -1118,7 +1216,7 @@ export async function acceptRepairRequest(repairRequestId: string): Promise<Repa
 
   if (!updated) {
     throw new Error(
-      "This repair request could not be accepted because its status or assignment changed. Please refresh."
+      "This repair request could not be accepted because its status or assignment changed. Please refresh.",
     );
   }
 
@@ -1149,7 +1247,10 @@ export async function acceptRepairRequest(repairRequestId: string): Promise<Repa
  * Declines a repair request by the assigned technician.
  * Preserves REQUESTED status, records technician in declined_by, and returns ticket to dispatch.
  */
-export async function declineRepairRequest(repairRequestId: string, reason: string): Promise<RepairRequestRow> {
+export async function declineRepairRequest(
+  repairRequestId: string,
+  reason: string,
+): Promise<RepairRequestRow> {
   if (!repairRequestId) throw new Error("Repair request ID is required.");
   const trimmedReason = reason?.trim();
   if (!trimmedReason) {
@@ -1167,10 +1268,16 @@ export async function declineRepairRequest(repairRequestId: string, reason: stri
     throw new Error("Unauthorized: Unverified technicians cannot decline repair jobs.");
   }
 
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairRequestId);
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    repairRequestId,
+  );
   const { data: repair, error: repairError } = isUuid
     ? await supabase.from("repair_requests").select("*").eq("id", repairRequestId).maybeSingle()
-    : await supabase.from("repair_requests").select("*").eq("job_number", repairRequestId).maybeSingle();
+    : await supabase
+        .from("repair_requests")
+        .select("*")
+        .eq("job_number", repairRequestId)
+        .maybeSingle();
 
   if (repairError || !repair) {
     throw new Error("Repair request not found or inaccessible.");
@@ -1181,7 +1288,9 @@ export async function declineRepairRequest(repairRequestId: string, reason: stri
   }
 
   if (repair.status !== "REQUESTED") {
-    throw new Error(`Cannot decline job: Repair ticket is in '${repair.status}' status (must be REQUESTED).`);
+    throw new Error(
+      `Cannot decline job: Repair ticket is in '${repair.status}' status (must be REQUESTED).`,
+    );
   }
 
   const declinedList = Array.isArray(repair.declined_by) ? [...repair.declined_by] : [];
@@ -1205,9 +1314,7 @@ export async function declineRepairRequest(repairRequestId: string, reason: stri
     updateQuery = updateQuery.eq("technician_id", profile.id);
   }
 
-  const { data: updated, error: updateError } = await updateQuery
-    .select()
-    .maybeSingle();
+  const { data: updated, error: updateError } = await updateQuery.select().maybeSingle();
 
   if (updateError) {
     throw new Error(`Failed to decline repair request: ${updateError.message}`);
@@ -1215,7 +1322,7 @@ export async function declineRepairRequest(repairRequestId: string, reason: stri
 
   if (!updated) {
     throw new Error(
-      "This repair request could not be declined because its status or assignment changed. Please refresh."
+      "This repair request could not be declined because its status or assignment changed. Please refresh.",
     );
   }
 
@@ -1264,10 +1371,16 @@ export async function startRepair(repairRequestId: string): Promise<RepairReques
     throw new Error("Unauthorized: Unverified technicians cannot start repair work.");
   }
 
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairRequestId);
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    repairRequestId,
+  );
   const { data: repair, error: repairError } = isUuid
     ? await supabase.from("repair_requests").select("*").eq("id", repairRequestId).maybeSingle()
-    : await supabase.from("repair_requests").select("*").eq("job_number", repairRequestId).maybeSingle();
+    : await supabase
+        .from("repair_requests")
+        .select("*")
+        .eq("job_number", repairRequestId)
+        .maybeSingle();
 
   if (repairError || !repair) {
     throw new Error("Repair request not found or inaccessible.");
@@ -1278,7 +1391,9 @@ export async function startRepair(repairRequestId: string): Promise<RepairReques
   }
 
   if (repair.status !== "IN_PROGRESS") {
-    throw new Error(`Cannot start repair work: Ticket is in '${repair.status}' status (quote must be approved first).`);
+    throw new Error(
+      `Cannot start repair work: Ticket is in '${repair.status}' status (quote must be approved first).`,
+    );
   }
 
   // Ensure an approved quote exists
@@ -1304,9 +1419,7 @@ export async function startRepair(repairRequestId: string): Promise<RepairReques
     updateQuery = updateQuery.eq("technician_id", profile.id);
   }
 
-  const { data: updated, error: updateError } = await updateQuery
-    .select()
-    .maybeSingle();
+  const { data: updated, error: updateError } = await updateQuery.select().maybeSingle();
 
   if (updateError) {
     throw new Error(`Failed to start repair work: ${updateError.message}`);
@@ -1314,7 +1427,7 @@ export async function startRepair(repairRequestId: string): Promise<RepairReques
 
   if (!updated) {
     throw new Error(
-      "This repair is no longer in progress or its assignment changed. Please refresh."
+      "This repair is no longer in progress or its assignment changed. Please refresh.",
     );
   }
 
@@ -1355,7 +1468,10 @@ export async function startRepair(repairRequestId: string): Promise<RepairReques
  * Transitions status: IN_PROGRESS -> WAITING_FOR_PARTS.
  * Persists hold details into parts_hold JSONB.
  */
-export async function waitForParts(repairRequestId: string, input: WaitForPartsInput): Promise<RepairRequestRow> {
+export async function waitForParts(
+  repairRequestId: string,
+  input: WaitForPartsInput,
+): Promise<RepairRequestRow> {
   if (!repairRequestId) throw new Error("Repair request ID is required.");
   if (!input.part?.trim()) throw new Error("Part name is required to pause for parts.");
   if (!input.eta?.trim()) throw new Error("Expected arrival (ETA) is required.");
@@ -1372,10 +1488,16 @@ export async function waitForParts(repairRequestId: string, input: WaitForPartsI
     throw new Error("Unauthorized: Unverified technicians cannot manage parts hold.");
   }
 
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairRequestId);
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    repairRequestId,
+  );
   const { data: repair, error: repairError } = isUuid
     ? await supabase.from("repair_requests").select("*").eq("id", repairRequestId).maybeSingle()
-    : await supabase.from("repair_requests").select("*").eq("job_number", repairRequestId).maybeSingle();
+    : await supabase
+        .from("repair_requests")
+        .select("*")
+        .eq("job_number", repairRequestId)
+        .maybeSingle();
 
   if (repairError || !repair) {
     throw new Error("Repair request not found or inaccessible.");
@@ -1386,11 +1508,15 @@ export async function waitForParts(repairRequestId: string, input: WaitForPartsI
   }
 
   if (repair.status !== "IN_PROGRESS") {
-    throw new Error(`Cannot pause for parts: Ticket is in '${repair.status}' status (must be IN_PROGRESS).`);
+    throw new Error(
+      `Cannot pause for parts: Ticket is in '${repair.status}' status (must be IN_PROGRESS).`,
+    );
   }
 
   if (!isLegalRepairTransition(repair.status, "WAITING_FOR_PARTS")) {
-    throw new Error(`Illegal state transition: Cannot transition from '${repair.status}' to 'WAITING_FOR_PARTS'.`);
+    throw new Error(
+      `Illegal state transition: Cannot transition from '${repair.status}' to 'WAITING_FOR_PARTS'.`,
+    );
   }
 
   const now = new Date().toISOString();
@@ -1420,9 +1546,7 @@ export async function waitForParts(repairRequestId: string, input: WaitForPartsI
     updateQuery = updateQuery.eq("technician_id", profile.id);
   }
 
-  const { data: updated, error: updateError } = await updateQuery
-    .select()
-    .maybeSingle();
+  const { data: updated, error: updateError } = await updateQuery.select().maybeSingle();
 
   if (updateError) {
     throw new Error(`Failed to pause repair for parts: ${updateError.message}`);
@@ -1430,7 +1554,7 @@ export async function waitForParts(repairRequestId: string, input: WaitForPartsI
 
   if (!updated) {
     throw new Error(
-      "This repair is no longer in progress or its assignment changed. Please refresh."
+      "This repair is no longer in progress or its assignment changed. Please refresh.",
     );
   }
 
@@ -1460,7 +1584,10 @@ export async function waitForParts(repairRequestId: string, input: WaitForPartsI
 /**
  * Updates the estimated arrival time for pending spare parts without mutating repair status.
  */
-export async function updatePartsEta(repairRequestId: string, input: UpdatePartsEtaInput): Promise<RepairRequestRow> {
+export async function updatePartsEta(
+  repairRequestId: string,
+  input: UpdatePartsEtaInput,
+): Promise<RepairRequestRow> {
   if (!repairRequestId) throw new Error("Repair request ID is required.");
   if (!input.eta?.trim()) throw new Error("Updated parts ETA is required.");
 
@@ -1475,10 +1602,16 @@ export async function updatePartsEta(repairRequestId: string, input: UpdateParts
     throw new Error("Unauthorized: Unverified technicians cannot update parts ETA.");
   }
 
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairRequestId);
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    repairRequestId,
+  );
   const { data: repair, error: repairError } = isUuid
     ? await supabase.from("repair_requests").select("*").eq("id", repairRequestId).maybeSingle()
-    : await supabase.from("repair_requests").select("*").eq("job_number", repairRequestId).maybeSingle();
+    : await supabase
+        .from("repair_requests")
+        .select("*")
+        .eq("job_number", repairRequestId)
+        .maybeSingle();
 
   if (repairError || !repair) {
     throw new Error("Repair request not found or inaccessible.");
@@ -1489,7 +1622,9 @@ export async function updatePartsEta(repairRequestId: string, input: UpdateParts
   }
 
   if (repair.status !== "WAITING_FOR_PARTS") {
-    throw new Error(`Cannot update parts ETA: Ticket is in '${repair.status}' status (must be WAITING_FOR_PARTS).`);
+    throw new Error(
+      `Cannot update parts ETA: Ticket is in '${repair.status}' status (must be WAITING_FOR_PARTS).`,
+    );
   }
 
   const currentHold = (repair.parts_hold as Record<string, unknown>) ?? {};
@@ -1517,9 +1652,7 @@ export async function updatePartsEta(repairRequestId: string, input: UpdateParts
     updateQuery = updateQuery.eq("technician_id", profile.id);
   }
 
-  const { data: updated, error: updateError } = await updateQuery
-    .select()
-    .maybeSingle();
+  const { data: updated, error: updateError } = await updateQuery.select().maybeSingle();
 
   if (updateError) {
     throw new Error(`Failed to update parts ETA: ${updateError.message}`);
@@ -1527,7 +1660,7 @@ export async function updatePartsEta(repairRequestId: string, input: UpdateParts
 
   if (!updated) {
     throw new Error(
-      "This repair is no longer waiting for parts or its assignment changed. Please refresh."
+      "This repair is no longer waiting for parts or its assignment changed. Please refresh.",
     );
   }
 
@@ -1572,10 +1705,16 @@ export async function resumeRepair(repairRequestId: string): Promise<RepairReque
     throw new Error("Unauthorized: Unverified technicians cannot resume repairs.");
   }
 
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairRequestId);
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    repairRequestId,
+  );
   const { data: repair, error: repairError } = isUuid
     ? await supabase.from("repair_requests").select("*").eq("id", repairRequestId).maybeSingle()
-    : await supabase.from("repair_requests").select("*").eq("job_number", repairRequestId).maybeSingle();
+    : await supabase
+        .from("repair_requests")
+        .select("*")
+        .eq("job_number", repairRequestId)
+        .maybeSingle();
 
   if (repairError || !repair) {
     throw new Error("Repair request not found or inaccessible.");
@@ -1586,11 +1725,15 @@ export async function resumeRepair(repairRequestId: string): Promise<RepairReque
   }
 
   if (repair.status !== "WAITING_FOR_PARTS") {
-    throw new Error(`Cannot resume repair: Ticket is in '${repair.status}' status (must be WAITING_FOR_PARTS).`);
+    throw new Error(
+      `Cannot resume repair: Ticket is in '${repair.status}' status (must be WAITING_FOR_PARTS).`,
+    );
   }
 
   if (!isLegalRepairTransition(repair.status, "IN_PROGRESS")) {
-    throw new Error(`Illegal state transition: Cannot transition from '${repair.status}' to 'IN_PROGRESS'.`);
+    throw new Error(
+      `Illegal state transition: Cannot transition from '${repair.status}' to 'IN_PROGRESS'.`,
+    );
   }
 
   const now = new Date().toISOString();
@@ -1614,9 +1757,7 @@ export async function resumeRepair(repairRequestId: string): Promise<RepairReque
     updateQuery = updateQuery.eq("technician_id", profile.id);
   }
 
-  const { data: updated, error: updateError } = await updateQuery
-    .select()
-    .maybeSingle();
+  const { data: updated, error: updateError } = await updateQuery.select().maybeSingle();
 
   if (updateError) {
     throw new Error(`Failed to resume repair: ${updateError.message}`);
@@ -1624,7 +1765,7 @@ export async function resumeRepair(repairRequestId: string): Promise<RepairReque
 
   if (!updated) {
     throw new Error(
-      "This repair is no longer waiting for parts or its assignment changed. Please refresh."
+      "This repair is no longer waiting for parts or its assignment changed. Please refresh.",
     );
   }
 
@@ -1669,10 +1810,16 @@ export async function startTesting(repairRequestId: string): Promise<RepairReque
     throw new Error("Unauthorized: Unverified technicians cannot start machine testing.");
   }
 
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairRequestId);
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    repairRequestId,
+  );
   const { data: repair, error: repairError } = isUuid
     ? await supabase.from("repair_requests").select("*").eq("id", repairRequestId).maybeSingle()
-    : await supabase.from("repair_requests").select("*").eq("job_number", repairRequestId).maybeSingle();
+    : await supabase
+        .from("repair_requests")
+        .select("*")
+        .eq("job_number", repairRequestId)
+        .maybeSingle();
 
   if (repairError || !repair) {
     throw new Error("Repair request not found or inaccessible.");
@@ -1683,7 +1830,9 @@ export async function startTesting(repairRequestId: string): Promise<RepairReque
   }
 
   if (repair.status !== "IN_PROGRESS") {
-    throw new Error(`Cannot start testing: Ticket is in '${repair.status}' status (must be IN_PROGRESS).`);
+    throw new Error(
+      `Cannot start testing: Ticket is in '${repair.status}' status (must be IN_PROGRESS).`,
+    );
   }
 
   let updateQuery = supabase
@@ -1698,9 +1847,7 @@ export async function startTesting(repairRequestId: string): Promise<RepairReque
     updateQuery = updateQuery.eq("technician_id", profile.id);
   }
 
-  const { data: updated, error: updateError } = await updateQuery
-    .select()
-    .maybeSingle();
+  const { data: updated, error: updateError } = await updateQuery.select().maybeSingle();
 
   if (updateError) {
     throw new Error(`Failed to set testing mode: ${updateError.message}`);
@@ -1708,7 +1855,7 @@ export async function startTesting(repairRequestId: string): Promise<RepairReque
 
   if (!updated) {
     throw new Error(
-      "This repair is no longer in progress or its assignment changed. Please refresh."
+      "This repair is no longer in progress or its assignment changed. Please refresh.",
     );
   }
 
@@ -1746,7 +1893,7 @@ export interface FailTestingInput {
  */
 export async function failTesting(
   repairRequestId: string,
-  input?: FailTestingInput
+  input?: FailTestingInput,
 ): Promise<RepairRequestRow> {
   if (!repairRequestId) throw new Error("Repair request ID is required.");
   const profile = await getAuthenticatedProfile();
@@ -1760,10 +1907,16 @@ export async function failTesting(
     throw new Error("Unauthorized: Unverified technicians cannot manage machine testing.");
   }
 
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairRequestId);
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    repairRequestId,
+  );
   const { data: repair, error: repairError } = isUuid
     ? await supabase.from("repair_requests").select("*").eq("id", repairRequestId).maybeSingle()
-    : await supabase.from("repair_requests").select("*").eq("job_number", repairRequestId).maybeSingle();
+    : await supabase
+        .from("repair_requests")
+        .select("*")
+        .eq("job_number", repairRequestId)
+        .maybeSingle();
 
   if (repairError || !repair) {
     throw new Error("Repair request not found or inaccessible.");
@@ -1774,7 +1927,9 @@ export async function failTesting(
   }
 
   if (repair.status !== "IN_PROGRESS") {
-    throw new Error(`Cannot report testing failure: Ticket is in '${repair.status}' status (must be IN_PROGRESS).`);
+    throw new Error(
+      `Cannot report testing failure: Ticket is in '${repair.status}' status (must be IN_PROGRESS).`,
+    );
   }
 
   if (!repair.is_testing) {
@@ -1794,9 +1949,7 @@ export async function failTesting(
     updateQuery = updateQuery.eq("technician_id", profile.id);
   }
 
-  const { data: updated, error: updateError } = await updateQuery
-    .select()
-    .maybeSingle();
+  const { data: updated, error: updateError } = await updateQuery.select().maybeSingle();
 
   if (updateError) {
     throw new Error(`Failed to update testing failure: ${updateError.message}`);
@@ -1804,7 +1957,7 @@ export async function failTesting(
 
   if (!updated) {
     throw new Error(
-      "This repair is no longer actively testing or its status changed. Please refresh."
+      "This repair is no longer actively testing or its status changed. Please refresh.",
     );
   }
 
@@ -1855,7 +2008,7 @@ export async function failTesting(
  */
 export async function completeRepair(
   repairRequestId: string,
-  input: CompleteRepairInput
+  input: CompleteRepairInput,
 ): Promise<RepairRequestRow> {
   if (!repairRequestId) throw new Error("Repair request ID is required.");
   const trimmedNotes = input.notes?.trim();
@@ -1874,10 +2027,16 @@ export async function completeRepair(
     throw new Error("Unauthorized: Unverified technicians cannot complete repairs.");
   }
 
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairRequestId);
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    repairRequestId,
+  );
   const { data: repair, error: repairError } = isUuid
     ? await supabase.from("repair_requests").select("*").eq("id", repairRequestId).maybeSingle()
-    : await supabase.from("repair_requests").select("*").eq("job_number", repairRequestId).maybeSingle();
+    : await supabase
+        .from("repair_requests")
+        .select("*")
+        .eq("job_number", repairRequestId)
+        .maybeSingle();
 
   if (repairError || !repair) {
     throw new Error("Repair request not found or inaccessible.");
@@ -1888,11 +2047,15 @@ export async function completeRepair(
   }
 
   if (repair.status !== "IN_PROGRESS") {
-    throw new Error(`Cannot complete repair: Ticket is in '${repair.status}' status (must be IN_PROGRESS).`);
+    throw new Error(
+      `Cannot complete repair: Ticket is in '${repair.status}' status (must be IN_PROGRESS).`,
+    );
   }
 
   if (!repair.is_testing && profile.role !== "admin") {
-    throw new Error("Cannot complete repair: Operational load testing must be started before completing the repair.");
+    throw new Error(
+      "Cannot complete repair: Operational load testing must be started before completing the repair.",
+    );
   }
 
   if (!input.tested) {
@@ -1900,7 +2063,9 @@ export async function completeRepair(
   }
 
   if (!isLegalRepairTransition(repair.status, "COMPLETED")) {
-    throw new Error(`Illegal state transition: Cannot transition from '${repair.status}' to 'COMPLETED'.`);
+    throw new Error(
+      `Illegal state transition: Cannot transition from '${repair.status}' to 'COMPLETED'.`,
+    );
   }
 
   const now = new Date().toISOString();
@@ -1926,9 +2091,7 @@ export async function completeRepair(
     updateQuery = updateQuery.eq("technician_id", profile.id);
   }
 
-  const { data: updated, error: updateError } = await updateQuery
-    .select()
-    .maybeSingle();
+  const { data: updated, error: updateError } = await updateQuery.select().maybeSingle();
 
   if (updateError) {
     throw new Error(`Failed to complete repair: ${updateError.message}`);
@@ -1936,7 +2099,7 @@ export async function completeRepair(
 
   if (!updated) {
     throw new Error(
-      "This repair is no longer in progress or its assignment changed. Please refresh."
+      "This repair is no longer in progress or its assignment changed. Please refresh.",
     );
   }
 
@@ -1963,7 +2126,9 @@ export async function completeRepair(
       .eq("id", repair.equipment_id);
 
     if (eqError) {
-      console.warn(`[TerraByte] Warning: Failed to set equipment to Operational: ${eqError.message}`);
+      console.warn(
+        `[TerraByte] Warning: Failed to set equipment to Operational: ${eqError.message}`,
+      );
     }
   }
 
@@ -1971,7 +2136,10 @@ export async function completeRepair(
   try {
     await createServiceHistoryFromRepair(repair.id);
   } catch (shErr) {
-    console.warn(`[TerraByte] Warning: Failed to auto-generate service history on completion:`, shErr);
+    console.warn(
+      `[TerraByte] Warning: Failed to auto-generate service history on completion:`,
+      shErr,
+    );
   }
 
   // Notify farmer that repair is completed and machinery is ready
@@ -1994,9 +2162,53 @@ export async function completeRepair(
       link_target: `/admin/repair/${repair.id}`,
     });
   } catch (adminNotifErr) {
-    console.warn("[TerraByte] Warning: Failed to send admin completion notification:", adminNotifErr);
+    console.warn(
+      "[TerraByte] Warning: Failed to send admin completion notification:",
+      adminNotifErr,
+    );
   }
 
   return updated;
 }
+/**
+ * Fetches the private GPS dispatch location for a repair request.
+ * Governed by RLS: Accessible strictly by ticket farmer, assigned technician, or Admin.
+ * Denied for unassigned technicians in the open queue or third parties.
+ */
+export async function getRepairDispatchLocation(
+  repairRequestId: string,
+): Promise<RepairDispatchLocation | null> {
+  if (!repairRequestId?.trim()) return null;
+  try {
+    const trimmed = repairRequestId.trim();
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
+    let resolvedId = trimmed;
 
+    if (!isUuid) {
+      const { data: repairLookup, error: lookupError } = await supabase
+        .from("repair_requests")
+        .select("id")
+        .ilike("job_number", trimmed)
+        .maybeSingle();
+
+      if (lookupError || !repairLookup) {
+        return null;
+      }
+      resolvedId = repairLookup.id;
+    }
+
+    const { data, error } = await supabase
+      .from("repair_dispatch_locations")
+      .select("id, repair_request_id, latitude, longitude, accuracy, captured_at, created_at")
+      .eq("repair_request_id", resolvedId)
+      .maybeSingle();
+
+    if (error || !data) {
+      return null;
+    }
+    return data as RepairDispatchLocation;
+  } catch (err) {
+    console.warn("[TerraByte] Warning: Failed to query repair dispatch location:", err);
+    return null;
+  }
+}

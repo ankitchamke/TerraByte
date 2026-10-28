@@ -368,7 +368,7 @@ TerraByte implements the open **Model Context Protocol** at `/mcp` via `@lovable
 ## 9. Demo Data Isolation & Atomic Reset Architecture
 
 To allow seamless evaluation during hackathons and demonstrations without polluting real data:
-1. **Canonical Persona Identification**: The system detects whether the logged-in user belongs to the 5 designated demo accounts (`isDesignatedDemoAccount(email)`).
+1. **Canonical Persona Identification**: The system detects whether the logged-in user belongs to the 3 designated demo accounts (`isDesignatedDemoAccount(email)`).
 2. **Dual-Key Authorization**: The PostgreSQL RPC `public.reset_demo_data()` enforces dual-key security:
    - Caller must be an authenticated user whose email is in the designated demo set.
    - The record must have `demo_code IS NOT NULL`.

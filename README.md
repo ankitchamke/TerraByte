@@ -4,7 +4,7 @@
 [![Framework](https://img.shields.io/badge/TanStack%20Start-React%2019-blue?style=for-the-badge)](https://tanstack.com/start)
 [![Database](https://img.shields.io/badge/Supabase-PostgreSQL%2017-3ECF8E?style=for-the-badge&logo=supabase)](https://supabase.com)
 [![Protocol](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-orange?style=for-the-badge)](https://modelcontextprotocol.io)
-[![Status](https://img.shields.io/badge/Stage-Submission%20Ready%20(Frozen)-darkgreen?style=for-the-badge)]()
+[![Status](https://img.shields.io/badge/Stage-Active%20Development%20(Phase%208)-forestgreen?style=for-the-badge)]()
 
 ---
 
@@ -86,7 +86,8 @@ flowchart LR
 ```
 
 ### 1. 🧑‍🌾 Farmer Portal (`/farmer`)
-- **Rapid 2-Minute Breakdown Intake**: Select broken equipment from registered fleet, toggle symptom chips, record voice description via Web Speech API (with Indian English support), and upload field photo evidence.
+- **Rapid 2-Minute Breakdown Intake**: Select broken equipment from registered fleet, toggle symptom chips, capture coarse location (village and official Nagpur District tahsil selection) with optional one-time device GPS capture, record voice description via Web Speech API (with Indian English support), and upload field photo evidence.
+- **Doorstep & Mobile Repair Dispatch**: Privacy-enforced location intake separating coarse village/tahsil visible in open triage queue from exact GPS coordinates accessible solely by the farmer, assigned technician, and admin. On-demand Google Maps turn-by-turn navigation with external disclosure dialog.
 - **Assistive Diagnostic Assessment**: Instant rule-based preliminary analysis evaluating likely affected mechanical systems, parts categories, urgency level, and immediate safety guidance.
 - **Ranked Technician Matching**: Objective ranking based on equipment brand specialization, technical expertise, availability, and travel ETA.
 - **Transparent Quotation Authorization**: Full line-item breakdown (parts, specifications, distributor origin, labour charge, warranty, completion ETA). **No repair work can start without explicit farmer authorization.**
@@ -142,7 +143,7 @@ graph TD
 | **Authentication** | **Supabase Auth (Native)** | Secure email/password authentication, JWT token persistence, and role-based redirect guards. |
 | **Realtime Sync** | **Supabase Realtime (WebSocket)** | Live postgres changes broadcast with 300ms client debounced coalescing and 15s fallback polling. |
 | **Agent / Protocol** | **Model Context Protocol (MCP)** | `@lovable.dev/mcp-js` server exposing diagnostic assessment and technician matching at `/mcp`. |
-| **Hosting Target** | **Cloudflare Workers / Node.js** | Nitro production build preset (`cloudflare-module` compatible). |
+| **Hosting Target** | **Vercel Serverless / Node.js** | Nitro production build preset (`vercel`) via `vite build`. |
 
 ---
 
@@ -229,10 +230,10 @@ For judges, evaluators, and reviewers, TerraByte includes pre-configured canonic
 
 | Role | Demo Email | Persona Name | Location | Seeded Scenario / Ticket |
 | :--- | :--- | :--- | :--- | :--- |
-| **Farmer 1** | `farmer.nagpur@terrabyte.demo` | **Balasaheb Patil** | Katol, Nagpur | `TB-8841` (Mahindra 575 DI) — Paused on `WAITING_FOR_PARTS` (Bosch injector nozzle). |
-| **Farmer 2** | `farmer2.nagpur@terrabyte.demo` | **Suresh Jadhav** | Saoner, Nagpur | `TB-8902` (John Deere 5050D) — `QUOTE_PENDING` (Quote ready for approval). |
-| **Farmer 3** | `farmer3.nagpur@terrabyte.demo` | **Anil Pawar** | Umred, Nagpur | `TB-8898` (Swaraj 744 FE) — Newly `REQUESTED` breakdown (Unassigned). |
-| **Technician** | `tech.nagpur@terrabyte.demo` | **Ramesh Kumar** | Nagpur Mobile Repairs | Active assigned jobs (`TB-8841`, `TB-8902`), quote builder, and load testing sign-off. |
+| Persona | Login Email | Account Name | Location | Seed Baseline |
+| :--- | :--- | :--- | :--- | :--- |
+| **Farmer** | `farmer.nagpur@terrabyte.demo` | **Balasaheb Patil** | Katol, Nagpur | 3 operational tractors (`Mahindra 575 DI`, `VST Shakti 130 DI`, `John Deere W70`). Clean dashboard ready for fresh breakdown intake. |
+| **Technician** | `tech.nagpur@terrabyte.demo` | **Ramesh Kumar** | Green Earth Mobile Repairs, Nagpur | Verified technician workbench, ready to receive and accept assigned jobs. |
 | **Admin** | `admin.nagpur@terrabyte.demo` | **Nagpur Service Centre** | Nagpur Central Command | District dispatch board, cancellation reviews, and technician verification. |
 
 ### 5-Minute Evaluator Test Walkthrough
@@ -299,16 +300,22 @@ npm install
 ```
 
 ### 2. Configure Environment Variables
-Copy `.env.example` to `.env`:
+Copy `.env.example` to `.env.local` (or `.env`):
 ```bash
-cp .env.example .env
+cp .env.example .env.local
 ```
 Fill in your Supabase project credentials:
 ```env
 # Supabase API Configuration (Supabase Dashboard -> Project Settings -> API)
 VITE_SUPABASE_URL=https://your-project-id.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key-here
+
+# Server-Side Operational Configuration (Vercel Project Settings)
+# Required for scheduled /api/health probes invoked via Vercel Cron
+CRON_SECRET=your-secure-cron-secret
 ```
+
+> **Note on Environment Variables:** Client components access Supabase using `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`. In server runtime environments (such as Vercel serverless functions), `CRON_SECRET` must remain strictly server-side (never prefixed with `VITE_`) to protect health probe authorization.
 
 ### 3. Run Development Server
 ```bash

@@ -330,4 +330,58 @@ flowchart TD
 
 ### MILESTONE — NAGPUR RISE 2026 STAGE 1 SUBMISSION FREEZE
 - **Status**: **FROZEN / SUBMISSION READY**
-- **Action**: Feature development is officially frozen. The application is verified on branch `main` for submission under the problem statement: **"One-Stop Agricultural Equipment Repair"**.
+- **Action**: Feature development for Phases 1–7 is officially frozen and preserved.
+
+---
+
+### PHASE 8 — Stabilization and Deployment Operations
+- **Status**: **IN PROGRESS** (Phase 8A committed on branch `phase-8`; automated smoke tests passing; live Vercel environment verification pending)
+- **Objective**: Harden deployment keep-alive and health monitoring, eliminate hardcoded credentials, enforce fail-closed Bearer auth, restore repository baseline files, and establish robust operational documentation.
+- **Deliverables**:
+  1. **Repository Baseline Preservation**: Restored exact HEAD versions of `.env.example` and `AGENTS.md` on branch `phase-8`.
+  2. **Secured Health Endpoint (`/api/health`) (Phase 8A)**:
+     - Requires `Authorization: Bearer <CRON_SECRET>` verified via generated helper `authenticateCronRequest` (accepts `CRON_SECRET` or `TERRABYTE_CRON_SECRET`, plus rotation aliases).
+     - Returns HTTP 500 plain text (`"Server configuration error"`) if all current-secret aliases are unset.
+     - Strictly rejects query-string tokens (`?secret=`, `?token=`) and invalid Bearer headers with HTTP 401 plain text (`"Unauthorized"`) when a current secret is configured.
+     - Emits minimal sanitized response (`{ status: "healthy" | "unhealthy", timestamp, checks: { database }, message?: string }`) without leaking raw PostgreSQL errors in responses or server logs.
+  3. **Low-Privilege Supabase Probe**:
+     - Stripped hardcoded credentials and URL fallbacks.
+     - Validates candidate keys to ensure they are strictly public (`sb_publishable_...` or legacy JWT with decoded `role: "anon"`). Strictly rejects `sb_secret_`, non-anon roles, and service-role keys.
+     - Queries `profiles.id` with `limit(1)`; live `anon` SELECT grant unconfirmed in migrations and remains pending owner verification.
+  4. **Liveness / Readiness Decoupling**:
+     - `HEAD /api/health` returns HTTP 200 without database probing or auth requirement, acting strictly as a server process liveness indicator.
+  5. **Unified Monitoring Strategy**:
+     - Retained Vercel Cron (`vercel.json`) at `0 5 * * 1,3,5` invoking `/api/health`.
+     - Omitted untracked GitHub workflow, resolving credential leakage risks and redundant triggers.
+  6. **Static Verification & Build**:
+     - TypeScript compilation: 0 errors.
+     - Targeted ESLint: 0 errors.
+     - Production build: Clean Nitro Vercel generation under `.output/` and `.vercel/`.
+
+---
+
+### PHASE 8B — Doorstep & Mobile Repair (Phase 8B.1 & Demo Cleanup Complete)
+- **Phase 8B Demo-Data Cleanup & Baseline Restoration**: **COMPLETE**
+  - Retained exclusively: Balasaheb Patil (Farmer), Ramesh Kumar (Technician), Nagpur Service Centre (Admin), Balasaheb's 3 tractors, and brand logo.
+  - Purged all sample repair requests, quotes, quote items, messages, notes, timelines, dispatch locations, service history, and notifications.
+  - Pruned 11 test/demo Auth users via Supabase Auth Admin API and non-retained profiles via SQL transaction.
+  - Applied migration `20261028110000_phase8b_cleanup_reset_demo_rpc.sql` restricting `reset_demo_data()` to 3 retained personas with zero sample resurrection.
+  - Hardened candidate technician query in `src/lib/services/technicians.ts` and `src/lib/tb-store.ts`.
+  - Added regression test suite `tests/cleanup-verification.test.mjs` (4/4 tests passing).
+  - Address capture and dynamic road-distance matching remain deferred to a separate future phase.
+- **Subphase 8B.1 — Service Location Intake, Optional GPS & Technician Directions**: **COMPLETE (OSRM routing & demo cleanup owner-confirmed)**
+  - Implemented coarse location intake on `/farmer/report-breakdown`: farmer enters village text and selects from the official 14 Nagpur District tahsils (`src/lib/location.ts`).
+  - Village is prefilled from farmer's profile when available; tahsil is never inferred.
+  - Optional one-time browser GPS capture (`navigator.geolocation.getCurrentPosition`) with permission handling, accuracy tracking, error/retry feedback, and in-memory isolation (never stored in `localStorage` drafts, URLs, or logs).
+  - Migration `20261027100000_phase8b_1_dispatch_locations.sql` applied and recorded in development project `hwdrypkvszwrcraujctw`: creates table `public.repair_dispatch_locations`, index, grants to `authenticated` and `service_role`, and 4 subquery RLS policies protecting coordinates (readable solely by ticket farmer, assigned technician on active tickets, and admin).
+  - PostgREST API schema resolution verified: read query returns HTTP 200 OK (resolving prior `PGRST205` schema cache error).
+  - Compensating state-machine cleanup: Client-coordinated mutations in `createRepairRequest` use authorized `cancelRepairRequest` on failed dispatch location writes, restoring equipment state without leaving orphan active tickets.
+  - Directions to service location via Google Maps universal navigation link with explicit external disclosure dialog (`rel="noopener noreferrer"`, `target="_blank"`), plus fallback area search when GPS is absent.
+  - Differentiated 3-state GPS visibility UI: (a) tickets without GPS (coarse search fallback), (b) tickets with exact GPS captured and viewer authorized, (c) private coordinates restricted to assigned technician/farmer/admin (open queue sees coarse location only).
+  - Server-mediated in-app driving distance & ETA estimation via free public OSRM service (`router.project-osrm.org`, transient calculation, zero API keys required, explicit pre-action disclosure).
+  - Resilient ticket ID resolution: `getRepairDispatchLocation` and `/api/route-estimate` handle both UUIDs and human-readable job numbers (e.g. `TB-7524`), eliminating route param lookup failures.
+  - Verified on Farmer repair detail (`/farmer/repair/$id`), Technician job detail (`/technician/job/$id`), and Admin repair detail (`/admin/repair/$id`).
+  - Signup address autofill, reverse geocoding, and dynamic account-distance matching remain deferred.
+  - Automated verification: 0 TypeScript errors (`npx tsc --noEmit`), clean Vite/Nitro production build (`npm run build`), clean lint, 21 automated route-estimate tests passing (`tests/route-estimate.test.mjs`), and 4 automated cleanup-verification tests passing (`tests/cleanup-verification.test.mjs`). OSRM routing/distance and demo cleanup confirmed working by owner.
+- **Subphase 8B.2 — Technician Service-Area Coverage & 100-Point Matching**: **PENDING OWNER APPROVAL & 8B.1 QA**
+- **Subphase 8B.3 — Doorstep Travel Lifecycle & Realtime Arrival Tracking**: **PENDING OWNER APPROVAL & 8B.1 QA**

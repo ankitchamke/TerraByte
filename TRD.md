@@ -168,7 +168,7 @@ TerraByte enforces rigorous data boundary isolation and presentation integrity b
 - **Database as Sole Source of Truth**: The live Supabase PostgreSQL database is the definitive source of truth for all business operations, tickets, and user assets. Client-side mock state (`tb-store.ts`) must never overwrite, intercept, or substitute for live farmer database queries, nor may mock data be used as a shortcut for perceived performance.
 - **Explicit Demo Identity Handling**:
   - The system enforces a strict, explicit distinction between canonical demo evaluation personas and real registered users.
-  - The `"DEMO DATA"` badge (`DemoTag`) and the Reset Demo capability (`public.reset_demo_data()`) are restricted strictly to the 5 designated demo accounts: `farmer.nagpur@terrabyte.demo`, `farmer2.nagpur@terrabyte.demo`, `farmer3.nagpur@terrabyte.demo`, `tech.nagpur@terrabyte.demo`, and `admin.nagpur@terrabyte.demo`.
+  - The `"DEMO DATA"` badge (`DemoTag`) and the Reset Demo capability (`public.reset_demo_data()`) are restricted strictly to the 3 designated demo accounts: `farmer.nagpur@terrabyte.demo`, `tech.nagpur@terrabyte.demo`, and `admin.nagpur@terrabyte.demo`.
   - Real user accounts (such as `Ankit Chamke`) are never classified as demo accounts, never render `"DEMO DATA"` badges, and are protected from demo reset operations.
 - **Performance Principle: Independent Data Must Not Block Rendering**:
   - Independent domain data (equipment fleet vs active repairs vs notifications) must load concurrently and render progressively.

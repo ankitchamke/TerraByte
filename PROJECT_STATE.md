@@ -84,7 +84,7 @@
   - Out-of-tree scratch smoke check: Verified 6 security scenarios via temporary local node script; repository manual QA pending.
   - Live deployment verification: PENDING project owner verification of Vercel production environment variables.
 
-### Phase 8B — Doorstep & Mobile Repair (In Progress — Phase 8B.1 Migration Applied & Verified)
+### Phase 8B — Doorstep & Mobile Repair (Phase 8B.1 & Demo Cleanup Complete)
 - **Phase 8B.1 — Service Location Intake, Optional GPS & Technician Directions**:
   - Implemented coarse location intake on `/farmer/report-breakdown`: farmer enters village name and selects from official 14 Nagpur District Tahsils (`src/lib/location.ts`).
   - Village is prefilled from farmer profile if available; tahsil is never inferred.
@@ -94,11 +94,11 @@
   - Multi-step mutation compensation: `createRepairRequest` invokes authorized `cancelRepairRequest` on failed dispatch location writes to guarantee state-machine and equipment consistency.
   - Directions to service location via Google Maps universal navigation link with explicit external disclosure dialog (`rel="noopener noreferrer"`, `target="_blank"`), plus fallback area search when GPS is absent.
   - Differentiated 3-state GPS visibility UI: (a) tickets created without GPS (coarse search fallback), (b) tickets with exact GPS captured and viewer authorized, (c) private coordinates restricted to assigned technician/farmer/admin (open queue sees coarse location only).
-  - Server-mediated in-app driving distance & ETA estimation via Google Maps Routes API v2 (`TRAFFIC_UNAWARE`, transient calculation, server-side-only API key, explicit pre-action disclosure).
+  - Server-mediated in-app driving distance & ETA estimation via free public OSRM service (`router.project-osrm.org`, transient calculation, zero API keys required, explicit pre-action disclosure).
   - Resilient ticket ID resolution: `getRepairDispatchLocation` and `/api/route-estimate` handle both UUIDs and human-readable job numbers (e.g. `TB-7524`), eliminating route param lookup failures.
   - Rendered on Farmer repair detail (`/farmer/repair/$id`), Technician job detail (`/technician/job/$id`), and Admin repair detail (`/admin/repair/$id`).
-  - Address autofill, reverse geocoding, and demo-data modifications remain deferred.
-  - Verification: 0 TypeScript errors (`npx tsc --noEmit`), clean Vite/Nitro production build (`npm run build`), clean lint, and 17 automated tests passing (`tests/route-estimate.test.mjs`). Status: **IN PROGRESS (Awaiting owner manual QA)**.
+  - Signup address autofill, reverse geocoding, and dynamic account-distance matching remain deferred to future roadmap.
+  - Verification: 0 TypeScript errors (`npx tsc --noEmit`), clean Vite/Nitro production build (`npm run build`), clean lint, 21 automated route-estimate tests passing (`tests/route-estimate.test.mjs`), and 4 automated cleanup-verification tests passing (`tests/cleanup-verification.test.mjs`). OSRM routing/distance and demo-data cleanup are owner-confirmed working. Status: **COMPLETE (Ready for Commit)**.
 
 ---
 
@@ -124,12 +124,10 @@
 1. **Regional Anchor**: Anchored strictly in **Nagpur District, Maharashtra** (Vidarbha region: Katol, Saoner, Umred talukas; cotton, soybean, orange farming contexts).
 2. **Database as Source of Truth**: Live Supabase PostgreSQL is the sole source of truth. Mock store fixtures (`tb-store.ts`) serve solely as fallback reference definitions.
 3. **Data Scoping Discipline**: Every data query must resolve caller identity through authenticated `auth.uid()` $\rightarrow$ `profiles` row $\rightarrow$ `profile.id`, strictly scoped to the authenticated user.
-4. **Demo Account Authorization**: Reset Demo capabilities are strictly restricted on the backend via dual-key authorization to the 5 designated evaluation personas:
-   - `farmer.nagpur@terrabyte.demo`
-   - `farmer2.nagpur@terrabyte.demo`
-   - `farmer3.nagpur@terrabyte.demo`
-   - `tech.nagpur@terrabyte.demo`
-   - `admin.nagpur@terrabyte.demo`
+4. **Demo Account Authorization**: Reset Demo capabilities are strictly restricted on the backend via dual-key authorization to the 3 designated evaluation personas:
+   - `farmer.nagpur@terrabyte.demo` (Balasaheb Patil)
+   - `tech.nagpur@terrabyte.demo` (Ramesh Kumar)
+   - `admin.nagpur@terrabyte.demo` (Nagpur Service Centre)
 5. **Real User Isolation**: Real user data is strictly isolated by RLS and cannot be modified or cleared by demo reset operations.
 6. **Assistive AI Boundary**: Machine diagnostics use rule-based reasoning with transparent markers. AI provides decision support; farmers and technicians retain final operational authority.
 7. **Submission Freeze Rule**: Zero new feature initiatives or architecture refactors are permitted during the Nagpur RISE 2026 Stage 1 evaluation period.

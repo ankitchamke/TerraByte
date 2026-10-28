@@ -27,8 +27,6 @@ flowchart TD
 1. **Explicit Identity Detection**:
    - The system checks whether the authenticated user's email strictly matches one of the 5 canonical demo evaluation personas (`isDesignatedDemoAccount(email)`):
      - `farmer.nagpur@terrabyte.demo` (Balasaheb Patil)
-     - `farmer2.nagpur@terrabyte.demo` (Suresh Jadhav)
-     - `farmer3.nagpur@terrabyte.demo` (Anil Pawar)
      - `tech.nagpur@terrabyte.demo` (Ramesh Kumar)
      - `admin.nagpur@terrabyte.demo` (Nagpur Service Centre)
 2. **Badge Presentation (`DemoTag`)**:
@@ -207,7 +205,7 @@ flowchart TD
     Remount --> Stay["User remains authenticated on current route with restored baseline"]
 ```
 
-1. **Access Gate**: Trigger is visible **only** to the 5 designated demo accounts (`farmer.nagpur@terrabyte.demo`, `farmer2.nagpur@terrabyte.demo`, `farmer3.nagpur@terrabyte.demo`, `tech.nagpur@terrabyte.demo`, `admin.nagpur@terrabyte.demo`).
+1. **Access Gate**: Trigger is visible **only** to the 3 designated demo accounts (`farmer.nagpur@terrabyte.demo`, `tech.nagpur@terrabyte.demo`, `admin.nagpur@terrabyte.demo`).
 2. **Confirmation**: Modal explains that demo equipment, repairs, quotes, and timeline return to baseline while user accounts and real user records remain unaffected.
 3. **Execution**: Backend RPC executes an atomic transaction. Client refreshes profile, notifications, invalidates router cache, and remounts child route components.
 4. **Result**: The current farmer's dashboard deterministically reloads their canonical baseline dataset without a full browser reload.

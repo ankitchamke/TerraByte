@@ -6,6 +6,7 @@ import {
   formatRouteDuration,
   parseGoogleDurationSeconds,
   computeGoogleRoute,
+  computeOsrmRoute,
 } from "../src/lib/services/routing.ts";
 import {
   isValidGpsCoordinate,
@@ -80,8 +81,124 @@ test("isValidGpsCoordinate strictly validates coordinate bounds and rejects Null
 });
 
 // ==============================================================================
-// 2. GOOGLE ROUTES API CLIENT (MOCKED FETCH)
+// 2. OSRM PUBLIC ROUTING CLIENT & GOOGLE ROUTES COMPATIBILITY (MOCKED FETCH)
 // ==============================================================================
+
+test("computeOsrmRoute successfully parses valid OSRM response with longitude,latitude ordering", async () => {
+  let capturedUrl = "";
+  let capturedOptions = {};
+
+  const mockFetch = async (url, options) => {
+    capturedUrl = url;
+    capturedOptions = options;
+
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        code: "Ok",
+        routes: [
+          {
+            distance: 66270.9,
+            duration: 3677.9,
+            weight: 3677.9,
+            weight_name: "routability",
+            legs: [],
+          },
+        ],
+        waypoints: [],
+      }),
+    };
+  };
+
+  const origin = { latitude: 21.1458, longitude: 79.0882 };
+  const destination = { latitude: 21.2678, longitude: 78.5872 };
+
+  const result = await computeOsrmRoute(origin, destination, mockFetch);
+
+  // Verify outgoing request URL and coordinate order (longitude,latitude;longitude,latitude)
+  assert.equal(
+    capturedUrl,
+    "https://router.project-osrm.org/route/v1/driving/79.0882,21.1458;78.5872,21.2678?overview=false",
+  );
+  assert.equal(capturedOptions.method, "GET");
+
+  // Verify returned result contains NO coordinates
+  assert.equal(result.success, true);
+  assert.equal(result.distanceMeters, 66271);
+  assert.equal(result.distanceKm, 66.3);
+  assert.equal(result.durationSeconds, 3678);
+  assert.equal(result.durationMinutes, 61);
+  assert.equal(result.durationFormatted, "1 hr 1 mins");
+  assert.equal(result.isTrafficAware, false);
+  assert.equal("origin" in result, false);
+  assert.equal("destination" in result, false);
+  assert.equal("latitude" in result, false);
+  assert.equal("longitude" in result, false);
+  assert.ok(result.calculatedAt);
+});
+
+test("computeOsrmRoute throws when OSRM reports no route or code is not Ok", async () => {
+  const mockFetch = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ code: "NoRoute", routes: [] }),
+  });
+
+  await assert.rejects(
+    async () => {
+      await computeOsrmRoute(
+        { latitude: 21.1458, longitude: 79.0882 },
+        { latitude: 21.2678, longitude: 78.5872 },
+        mockFetch,
+      );
+    },
+    { message: /No drivable route found/ },
+  );
+});
+
+test("computeOsrmRoute throws sanitized error when OSRM returns HTTP error", async () => {
+  const mockFetch = async () => ({
+    ok: false,
+    status: 400,
+    json: async () => ({
+      code: "InvalidQuery",
+      message: "Query string malformed",
+    }),
+  });
+
+  await assert.rejects(
+    async () => {
+      await computeOsrmRoute(
+        { latitude: 21.1458, longitude: 79.0882 },
+        { latitude: 21.2678, longitude: 78.5872 },
+        mockFetch,
+      );
+    },
+    { message: /Query string malformed/ },
+  );
+});
+
+test("computeOsrmRoute rejects invalid GPS coordinates without calling fetch", async () => {
+  let fetchCalled = false;
+  const mockFetch = async () => {
+    fetchCalled = true;
+    return { ok: true };
+  };
+
+  await assert.rejects(
+    async () => {
+      await computeOsrmRoute(
+        { latitude: 999.0, longitude: 79.0882 },
+        { latitude: 21.2678, longitude: 78.5872 },
+        mockFetch,
+      );
+    },
+    { message: /Invalid origin GPS coordinates/ },
+  );
+
+  assert.equal(fetchCalled, false);
+});
 
 test("computeGoogleRoute successfully parses valid Routes API response with TRAFFIC_UNAWARE", async () => {
   let capturedUrl = "";
@@ -220,7 +337,11 @@ test("handleRouteEstimateRequest rejects missing Bearer token with 401", async (
   const req = new Request("http://localhost/api/route-estimate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ repairId: "test-id", technicianLatitude: 21.1, technicianLongitude: 79.1 }),
+    body: JSON.stringify({
+      repairId: "test-id",
+      technicianLatitude: 21.1,
+      technicianLongitude: 79.1,
+    }),
   });
   const res = await handleRouteEstimateRequest(req);
   assert.equal(res.status, 401);
@@ -315,16 +436,25 @@ test("determineGpsVisibilityCategory correctly partitions the three UI visibilit
 test("buildGoogleMapsDirectionsUrl and buildGoogleMapsSearchUrl generate valid external navigation links", () => {
   // Exact GPS directions URL
   const dirUrl = buildGoogleMapsDirectionsUrl(21.1458, 79.0882);
-  assert.match(dirUrl, /^https:\/\/www\.google\.com\/maps\/dir\/\?api=1&destination=21\.145800%2C79\.088200$/);
+  assert.match(
+    dirUrl,
+    /^https:\/\/www\.google\.com\/maps\/dir\/\?api=1&destination=21\.145800%2C79\.088200$/,
+  );
 
   // Coarse search URL
   const searchUrl = buildGoogleMapsSearchUrl("Katol, Nagpur (Rural)");
-  assert.match(searchUrl, /^https:\/\/www\.google\.com\/maps\/search\/\?api=1&query=Katol%2C%20Nagpur%20\(Rural\)$/);
+  assert.match(
+    searchUrl,
+    /^https:\/\/www\.google\.com\/maps\/search\/\?api=1&query=Katol%2C%20Nagpur%20\(Rural\)$/,
+  );
 });
 
 test("formatCoarseLocation handles village and tahsil correctly", () => {
   assert.equal(formatCoarseLocation("Dorli", "Katol"), "Dorli, Katol");
-  assert.equal(formatCoarseLocation("Katol, Nagpur", "Nagpur (Rural)"), "Katol, Nagpur, Nagpur (Rural)");
+  assert.equal(
+    formatCoarseLocation("Katol, Nagpur", "Nagpur (Rural)"),
+    "Katol, Nagpur, Nagpur (Rural)",
+  );
   assert.equal(formatCoarseLocation("", "Katol"), "Katol");
   assert.equal(formatCoarseLocation("Dorli", ""), "Dorli");
   assert.equal(formatCoarseLocation(null, null), "");
@@ -332,9 +462,7 @@ test("formatCoarseLocation handles village and tahsil correctly", () => {
 
 test("resilient ID resolution simulates getRepairDispatchLocation handling both UUID and job_number", async () => {
   const db = {
-    repair_requests: [
-      { id: "23c3d082-3e43-43b6-927f-955f0653d30b", job_number: "TB-7524" },
-    ],
+    repair_requests: [{ id: "23c3d082-3e43-43b6-927f-955f0653d30b", job_number: "TB-7524" }],
     repair_dispatch_locations: [
       {
         repair_request_id: "23c3d082-3e43-43b6-927f-955f0653d30b",
@@ -359,9 +487,7 @@ test("resilient ID resolution simulates getRepairDispatchLocation handling both 
       resolvedId = match.id;
     }
 
-    const loc = db.repair_dispatch_locations.find(
-      (d) => d.repair_request_id === resolvedId,
-    );
+    const loc = db.repair_dispatch_locations.find((d) => d.repair_request_id === resolvedId);
     return loc || null;
   }
 
@@ -379,4 +505,3 @@ test("resilient ID resolution simulates getRepairDispatchLocation handling both 
   const notFound = await mockGetRepairDispatchLocation("TB-9999");
   assert.equal(notFound, null);
 });
-

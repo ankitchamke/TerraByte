@@ -70,6 +70,91 @@ export function parseGoogleDurationSeconds(durationStr: unknown): number {
 }
 
 /**
+ * Computes a driving route estimate between two points using the free public OSRM service.
+ * OSRM endpoint expects coordinates in longitude,latitude order:
+ * https://router.project-osrm.org/route/v1/driving/{longitude},{latitude};{longitude},{latitude}?overview=false
+ *
+ * Distance is returned in meters, duration in seconds.
+ * Transient calculation; traffic-unaware.
+ */
+export async function computeOsrmRoute(
+  origin: GpsPoint,
+  destination: GpsPoint,
+  fetchFn: typeof fetch = fetch,
+): Promise<RouteEstimateResult> {
+  if (!isValidGpsCoordinate(origin.latitude, origin.longitude)) {
+    throw new Error("Invalid origin GPS coordinates.");
+  }
+  if (!isValidGpsCoordinate(destination.latitude, destination.longitude)) {
+    throw new Error("Invalid destination GPS coordinates.");
+  }
+
+  const endpoint = `https://router.project-osrm.org/route/v1/driving/${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}?overview=false`;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+  try {
+    const response = await fetchFn(endpoint, {
+      method: "GET",
+      headers: {
+        Accept: "application/json",
+      },
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!response.ok) {
+      let errorMsg = `OSRM routing request failed with status ${response.status}.`;
+      try {
+        const errJson = await response.json();
+        if (errJson?.message) {
+          errorMsg = errJson.message;
+        }
+      } catch {
+        /* ignore json parse error */
+      }
+      throw new Error(errorMsg);
+    }
+
+    const data = await response.json();
+
+    if (data?.code !== "Ok" || !Array.isArray(data?.routes) || data.routes.length === 0) {
+      throw new Error("No drivable route found between current location and destination.");
+    }
+
+    const route = data.routes[0];
+    if (typeof route?.distance !== "number" || typeof route?.duration !== "number") {
+      throw new Error("No drivable route found between current location and destination.");
+    }
+
+    const distanceMeters = Math.round(route.distance);
+    const durationSeconds = Math.round(route.duration);
+    const distanceKm = Math.round((distanceMeters / 1000) * 10) / 10;
+    const durationMinutes = Math.max(1, Math.round(durationSeconds / 60));
+    const durationFormatted = formatRouteDuration(durationSeconds);
+
+    return {
+      success: true,
+      distanceMeters,
+      distanceKm,
+      durationSeconds,
+      durationMinutes,
+      durationFormatted,
+      calculatedAt: new Date().toISOString(),
+      isTrafficAware: false,
+    };
+  } catch (err: unknown) {
+    clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error("OSRM routing request timed out. Please try again.");
+    }
+    throw err;
+  }
+}
+
+/**
  * Computes a standard driving route estimate between two points using Google Maps Routes API v2.
  * Strictly uses TRAFFIC_UNAWARE to avoid live traffic modifier SKUs and ensure standard driving estimates.
  * Restricts field mask strictly to routes.distanceMeters and routes.duration.

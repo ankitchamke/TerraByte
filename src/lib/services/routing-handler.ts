@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { isValidGpsCoordinate } from "../location.ts";
-import { computeGoogleRoute, type RouteEstimateResult } from "./routing.ts";
+import { computeOsrmRoute, type RouteEstimateResult } from "./routing.ts";
 
 const CANONICAL_SUPABASE_URL = "https://hwdrypkvszwrcraujctw.supabase.co";
 const CANONICAL_SUPABASE_KEY = "sb_publishable_N5Najdw3CfFpFv3gNy0sdA_HNGtdRrq";
@@ -22,7 +22,7 @@ function getSupabaseConfig() {
  * Handles incoming POST /api/route-estimate requests.
  * Authenticates the caller, verifies technician assignment and active repair state,
  * retrieves destination GPS coordinates via user-scoped RLS, and executes standard
- * route computation via Google Maps Routes API v2.
+ * route computation via free public OSRM routing service.
  */
 export async function handleRouteEstimateRequest(
   request: Request,
@@ -208,7 +208,7 @@ export async function handleRouteEstimateRequest(
   const { data: dispatchLoc, error: dispatchError } = await userClient
     .from("repair_dispatch_locations")
     .select("latitude, longitude, accuracy")
-    .eq("repair_request_id", repairId)
+    .eq("repair_request_id", repair.id)
     .maybeSingle();
 
   if (dispatchError || !dispatchLoc) {
@@ -235,31 +235,11 @@ export async function handleRouteEstimateRequest(
     );
   }
 
-  // 6. Check server API key configuration
-  const serverKey =
-    options?.apiKey ||
-    process.env["GOOGLE_MAPS_SERVER_KEY"] ||
-    process.env["GOOGLE_ROUTES_API_KEY"];
-
-  if (!serverKey || !serverKey.trim()) {
-    return new Response(
-      JSON.stringify({
-        error:
-          "Google Maps Routes API is not configured on this server. Please use the Google Maps navigation link instead.",
-      }),
-      {
-        status: 503,
-        headers: { "Content-Type": "application/json" },
-      },
-    );
-  }
-
-  // 7. Execute route calculation
+  // 6. Execute route calculation via OSRM
   try {
-    const result: RouteEstimateResult = await computeGoogleRoute(
+    const result: RouteEstimateResult = await computeOsrmRoute(
       { latitude: technicianLatitude, longitude: technicianLongitude },
       { latitude: dispatchLoc.latitude, longitude: dispatchLoc.longitude },
-      serverKey,
       options?.fetchFn,
     );
 

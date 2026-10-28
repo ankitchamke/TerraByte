@@ -360,8 +360,16 @@ flowchart TD
 
 ---
 
-### PHASE 8B — Doorstep & Mobile Repair (In Progress)
-- **Subphase 8B.1 — Service Location Intake, Optional GPS & Technician Directions**: **IN PROGRESS (Migration applied, PostgREST verified, automated tests passing; awaiting owner manual QA)**
+### PHASE 8B — Doorstep & Mobile Repair (Phase 8B.1 & Demo Cleanup Complete)
+- **Phase 8B Demo-Data Cleanup & Baseline Restoration**: **COMPLETE**
+  - Retained exclusively: Balasaheb Patil (Farmer), Ramesh Kumar (Technician), Nagpur Service Centre (Admin), Balasaheb's 3 tractors, and brand logo.
+  - Purged all sample repair requests, quotes, quote items, messages, notes, timelines, dispatch locations, service history, and notifications.
+  - Pruned 11 test/demo Auth users via Supabase Auth Admin API and non-retained profiles via SQL transaction.
+  - Applied migration `20261028110000_phase8b_cleanup_reset_demo_rpc.sql` restricting `reset_demo_data()` to 3 retained personas with zero sample resurrection.
+  - Hardened candidate technician query in `src/lib/services/technicians.ts` and `src/lib/tb-store.ts`.
+  - Added regression test suite `tests/cleanup-verification.test.mjs` (4/4 tests passing).
+  - Address capture and dynamic road-distance matching remain deferred to a separate future phase.
+- **Subphase 8B.1 — Service Location Intake, Optional GPS & Technician Directions**: **COMPLETE (OSRM routing & demo cleanup owner-confirmed)**
   - Implemented coarse location intake on `/farmer/report-breakdown`: farmer enters village text and selects from the official 14 Nagpur District tahsils (`src/lib/location.ts`).
   - Village is prefilled from farmer's profile when available; tahsil is never inferred.
   - Optional one-time browser GPS capture (`navigator.geolocation.getCurrentPosition`) with permission handling, accuracy tracking, error/retry feedback, and in-memory isolation (never stored in `localStorage` drafts, URLs, or logs).
@@ -370,10 +378,10 @@ flowchart TD
   - Compensating state-machine cleanup: Client-coordinated mutations in `createRepairRequest` use authorized `cancelRepairRequest` on failed dispatch location writes, restoring equipment state without leaving orphan active tickets.
   - Directions to service location via Google Maps universal navigation link with explicit external disclosure dialog (`rel="noopener noreferrer"`, `target="_blank"`), plus fallback area search when GPS is absent.
   - Differentiated 3-state GPS visibility UI: (a) tickets without GPS (coarse search fallback), (b) tickets with exact GPS captured and viewer authorized, (c) private coordinates restricted to assigned technician/farmer/admin (open queue sees coarse location only).
-  - Server-mediated in-app driving distance & ETA estimation via Google Maps Routes API v2 (`TRAFFIC_UNAWARE`, transient calculation, server-side-only API key, explicit pre-action disclosure).
+  - Server-mediated in-app driving distance & ETA estimation via free public OSRM service (`router.project-osrm.org`, transient calculation, zero API keys required, explicit pre-action disclosure).
   - Resilient ticket ID resolution: `getRepairDispatchLocation` and `/api/route-estimate` handle both UUIDs and human-readable job numbers (e.g. `TB-7524`), eliminating route param lookup failures.
   - Verified on Farmer repair detail (`/farmer/repair/$id`), Technician job detail (`/technician/job/$id`), and Admin repair detail (`/admin/repair/$id`).
-  - Address autofill, reverse geocoding, and demo-data modifications remain deferred.
-  - Automated verification: 0 TypeScript errors (`npx tsc --noEmit`), clean Vite/Nitro production build (`npm run build`), clean lint, and 17 automated unit/handler tests passing (`tests/route-estimate.test.mjs`).
+  - Signup address autofill, reverse geocoding, and dynamic account-distance matching remain deferred.
+  - Automated verification: 0 TypeScript errors (`npx tsc --noEmit`), clean Vite/Nitro production build (`npm run build`), clean lint, 21 automated route-estimate tests passing (`tests/route-estimate.test.mjs`), and 4 automated cleanup-verification tests passing (`tests/cleanup-verification.test.mjs`). OSRM routing/distance and demo cleanup confirmed working by owner.
 - **Subphase 8B.2 — Technician Service-Area Coverage & 100-Point Matching**: **PENDING OWNER APPROVAL & 8B.1 QA**
 - **Subphase 8B.3 — Doorstep Travel Lifecycle & Realtime Arrival Tracking**: **PENDING OWNER APPROVAL & 8B.1 QA**

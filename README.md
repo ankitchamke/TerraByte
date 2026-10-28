@@ -230,10 +230,10 @@ For judges, evaluators, and reviewers, TerraByte includes pre-configured canonic
 
 | Role | Demo Email | Persona Name | Location | Seeded Scenario / Ticket |
 | :--- | :--- | :--- | :--- | :--- |
-| **Farmer 1** | `farmer.nagpur@terrabyte.demo` | **Balasaheb Patil** | Katol, Nagpur | `TB-8841` (Mahindra 575 DI) — Paused on `WAITING_FOR_PARTS` (Bosch injector nozzle). |
-| **Farmer 2** | `farmer2.nagpur@terrabyte.demo` | **Suresh Jadhav** | Saoner, Nagpur | `TB-8902` (John Deere 5050D) — `QUOTE_PENDING` (Quote ready for approval). |
-| **Farmer 3** | `farmer3.nagpur@terrabyte.demo` | **Anil Pawar** | Umred, Nagpur | `TB-8898` (Swaraj 744 FE) — Newly `REQUESTED` breakdown (Unassigned). |
-| **Technician** | `tech.nagpur@terrabyte.demo` | **Ramesh Kumar** | Nagpur Mobile Repairs | Active assigned jobs (`TB-8841`, `TB-8902`), quote builder, and load testing sign-off. |
+| Persona | Login Email | Account Name | Location | Seed Baseline |
+| :--- | :--- | :--- | :--- | :--- |
+| **Farmer** | `farmer.nagpur@terrabyte.demo` | **Balasaheb Patil** | Katol, Nagpur | 3 operational tractors (`Mahindra 575 DI`, `VST Shakti 130 DI`, `John Deere W70`). Clean dashboard ready for fresh breakdown intake. |
+| **Technician** | `tech.nagpur@terrabyte.demo` | **Ramesh Kumar** | Green Earth Mobile Repairs, Nagpur | Verified technician workbench, ready to receive and accept assigned jobs. |
 | **Admin** | `admin.nagpur@terrabyte.demo` | **Nagpur Service Centre** | Nagpur Central Command | District dispatch board, cancellation reviews, and technician verification. |
 
 ### 5-Minute Evaluator Test Walkthrough

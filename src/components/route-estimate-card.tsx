@@ -132,7 +132,7 @@ export function RouteEstimateCard({ repairId, hasGpsLocation, className }: Route
           Driving Distance & Time Estimate
         </span>
         <span className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground bg-muted/60 px-2 py-0.5 rounded">
-          Google Routes
+          OSRM
         </span>
       </div>
 
@@ -140,7 +140,7 @@ export function RouteEstimateCard({ repairId, hasGpsLocation, className }: Route
         <div className="space-y-2.5">
           <p className="text-xs text-muted-foreground leading-relaxed">
             Calculates road distance and travel time from your one-time current location to the
-            farmer's saved GPS location using Google Maps Routes API. Your coordinates are never
+            farmer's saved GPS location using OSRM routing service. Your coordinates are never
             tracked or stored.
           </p>
           <button
@@ -160,7 +160,7 @@ export function RouteEstimateCard({ repairId, hasGpsLocation, className }: Route
           <span>
             {status === "requesting_location"
               ? "Accessing one-time device location..."
-              : "Calculating driving route via Google Routes API..."}
+              : "Calculating driving route via OSRM..."}
           </span>
         </div>
       )}

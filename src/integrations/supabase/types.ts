@@ -370,6 +370,44 @@ export type Database = {
           },
         ]
       }
+      repair_dispatch_locations: {
+        Row: {
+          accuracy: number | null
+          captured_at: string
+          created_at: string
+          id: string
+          latitude: number
+          longitude: number
+          repair_request_id: string
+        }
+        Insert: {
+          accuracy?: number | null
+          captured_at?: string
+          created_at?: string
+          id?: string
+          latitude: number
+          longitude: number
+          repair_request_id: string
+        }
+        Update: {
+          accuracy?: number | null
+          captured_at?: string
+          created_at?: string
+          id?: string
+          latitude?: number
+          longitude?: number
+          repair_request_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "repair_dispatch_locations_repair_request_id_fkey"
+            columns: ["repair_request_id"]
+            isOneToOne: true
+            referencedRelation: "repair_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       repair_requests: {
         Row: {
           assessment: Json

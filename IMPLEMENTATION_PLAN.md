@@ -335,10 +335,10 @@ flowchart TD
 ---
 
 ### PHASE 8 — Stabilization and Deployment Operations
-- **Status**: **IN PROGRESS** (Code complete; local smoke tests passing; live Vercel environment verification pending)
+- **Status**: **IN PROGRESS** (Phase 8A committed on branch `phase-8`; automated smoke tests passing; live Vercel environment verification pending)
 - **Objective**: Harden deployment keep-alive and health monitoring, eliminate hardcoded credentials, enforce fail-closed Bearer auth, restore repository baseline files, and establish robust operational documentation.
 - **Deliverables**:
-  1. **Repository Baseline Preservation**: Restored exact HEAD versions of `.env.example` and `AGENTS.md` on branch `codex/phase-8-stabilization`.
+  1. **Repository Baseline Preservation**: Restored exact HEAD versions of `.env.example` and `AGENTS.md` on branch `phase-8`.
   2. **Secured Health Endpoint (`/api/health`) (Phase 8A)**:
      - Requires `Authorization: Bearer <CRON_SECRET>` verified via generated helper `authenticateCronRequest` (accepts `CRON_SECRET` or `TERRABYTE_CRON_SECRET`, plus rotation aliases).
      - Returns HTTP 500 plain text (`"Server configuration error"`) if all current-secret aliases are unset.
@@ -357,3 +357,23 @@ flowchart TD
      - TypeScript compilation: 0 errors.
      - Targeted ESLint: 0 errors.
      - Production build: Clean Nitro Vercel generation under `.output/` and `.vercel/`.
+
+---
+
+### PHASE 8B — Doorstep & Mobile Repair (In Progress)
+- **Subphase 8B.1 — Service Location Intake, Optional GPS & Technician Directions**: **IN PROGRESS (Migration applied, PostgREST verified, automated tests passing; awaiting owner manual QA)**
+  - Implemented coarse location intake on `/farmer/report-breakdown`: farmer enters village text and selects from the official 14 Nagpur District tahsils (`src/lib/location.ts`).
+  - Village is prefilled from farmer's profile when available; tahsil is never inferred.
+  - Optional one-time browser GPS capture (`navigator.geolocation.getCurrentPosition`) with permission handling, accuracy tracking, error/retry feedback, and in-memory isolation (never stored in `localStorage` drafts, URLs, or logs).
+  - Migration `20261027100000_phase8b_1_dispatch_locations.sql` applied and recorded in development project `hwdrypkvszwrcraujctw`: creates table `public.repair_dispatch_locations`, index, grants to `authenticated` and `service_role`, and 4 subquery RLS policies protecting coordinates (readable solely by ticket farmer, assigned technician on active tickets, and admin).
+  - PostgREST API schema resolution verified: read query returns HTTP 200 OK (resolving prior `PGRST205` schema cache error).
+  - Compensating state-machine cleanup: Client-coordinated mutations in `createRepairRequest` use authorized `cancelRepairRequest` on failed dispatch location writes, restoring equipment state without leaving orphan active tickets.
+  - Directions to service location via Google Maps universal navigation link with explicit external disclosure dialog (`rel="noopener noreferrer"`, `target="_blank"`), plus fallback area search when GPS is absent.
+  - Differentiated 3-state GPS visibility UI: (a) tickets without GPS (coarse search fallback), (b) tickets with exact GPS captured and viewer authorized, (c) private coordinates restricted to assigned technician/farmer/admin (open queue sees coarse location only).
+  - Server-mediated in-app driving distance & ETA estimation via Google Maps Routes API v2 (`TRAFFIC_UNAWARE`, transient calculation, server-side-only API key, explicit pre-action disclosure).
+  - Resilient ticket ID resolution: `getRepairDispatchLocation` and `/api/route-estimate` handle both UUIDs and human-readable job numbers (e.g. `TB-7524`), eliminating route param lookup failures.
+  - Verified on Farmer repair detail (`/farmer/repair/$id`), Technician job detail (`/technician/job/$id`), and Admin repair detail (`/admin/repair/$id`).
+  - Address autofill, reverse geocoding, and demo-data modifications remain deferred.
+  - Automated verification: 0 TypeScript errors (`npx tsc --noEmit`), clean Vite/Nitro production build (`npm run build`), clean lint, and 17 automated unit/handler tests passing (`tests/route-estimate.test.mjs`).
+- **Subphase 8B.2 — Technician Service-Area Coverage & 100-Point Matching**: **PENDING OWNER APPROVAL & 8B.1 QA**
+- **Subphase 8B.3 — Doorstep Travel Lifecycle & Realtime Arrival Tracking**: **PENDING OWNER APPROVAL & 8B.1 QA**

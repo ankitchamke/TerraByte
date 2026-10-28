@@ -86,7 +86,8 @@ flowchart LR
 ```
 
 ### 1. 🧑‍🌾 Farmer Portal (`/farmer`)
-- **Rapid 2-Minute Breakdown Intake**: Select broken equipment from registered fleet, toggle symptom chips, record voice description via Web Speech API (with Indian English support), and upload field photo evidence.
+- **Rapid 2-Minute Breakdown Intake**: Select broken equipment from registered fleet, toggle symptom chips, capture coarse location (village and official Nagpur District tahsil selection) with optional one-time device GPS capture, record voice description via Web Speech API (with Indian English support), and upload field photo evidence.
+- **Doorstep & Mobile Repair Dispatch**: Privacy-enforced location intake separating coarse village/tahsil visible in open triage queue from exact GPS coordinates accessible solely by the farmer, assigned technician, and admin. On-demand Google Maps turn-by-turn navigation with external disclosure dialog.
 - **Assistive Diagnostic Assessment**: Instant rule-based preliminary analysis evaluating likely affected mechanical systems, parts categories, urgency level, and immediate safety guidance.
 - **Ranked Technician Matching**: Objective ranking based on equipment brand specialization, technical expertise, availability, and travel ETA.
 - **Transparent Quotation Authorization**: Full line-item breakdown (parts, specifications, distributor origin, labour charge, warranty, completion ETA). **No repair work can start without explicit farmer authorization.**

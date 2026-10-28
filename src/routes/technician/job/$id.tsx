@@ -1,12 +1,53 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { AlertCircle, Camera, Clock, Loader2, Lock, PackageSearch, Plus, Trash2, XCircle } from "lucide-react";
+import {
+  AlertCircle,
+  Camera,
+  Clock,
+  Loader2,
+  Lock,
+  MapPin,
+  PackageSearch,
+  Plus,
+  Trash2,
+  XCircle,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AssessmentCard, QuoteTable, Timeline } from "@/components/repair-parts";
-import { btn, CallButton, Card, ClickableImage, ContextualBack, DateTimePicker, formatEtaDateTime, input, Label, StatusPill } from "@/components/tb";
+import { DirectionsButton } from "@/components/directions-button";
+import { RouteEstimateCard } from "@/components/route-estimate-card";
+import { formatGpsAccuracy } from "@/lib/location";
+import {
+  btn,
+  CallButton,
+  Card,
+  ClickableImage,
+  ContextualBack,
+  DateTimePicker,
+  formatEtaDateTime,
+  input,
+  Label,
+  StatusPill,
+} from "@/components/tb";
 import { fileToSmallDataUrl } from "@/lib/image";
-import { actions, ago, fmtTime, inr, quoteTotals, STAFF_LABEL, useTB, type Quote, type QuotePart, type Repair } from "@/lib/tb-store";
-import { formatEtaDateTime as formatEta, getEtaPresets, toDateTimeLocalString, valueToDateTimeLocal } from "@/lib/date-utils";
+import {
+  actions,
+  ago,
+  fmtTime,
+  inr,
+  quoteTotals,
+  STAFF_LABEL,
+  useTB,
+  type Quote,
+  type QuotePart,
+  type Repair,
+} from "@/lib/tb-store";
+import {
+  formatEtaDateTime as formatEta,
+  getEtaPresets,
+  toDateTimeLocalString,
+  valueToDateTimeLocal,
+} from "@/lib/date-utils";
 import { useAuth } from "@/lib/auth";
 import { meta } from "@/lib/seo";
 import { cn } from "@/lib/utils";
@@ -21,9 +62,15 @@ import {
   startTesting,
   updatePartsEta,
   waitForParts,
+  getRepairDispatchLocation,
+  type RepairDispatchLocation,
   type RepairRequestDetail,
 } from "@/lib/services/repair-requests";
-import { addRepairNote, getRepairNotes, type RepairNoteWithAuthor } from "@/lib/services/repair-notes";
+import {
+  addRepairNote,
+  getRepairNotes,
+  type RepairNoteWithAuthor,
+} from "@/lib/services/repair-notes";
 import { QuoteComparison } from "@/components/quote-comparison";
 import { RepairChat } from "@/components/repair-chat";
 import {
@@ -75,6 +122,7 @@ function Job() {
   const [error, setError] = useState<string | null>(null);
   const [accepting, setAccepting] = useState(false);
   const [declineOpen, setDeclineOpen] = useState(false);
+  const [dispatchLocation, setDispatchLocation] = useState<RepairDispatchLocation | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -82,16 +130,23 @@ function Job() {
         setLoading(true);
       }
       setError(null);
-      const [repairData, quotesData, notesData, versionsData] = await Promise.all([
-        getRepairRequestById(id),
-        getQuotesForRepair(id).catch(() => []),
-        getRepairNotes(id).catch(() => []),
-        getQuoteVersions(id).catch(() => []),
+      const repairData = await getRepairRequestById(id);
+      if (!repairData) {
+        setR(null);
+        setError("Repair job not found.");
+        return;
+      }
+      const [quotesData, notesData, versionsData, dispatchLocData] = await Promise.all([
+        getQuotesForRepair(repairData.id).catch(() => []),
+        getRepairNotes(repairData.id).catch(() => []),
+        getQuoteVersions(repairData.id).catch(() => []),
+        getRepairDispatchLocation(repairData.id).catch(() => null),
       ]);
       setR(repairData);
       setQuotes(quotesData);
       setNotes(notesData);
       setQuoteVersions(versionsData);
+      setDispatchLocation(dispatchLocData);
       hasLoadedRef.current = true;
     } catch (err: any) {
       console.error("[TerraByte] Failed to load job details:", err);
@@ -136,13 +191,20 @@ function Job() {
     );
   }
 
-  if (r.technician_id !== profile?.id && r.status !== "COMPLETED" && r.status !== "CANCELLED" && profile?.role !== "service_centre") {
+  if (
+    r.technician_id !== profile?.id &&
+    r.status !== "COMPLETED" &&
+    r.status !== "CANCELLED" &&
+    profile?.role !== "service_centre"
+  ) {
     return (
       <div className="space-y-5">
         <ContextualBack to="/technician" label="Jobs" />
         <Card>
           This job isn't assigned to you.{" "}
-          <Link to="/technician" className="font-semibold text-primary">Back to jobs</Link>
+          <Link to="/technician" className="font-semibold text-primary">
+            Back to jobs
+          </Link>
         </Card>
       </div>
     );
@@ -161,8 +223,11 @@ function Job() {
   const breakdownPhotos: string[] = Array.isArray(r.photos)
     ? r.photos.filter((p) => typeof p === "string" && p.trim().length > 0)
     : typeof r.photos === "string"
-    ? ((r.photos as string).trim().startsWith("[") ? JSON.parse(r.photos) : [(r.photos as string).trim()]).filter(Boolean)
-    : [];
+      ? ((r.photos as string).trim().startsWith("[")
+          ? JSON.parse(r.photos)
+          : [(r.photos as string).trim()]
+        ).filter(Boolean)
+      : [];
 
   const adaptedRepair: Repair = {
     id: r.job_number || r.id,
@@ -203,12 +268,20 @@ function Job() {
     declinedBy: r.declined_by || [],
     notes: notes.map((n) => ({
       text: n.note_text,
-      by: (n.author?.role === "admin" ? "admin" : n.author?.role === "farmer" ? "farmer" : "technician") as any,
+      by: (n.author?.role === "admin"
+        ? "admin"
+        : n.author?.role === "farmer"
+          ? "farmer"
+          : "technician") as any,
       at: new Date(n.created_at).getTime(),
     })),
     timeline: (r.repair_timeline || []).map((tl) => ({
       status: tl.status as any,
-      by: (tl.created_by_role === "admin" ? "admin" : tl.created_by_role === "farmer" ? "farmer" : "technician") as any,
+      by: (tl.created_by_role === "admin"
+        ? "admin"
+        : tl.created_by_role === "farmer"
+          ? "farmer"
+          : "technician") as any,
       at: new Date(tl.created_at).getTime(),
       note: tl.note || "",
     })),
@@ -219,10 +292,13 @@ function Job() {
       <ContextualBack to="/technician" label="Jobs" />
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="font-mono text-sm text-muted-foreground">Job {r.job_number || r.id} · {ago(createdAtMs)} ago</p>
+          <p className="font-mono text-sm text-muted-foreground">
+            Job {r.job_number || r.id} · {ago(createdAtMs)} ago
+          </p>
           <h1 className="text-3xl font-bold">{e ? `${e.make} ${e.model}` : "Equipment"}</h1>
           <p className="text-sm text-muted-foreground">
-            {e?.type} · {e?.year} · {e?.operating_hours?.toLocaleString("en-IN")} hrs · <span className="font-mono">{e?.serial_number}</span>
+            {e?.type} · {e?.year} · {e?.operating_hours?.toLocaleString("en-IN")} hrs ·{" "}
+            <span className="font-mono">{e?.serial_number}</span>
           </p>
         </div>
         <StatusPill r={{ status: r.status, testing: r.is_testing }} audience="staff" />
@@ -244,7 +320,8 @@ function Job() {
           <div className="space-y-4 p-5">
             <p className="text-sm text-foreground">
               The farmer has submitted a formal cancellation request for repair ticket{" "}
-              <b className="font-mono">{r.job_number || r.id}</b>. The Service Centre is currently reviewing the request.
+              <b className="font-mono">{r.job_number || r.id}</b>. The Service Centre is currently
+              reviewing the request.
             </p>
 
             <div className="rounded-xl border border-warning/30 bg-warning/5 p-4 text-sm space-y-3">
@@ -293,8 +370,13 @@ function Job() {
               <p className="font-semibold text-foreground">Instructions while on hold:</p>
               <ul className="list-disc list-inside space-y-0.5">
                 <li>All active physical repair work and parts ordering are temporarily paused.</li>
-                <li>Normal repair progression actions (quotes, parts, testing, completion) are locked until the Service Centre resolves the request.</li>
-                <li>You will receive a notification as soon as the Service Centre reaches a decision.</li>
+                <li>
+                  Normal repair progression actions (quotes, parts, testing, completion) are locked
+                  until the Service Centre resolves the request.
+                </li>
+                <li>
+                  You will receive a notification as soon as the Service Centre reaches a decision.
+                </li>
               </ul>
             </div>
           </div>
@@ -309,7 +391,8 @@ function Job() {
           </div>
           <div className="space-y-4 p-5 text-sm">
             <p className="text-foreground">
-              This repair ticket was cancelled by the Service Centre upon farmer request. Equipment has been restored to Operational status. No further action is required.
+              This repair ticket was cancelled by the Service Centre upon farmer request. Equipment
+              has been restored to Operational status. No further action is required.
             </p>
             <div className="grid gap-3 sm:grid-cols-2 rounded-xl bg-muted/40 p-4">
               <div>
@@ -342,33 +425,64 @@ function Job() {
       )}
 
       {/* Declined / Resumed Notice */}
-      {r.cancellation_admin_response && r.status !== "CANCELLED" && r.status !== "CANCELLATION_REQUESTED" && (
-        <div className="rounded-xl border border-info/30 bg-info/10 p-4 text-sm space-y-1">
-          <p className="font-semibold text-info flex items-center gap-1.5">
-            <Clock className="h-4 w-4" /> Cancellation Request Declined · Work Resumed
-          </p>
-          <p className="text-foreground text-xs">
-            The previous cancellation request was declined by the Service Centre with explanation:{" "}
-            <span className="italic font-medium">"{r.cancellation_admin_response}"</span>. Repair work on this job has resumed.
-          </p>
-        </div>
-      )}
+      {r.cancellation_admin_response &&
+        r.status !== "CANCELLED" &&
+        r.status !== "CANCELLATION_REQUESTED" && (
+          <div className="rounded-xl border border-info/30 bg-info/10 p-4 text-sm space-y-1">
+            <p className="font-semibold text-info flex items-center gap-1.5">
+              <Clock className="h-4 w-4" /> Cancellation Request Declined · Work Resumed
+            </p>
+            <p className="text-foreground text-xs">
+              The previous cancellation request was declined by the Service Centre with explanation:{" "}
+              <span className="italic font-medium">"{r.cancellation_admin_response}"</span>. Repair
+              work on this job has resumed.
+            </p>
+          </div>
+        )}
 
       <Card>
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <Label>Farmer</Label>
             <p className="font-semibold">{f?.full_name || "Farmer"}</p>
-            <p className="text-sm text-muted-foreground">{r.location}</p>
+            <p className="text-sm text-muted-foreground flex flex-wrap items-center gap-1.5 mt-0.5">
+              <span>{r.location}</span>
+              {dispatchLocation ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                  <MapPin className="h-3 w-3" /> Exact GPS saved (
+                  {formatGpsAccuracy(dispatchLocation.accuracy)})
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                  <MapPin className="h-3 w-3" /> Coarse location only
+                </span>
+              )}
+            </p>
           </div>
-          <div className="flex items-end">
-            {f?.phone && r.status !== "CANCELLED" ? <CallButton phone={f.phone} label="Call farmer" className="w-full" /> : null}
+          <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-end justify-end">
+            {f?.phone && r.status !== "CANCELLED" ? (
+              <CallButton phone={f.phone} label="Call farmer" className="flex-1 sm:flex-initial" />
+            ) : null}
+            <DirectionsButton
+              dispatchLocation={dispatchLocation}
+              fallbackLocation={r.location}
+              isAuthorized={r.technician_id === profile?.id || profile?.role === "service_centre"}
+              className="flex-1 sm:flex-initial"
+            />
           </div>
+          {dispatchLocation && r.status !== "CANCELLED" && r.status !== "COMPLETED" && (
+            <div className="sm:col-span-2 pt-1 border-t border-border/60">
+              <RouteEstimateCard repairId={r.id} hasGpsLocation={Boolean(dispatchLocation)} />
+            </div>
+          )}
           <div className="sm:col-span-2">
             <Label>Reported symptoms</Label>
             <div className="flex flex-wrap gap-1.5">
               {r.symptoms.map((x) => (
-                <span key={x} className="rounded-lg bg-destructive/10 px-2 py-1 text-sm font-semibold text-destructive">
+                <span
+                  key={x}
+                  className="rounded-lg bg-destructive/10 px-2 py-1 text-sm font-semibold text-destructive"
+                >
                   {x}
                 </span>
               ))}
@@ -412,8 +526,8 @@ function Job() {
         </div>
       </Card>
 
-      {r.status === "REQUESTED" && (
-        declineOpen ? (
+      {r.status === "REQUESTED" &&
+        (declineOpen ? (
           <DeclineBox
             repairId={r.id}
             onDone={() => nav({ to: "/technician" })}
@@ -443,8 +557,7 @@ function Job() {
               {accepting ? "Accepting…" : "Accept job"}
             </button>
           </div>
-        )
-      )}
+        ))}
 
       <AssessmentCard r={adaptedRepair} />
 
@@ -501,22 +614,27 @@ function Job() {
       {r.status === "QUOTE_PENDING" && (
         <Card className="border-accent">
           <p className="mb-3 flex items-center gap-2 font-semibold">
-            <Lock className="h-4 w-4" /> Waiting for farmer approval — repair work is locked until approved.
+            <Lock className="h-4 w-4" /> Waiting for farmer approval — repair work is locked until
+            approved.
           </p>
           {adaptedRepair.quote ? (
             <QuoteTable q={adaptedRepair.quote} />
           ) : (
-            <p className="text-sm text-muted-foreground">Quote submitted. Awaiting farmer response.</p>
+            <p className="text-sm text-muted-foreground">
+              Quote submitted. Awaiting farmer response.
+            </p>
           )}
         </Card>
       )}
 
-      {quoteVersions.length >= 2 && quoteVersions[quoteVersions.length - 2] && quoteVersions[quoteVersions.length - 1] && (
-        <QuoteComparison
-          v1={quoteVersions[quoteVersions.length - 2]}
-          v2={quoteVersions[quoteVersions.length - 1]}
-        />
-      )}
+      {quoteVersions.length >= 2 &&
+        quoteVersions[quoteVersions.length - 2] &&
+        quoteVersions[quoteVersions.length - 1] && (
+          <QuoteComparison
+            v1={quoteVersions[quoteVersions.length - 2]}
+            v2={quoteVersions[quoteVersions.length - 1]}
+          />
+        )}
 
       {r.status === "IN_PROGRESS" && (
         <>
@@ -537,10 +655,13 @@ function Job() {
       {r.status === "COMPLETED" && (
         <Card className="border-success">
           <p className="font-bold text-success">
-            Completed{adaptedRepair.quote ? ` · ${inr(quoteTotals(adaptedRepair.quote).total)}` : ""}
+            Completed
+            {adaptedRepair.quote ? ` · ${inr(quoteTotals(adaptedRepair.quote).total)}` : ""}
           </p>
           <p className="text-sm">
-            {adaptedRepair.completion?.notes || (r.completion_details as any)?.notes || "Repair completed and verified."}
+            {adaptedRepair.completion?.notes ||
+              (r.completion_details as any)?.notes ||
+              "Repair completed and verified."}
           </p>
           <p className="mt-2 text-sm text-muted-foreground">
             Repair completed and recorded in equipment service history.
@@ -569,7 +690,12 @@ function Job() {
                   <p>
                     <b className="font-mono text-xs">{e.status}</b>{" "}
                     <span className="text-muted-foreground">
-                      · {e.created_by_role === "technician" ? "Technician" : e.created_by_role === "admin" ? "Service Centre" : "Farmer"}{" "}
+                      ·{" "}
+                      {e.created_by_role === "technician"
+                        ? "Technician"
+                        : e.created_by_role === "admin"
+                          ? "Service Centre"
+                          : "Farmer"}{" "}
                       · {fmtTime(new Date(e.created_at).getTime())}
                     </span>
                   </p>
@@ -620,14 +746,23 @@ function DeclineBox({
           <button
             key={x}
             onClick={() => setReason(x)}
-            className={cn("min-h-12 rounded-xl border-2 p-2 text-sm font-semibold", reason === x ? "border-primary bg-primary/10" : "border-border")}
+            className={cn(
+              "min-h-12 rounded-xl border-2 p-2 text-sm font-semibold",
+              reason === x ? "border-primary bg-primary/10" : "border-border",
+            )}
           >
             {x}
           </button>
         ))}
       </div>
       {reason === "Other" && (
-        <input className={input} maxLength={120} value={other} onChange={(e) => setOther(e.target.value)} placeholder="Reason" />
+        <input
+          className={input}
+          maxLength={120}
+          value={other}
+          onChange={(e) => setOther(e.target.value)}
+          placeholder="Reason"
+        />
       )}
       <div className="grid grid-cols-2 gap-2">
         <button disabled={submitting} onClick={onCancel} className={btn.ghost}>
@@ -645,7 +780,13 @@ function DeclineBox({
   );
 }
 
-const blankPart = (): QuotePart => ({ name: "", spec: "", qty: 1, price: 0, source: "In van stock" });
+const blankPart = (): QuotePart => ({
+  name: "",
+  spec: "",
+  qty: 1,
+  price: 0,
+  source: "In van stock",
+});
 
 interface QuoteBuilderProps {
   repairId: string;
@@ -757,17 +898,26 @@ function QuoteBuilder({
         <section className="rounded-2xl border-2 border-amber-500/40 bg-amber-500/10 p-4 space-y-3">
           <div className="flex items-center gap-2 font-bold text-amber-800 dark:text-amber-300">
             <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0" />
-            <span>Farmer requested quote revision {previousQuote ? `(Quote v${previousQuote.version})` : ""}</span>
+            <span>
+              Farmer requested quote revision{" "}
+              {previousQuote ? `(Quote v${previousQuote.version})` : ""}
+            </span>
           </div>
           {parsedClarification.reason && (
             <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Reason</p>
-              <p className="text-base font-semibold text-foreground">{parsedClarification.reason}</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Reason
+              </p>
+              <p className="text-base font-semibold text-foreground">
+                {parsedClarification.reason}
+              </p>
             </div>
           )}
           {parsedClarification.explanation && (
             <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Farmer message</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Farmer message
+              </p>
               <p className="mt-1 rounded-xl bg-card p-3 text-sm italic border border-border">
                 "{parsedClarification.explanation}"
               </p>
@@ -775,7 +925,9 @@ function QuoteBuilder({
           )}
           {parsedClarification.photo && (
             <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Attached Photo</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Attached Photo
+              </p>
               <ClickableImage
                 src={parsedClarification.photo}
                 alt="Farmer attachment"
@@ -791,8 +943,10 @@ function QuoteBuilder({
                 <span className="font-mono text-sm">
                   {inr(
                     previousQuote.totals?.totalAmount ??
-                      (previousQuote.quote_items || []).reduce((s, it) => s + it.quantity * it.unit_price, 0) +
-                        Number(previousQuote.labour_amount)
+                      (previousQuote.quote_items || []).reduce(
+                        (s, it) => s + it.quantity * it.unit_price,
+                        0,
+                      ) + Number(previousQuote.labour_amount),
                   )}
                 </span>
               </div>
@@ -801,7 +955,10 @@ function QuoteBuilder({
                   Parts:{" "}
                   {inr(
                     previousQuote.totals?.partsTotal ??
-                      (previousQuote.quote_items || []).reduce((s, it) => s + it.quantity * it.unit_price, 0)
+                      (previousQuote.quote_items || []).reduce(
+                        (s, it) => s + it.quantity * it.unit_price,
+                        0,
+                      ),
                   )}
                 </span>
                 <span>Labour: {inr(Number(previousQuote.labour_amount))}</span>
@@ -934,14 +1091,15 @@ function QuoteBuilder({
         </div>
         <div className="space-y-1">
           <Label>Est. completion</Label>
-          <DateTimePicker
-            value={q.eta}
-            onChange={(val) => setQ({ ...q, eta: val })}
-          />
+          <DateTimePicker value={q.eta} onChange={(val) => setQ({ ...q, eta: val })} />
         </div>
         <div>
           <Label>Warranty</Label>
-          <input className={input} value={q.warranty} onChange={(e) => setQ({ ...q, warranty: e.target.value })} />
+          <input
+            className={input}
+            value={q.warranty}
+            onChange={(e) => setQ({ ...q, warranty: e.target.value })}
+          />
         </div>
       </div>
       <dl className="rounded-xl bg-muted p-3 text-sm">
@@ -1136,7 +1294,9 @@ function InProgress({ repairId, r, notes, onUpdate }: InProgressProps) {
             {notes.map((n) => (
               <div key={n.id} className="rounded-xl border border-border bg-muted/40 p-3 text-sm">
                 <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-                  <span className="font-semibold text-foreground">{n.author?.full_name || "Technician"}</span>
+                  <span className="font-semibold text-foreground">
+                    {n.author?.full_name || "Technician"}
+                  </span>
                   <span>{ago(new Date(n.created_at).getTime())} ago</span>
                 </div>
                 <p className="text-foreground leading-relaxed">{n.note_text}</p>
@@ -1205,7 +1365,8 @@ function InProgress({ repairId, r, notes, onUpdate }: InProgressProps) {
             <AlertCircle className="h-5 w-5" /> Testing failed — return to repair
           </div>
           <p className="text-sm text-muted-foreground">
-            Operational testing identified an issue. Enter details below to return this machine to active repair work and notify the farmer.
+            Operational testing identified an issue. Enter details below to return this machine to
+            active repair work and notify the farmer.
           </p>
           <div>
             <Label>Issue observed during testing (optional)</Label>
@@ -1260,10 +1421,7 @@ function InProgress({ repairId, r, notes, onUpdate }: InProgressProps) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>Expected arrival</Label>
-              <DateTimePicker
-                value={p.eta}
-                onChange={(val) => setP({ ...p, eta: val })}
-              />
+              <DateTimePicker value={p.eta} onChange={(val) => setP({ ...p, eta: val })} />
             </div>
             <div className="space-y-1">
               <Label>Revised completion</Label>
@@ -1283,11 +1441,7 @@ function InProgress({ repairId, r, notes, onUpdate }: InProgressProps) {
             />
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <button
-              disabled={submitting}
-              onClick={() => setMode("none")}
-              className={btn.ghost}
-            >
+            <button disabled={submitting} onClick={() => setMode("none")} className={btn.ghost}>
               Cancel
             </button>
             <button
@@ -1304,7 +1458,8 @@ function InProgress({ repairId, r, notes, onUpdate }: InProgressProps) {
         <Card className="space-y-3 border-success">
           <h3 className="text-lg font-bold">Complete repair & sign off</h3>
           <p className="text-sm text-muted-foreground">
-            Final sign-off on completed repair. This marks the equipment as Operational, saves the repair to permanent service history, and notifies the farmer and Service Centre.
+            Final sign-off on completed repair. This marks the equipment as Operational, saves the
+            repair to permanent service history, and notifies the farmer and Service Centre.
           </p>
           <div>
             <Label>Final repair notes</Label>
@@ -1341,11 +1496,7 @@ function InProgress({ repairId, r, notes, onUpdate }: InProgressProps) {
             Machine tested under load and working
           </label>
           <div className="grid grid-cols-2 gap-2">
-            <button
-              disabled={submitting}
-              onClick={() => setMode("none")}
-              className={btn.ghost}
-            >
+            <button disabled={submitting} onClick={() => setMode("none")} className={btn.ghost}>
               Cancel
             </button>
             <button
@@ -1421,10 +1572,7 @@ function Waiting({ repairId, r, onUpdate }: WaitingProps) {
       <div className="space-y-1.5">
         <Label>Expected arrival</Label>
         <div className="flex gap-2">
-          <DateTimePicker
-            value={eta}
-            onChange={(val) => setEta(val)}
-          />
+          <DateTimePicker value={eta} onChange={(val) => setEta(val)} />
           <button
             disabled={!eta.trim() || submitting}
             onClick={handleUpdateEta}
@@ -1434,7 +1582,9 @@ function Waiting({ repairId, r, onUpdate }: WaitingProps) {
           </button>
         </div>
         <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-          <span>Current: <b className="text-foreground">{formatEta(parts.eta)}</b></span>
+          <span>
+            Current: <b className="text-foreground">{formatEta(parts.eta)}</b>
+          </span>
         </div>
       </div>
       <button

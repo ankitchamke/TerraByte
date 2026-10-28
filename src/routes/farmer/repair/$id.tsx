@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock,
+  MapPin,
   Loader2,
   PackageSearch,
   ShieldCheck,
@@ -25,8 +26,11 @@ import {
   requestCancellation,
   CANCELLATION_REASONS,
   getRepairRequestById,
+  getRepairDispatchLocation,
+  type RepairDispatchLocation,
   type RepairRequestDetail,
 } from "@/lib/services/repair-requests";
+import { formatGpsAccuracy } from "@/lib/location";
 import { useAuth } from "@/lib/auth";
 import { QuoteComparison } from "@/components/quote-comparison";
 import { RepairChat } from "@/components/repair-chat";
@@ -132,6 +136,7 @@ function RepairHub() {
   const [submittingCancellation, setSubmittingCancellation] = useState(false);
   const [cancellationError, setCancellationError] = useState<string | null>(null);
   const [assigningTechId, setAssigningTechId] = useState<string | null>(null);
+  const [dispatchLocation, setDispatchLocation] = useState<RepairDispatchLocation | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -147,7 +152,7 @@ function RepairHub() {
       }
       setR(repairData);
 
-      const [quotesData, notesData, assignedTechData, eligibleTechsData, versionsData] = await Promise.all([
+      const [quotesData, notesData, assignedTechData, eligibleTechsData, versionsData, dispatchLocData] = await Promise.all([
         getQuotesForRepair(repairData.id).catch(() => []),
         getRepairNotes(repairData.id).catch(() => []),
         repairData.technician_id
@@ -157,6 +162,7 @@ function RepairHub() {
           ? getEligibleTechnicians(repairData.id).catch(() => [])
           : Promise.resolve([]),
         getQuoteVersions(repairData.id).catch(() => []),
+        getRepairDispatchLocation(repairData.id).catch(() => null),
       ]);
 
       setQuotes(quotesData);
@@ -164,6 +170,7 @@ function RepairHub() {
       setNotes(notesData);
       setAssignedTech(assignedTechData);
       setEligibleTechs(eligibleTechsData);
+      setDispatchLocation(dispatchLocData);
       hasLoadedRef.current = true;
     } catch (err: any) {
       console.error("[TerraByte] Failed to load repair details:", err);
@@ -371,9 +378,22 @@ function RepairHub() {
     <div className="space-y-5">
       <ContextualBack to={backTarget.to} label={backTarget.label} />
       <div>
-        <p className="font-mono text-sm text-muted-foreground">
-          {r.job_number || r.id} · reported {ago(new Date(r.created_at).getTime())} ago
-        </p>
+        <div className="flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground">
+          <span className="font-mono">{r.job_number || r.id}</span>
+          <span>·</span>
+          <span>reported {ago(new Date(r.created_at).getTime())} ago</span>
+          {r.location ? (
+            <>
+              <span>·</span>
+              <span className="font-medium text-foreground">{r.location}</span>
+            </>
+          ) : null}
+          {dispatchLocation && (
+            <span className="inline-flex items-center gap-1 rounded-md bg-success/15 px-2 py-0.5 text-xs font-semibold text-success">
+              <MapPin className="h-3 w-3" /> Exact GPS saved ({formatGpsAccuracy(dispatchLocation.accuracy)})
+            </span>
+          )}
+        </div>
         <h1 className="text-3xl font-bold">
           {e?.make || "Equipment"} {e?.model || ""}
         </h1>

@@ -67,11 +67,23 @@ flowchart TD
 ### 2.2 Reporting an Equipment Breakdown & Technician Request Flow
 1. From `/farmer`, farmer taps **"Report Equipment Breakdown"** $\rightarrow$ opens `/farmer/report-breakdown`.
 2. **Step 1: Machine Selection**: Chooses broken machine from registered fleet. Machines undergoing active repair are locked out to prevent duplicate tickets.
-3. **Step 2: Symptoms & Description**:
+3. **Step 2: Symptoms Selection**:
    - Toggles visual symptom chips (e.g. *"Loss of power"*, *"Hydraulic lift failure"*, *"Black smoke"*).
-   - Enters description via keyboard or 1-tap **voice typing** (Web Speech API with Indian English support).
-   - Attaches field photos via camera/gallery input.
-4. **Step 3: Assistive Preliminary Assessment & Breakdown Logging**:
+4. **Step 3: Breakdown Location & Problem Description**:
+   - **Coarse Service Location**: Village text (prefilled from farmer profile if available) and selection from the 14 official Nagpur District Tahsils (`src/lib/location.ts`).
+   - **Optional Precise GPS Capture**: Farmer can click "Use Current Location" to capture device GPS coordinates (`navigator.geolocation.getCurrentPosition`). Shows accuracy indicator (`±Xm`) and feedback. GPS coordinates remain in-memory only and are strictly excluded from browser `localStorage` drafts, URL query strings, and public queues.
+   - **Problem Description**: Enters description via keyboard or 1-tap **voice typing** (Web Speech API with Indian English support).
+5. **Step 4: Field Photos**:
+   - Attaches field photo evidence via camera/gallery input.
+6. **Step 5: Assistive Preliminary Assessment & Breakdown Logging**:
+   - Reviews summary showing coarse location and GPS badge (if captured).
+   - Diagnostic rule engine evaluates symptoms and displays preliminary assessment card:
+     - Likely affected system (e.g., *Fuel injection / filtration*).
+     - Urgency rating (*Moderate to High*).
+     - Suspected parts categories (*Fuel filter, Injector nozzle*).
+     - Actionable immediate advice (*"Avoid operating machine under heavy load until inspected"*).
+     - Disclaimer: *Assistive preliminary assessment; confirmed diagnosis made on site by technician.*
+   - Submits ticket atomically: Formatted coarse location (`Village, Tahsil`) persisted to `repair_requests.location`. If GPS was captured, coordinates and accuracy are inserted into the dedicated `repair_dispatch_locations` table protected by RLS. If GPS insertion fails, ticket creation automatically rolls back to prevent masking failures.
    - Diagnostic rule engine evaluates symptoms and displays preliminary assessment card:
      - Likely affected system (e.g., *Fuel injection / filtration*).
      - Urgency rating (*Moderate to High*).
@@ -79,7 +91,7 @@ flowchart TD
      - Actionable immediate advice (*"Avoid operating machine under heavy load until inspected"*).
      - Disclaimer: *Assistive preliminary assessment; confirmed diagnosis made on site by technician.*
    - Ticket is inserted into Supabase (`status = 'REQUESTED'`, `technician_id = null`, timeline event: "Breakdown reported").
-5. **Step 4: Action-Needed State Machine & Technician Request Dispatch**:
+7. **Action-Needed State Machine & Technician Request Dispatch**:
    - **Breakdown Reported (Technician Not Yet Requested)**:
      - Status: `REQUESTED`, `technician_id: null`.
      - Farmer Home presentation: **"Action needed"** (accent border and header banner).

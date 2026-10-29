@@ -399,3 +399,66 @@ sequenceDiagram
 2. **Burst Coalescing**: Rapid multi-row database mutations (e.g., ticket status change + timeline insert + quote update) trigger a single coalesced refetch via a 300ms debounce timer.
 3. **Ticket & List Scoping**: Subscriptions are strictly isolated by ticket UUID (`ticket-realtime-<uuid>`) or user role list channel (`farmer-repairs-<farmerId>`, `admin-pipeline-repairs`), preventing cross-ticket or cross-user socket flooding.
 4. **Window Focus Recovery**: In addition to websocket events, window focus listeners ensure that browser tabs running in the background automatically re-sync when brought to the foreground.
+
+
+---
+
+## 10. Service Centre Parts Desk & Technician Requisition Flow (Phase 9.1)
+
+```mermaid
+flowchart TD
+    subgraph Technician_Workbench ["Technician Workbench (/technician/job/:id)"]
+        InspectJob["Assigned Active Repair"] --> ViewPartsCard["Inspect Parts Pickup Card"]
+        ViewPartsCard --> CheckStock{"Part in Depot Stock?"}
+        CheckStock -- Yes --> RequestPart["Submit Requisition (quantity, notes)"]
+        CheckStock -- No (Stock = 0) --> HoldPrompt["Out of Stock Notice<br/>Guide to Pause for Parts"]
+        HoldPrompt --> PauseRepair["Explicit Action: Set WAITING_FOR_PARTS + ETA"]
+    end
+
+    subgraph Service_Centre_Parts_Desk ["Service Centre Command (/admin/parts-desk)"]
+        RequestPart --> PendingQueue["Pending Requisitions Queue"]
+        PendingQueue --> PhysicalVerify["Staff locates physical part on shelf"]
+        PhysicalVerify --> ConfirmHandoff["Click 'Confirm Handoff'"]
+        ConfirmHandoff --> AtomicRPC["confirm_service_centre_part_handoff()"]
+        AtomicRPC --> Lock["Row-level lock (FOR UPDATE)"]
+        Lock --> Decrement["Decrement stock_quantity"]
+        Decrement --> Audit["Log to service_centre_stock_audit"]
+        Audit --> NotifyTech["Notify Technician: 'Parts handed off'"]
+    end
+
+    subgraph Farmer_Portal ["Farmer Portal (/farmer/repair/:id)"]
+        Privacy["Farmer Privacy Boundary"]
+        Privacy --> HideDetails["No depot counts, costs, or audit notes visible"]
+        PauseRepair --> DelayView["High-Level Status: 'Waiting for Parts' + ETA"]
+    end
+```
+
+### 10.1 Service Centre Parts Desk Administration (`/admin/parts-desk`)
+1. **Depot Catalog Oversight**:
+   - Central overview of available spare parts across tractor brands (Mahindra, John Deere, Swaraj).
+   - Real-time stock counts, category filtering, shelf locations, and retail unit prices.
+2. **Audited Stock Adjustments**:
+   - Staff can adjust stock upwards (depot replenishment) or downwards (spoilage, physical audit reconciliation).
+   - Mandatory audit reason is logged with the operator's profile UUID and before/after balances.
+3. **Requisition Queue & Confirmed Physical Handoff**:
+   - Technicians' pending requisitions appear in real-time with job number, part details, and requested quantity.
+   - Staff physically hands the components to the field mechanic and clicks **"Confirm Handoff"**.
+   - Atomic database procedure decrements stock with concurrency protection, marks request `HANDED_OFF`, and dispatches an alert to the technician.
+
+### 10.2 Technician Job Workbench Integration (`/technician/job/:id`)
+1. **Parts Pickup Card**:
+   - Rendered directly on the assigned job detail page for active repairs.
+   - Summarizes requisitioned parts with live status badges (`Pending Handoff`, `Handed Off`, `Cancelled`).
+2. **Searchable Depot Modal**:
+   - Technician searches verified catalog items by part number, name, or compatible tractor models.
+   - Displays real-time shelf availability:
+     - **In Stock**: Enables quantity selector (capped at available units) and optional technician notes.
+     - **Out of Stock**: Displays clear warning that the depot has zero units available and prompts the technician to use the existing **"Pause for parts"** action to record an estimated arrival date.
+3. **Preservation of Repair State Machine**:
+   - Requesting parts never silently pauses or resumes repairs.
+   - When awaiting parts from external sourcing, technician explicitly transitions ticket to `WAITING_FOR_PARTS`.
+   - When parts are received at the workshop, technician resumes ticket to `IN_PROGRESS`.
+
+### 10.3 Farmer Privacy Quarantine
+1. Farmers never see depot stock counts, wholesale pricing, parts requisition queues, or staff adjustment logs.
+2. The farmer interface (`/farmer/repair/:id`) communicates delay only when the repair is explicitly paused (`WAITING_FOR_PARTS`), displaying customer-facing ETA and component description without internal inventory telemetry.

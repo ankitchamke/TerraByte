@@ -512,3 +512,28 @@ VALUES
     false,
     NOW() - interval '5 minutes'
   );
+
+-- 8. SERVICE CENTRE PARTS CATALOG (DEMO DATA)
+INSERT INTO public.service_centre_parts (
+  part_number,
+  name,
+  spec,
+  category,
+  compatible_models,
+  stock_quantity,
+  unit_price,
+  location
+) VALUES
+  ('0433171', 'Fuel Injector Nozzle Set', 'Bosch 0433171 (x4)', 'Fuel system', ARRAY['Mahindra 575 DI'], 3, 2200, 'Depot Shelf A-02'),
+  ('005556958R1', 'Inline Fuel Filter', 'Mahindra 005556958R1', 'Fuel system', ARRAY['Mahindra 575 DI'], 8, 350, 'Depot Shelf A-03'),
+  ('AL120788', 'Lift Cylinder Seal Kit', 'JD AL120788', 'Hydraulics', ARRAY['John Deere 5050D'], 2, 1650, 'Depot Shelf B-01'),
+  ('HY-GARD-15W30', 'Hydraulic Oil 15W-30', 'JD Hy-Gard, litres', 'Hydraulics', ARRAY['John Deere 5050D'], 5, 320, 'Depot Drum Rack B-04'),
+  ('26243171', 'Starter Motor Assembly', 'Lucas-TVS 12V 2.2kW', 'Electrical', ARRAY['Mahindra 575 DI', 'Swaraj 744 FE'], 1, 5800, 'Depot Shelf C-01')
+ON CONFLICT (part_number) DO UPDATE SET
+  name = EXCLUDED.name,
+  spec = EXCLUDED.spec,
+  category = EXCLUDED.category,
+  compatible_models = EXCLUDED.compatible_models,
+  stock_quantity = EXCLUDED.stock_quantity,
+  unit_price = EXCLUDED.unit_price,
+  location = EXCLUDED.location;

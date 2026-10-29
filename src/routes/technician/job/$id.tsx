@@ -26,6 +26,7 @@ import {
 import { addRepairNote, getRepairNotes, type RepairNoteWithAuthor } from "@/lib/services/repair-notes";
 import { QuoteComparison } from "@/components/quote-comparison";
 import { RepairChat } from "@/components/repair-chat";
+import { PartsPickupCard } from "@/components/parts-pickup-card";
 import {
   createQuote,
   getQuotesForRepair,
@@ -532,6 +533,15 @@ function Job() {
 
       {r.status === "WAITING_FOR_PARTS" && (
         <Waiting repairId={r.id} r={adaptedRepair} onUpdate={loadData} />
+      )}
+
+      {["IN_PROGRESS", "WAITING_FOR_PARTS", "ACCEPTED", "QUOTE_REVISED"].includes(r.status) && (
+        <PartsPickupCard
+          repairId={r.id}
+          repairStatus={r.status}
+          isAssigned={r.technician_id === profile?.id}
+          onUpdate={loadData}
+        />
       )}
 
       {r.status === "COMPLETED" && (

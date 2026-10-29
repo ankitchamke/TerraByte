@@ -101,6 +101,7 @@ flowchart LR
 - **Itemized Quotation Formulation**: Add spare parts with specification, quantity, unit price, distributor source, labour description, and revised completion time.
 - **Universal Quote Revision Engine**: Handles revision requests with farmer explanation reviews and side-by-side previous quote reference.
 - **Parts-on-Hold Mechanism**: Place active repairs on hold when awaiting parts (`WAITING_FOR_PARTS`), logging missing component, distributor delay reason, and revised completion ETA.
+- **Depot Parts Requisition**: Search Nagpur depot stock directly from active repair jobs, request needed quantities for immediate pickup, and track handoff status without altering repair state. Clear fallback guidance to pause for parts with ETA if unavailable.
 - **Testing Run & Final Sign-Off**: Shift repair into operational load testing, record final completion notes, and execute **"Complete & sign off"**, automatically archiving the repair into permanent service history and restoring equipment to `Operational`.
 
 ### 3. 🏢 Service Centre Central Command (`/admin`)
@@ -108,6 +109,7 @@ flowchart LR
 - **Technician Verification Portal**: Inspect credentials and approve or revoke technician field authorization.
 - **Cancellation Review Workbench**: Review and resolve cancellation requests on active in-flight jobs, ensuring accountability and preventing stranded work.
 - **Direct Dispatch & Manual Triage**: Assign or reassign unassigned breakdown requests to optimal technicians.
+- **Service Centre Parts Desk (`/admin/parts-desk`)**: Oversee Nagpur depot spare-parts inventory, adjust stock with audit reasons, review technician parts pickup requisitions, and confirm physical handoff with concurrency-safe atomic inventory decrements.
 
 ---
 
@@ -123,7 +125,7 @@ graph TD
     ReactApp --> ClientHooks["Realtime Hooks & Services Layer<br/>(useRepairTicketRealtime, useRepairListRealtime)"]
 
     ClientHooks --> SupaAuth["Supabase Auth<br/>(JWT, Role Session)"]
-    ClientHooks --> SupaDB["PostgreSQL 17 Database<br/>(11 Domain Tables + Row Level Security)"]
+    ClientHooks --> SupaDB["PostgreSQL 17 Database<br/>(14 Domain Tables + Row Level Security)"]
     ClientHooks --> SupaRT["Supabase Realtime<br/>(Postgres Changes WebSocket)"]
 
     ReactApp --> MCPEndpoint["MCP Server Route (/mcp)<br/>(@lovable.dev/mcp-js)"]

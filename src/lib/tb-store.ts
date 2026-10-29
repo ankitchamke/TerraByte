@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import { assess, type Assessment } from "./assessment";
+import { assess, type Assessment } from "./assessment.ts";
 
 export type Role = "farmer" | "technician" | "admin";
 export type EquipmentType = "Tractor" | "Harvester" | "Power Tiller" | "Pump" | "Sprayer";
@@ -53,12 +53,124 @@ export interface ServiceRecord {
   type: string; issue: string; parts: string[]; labour: number; total: number;
   technician: string; workshop: string; notes: string; advice: string; downtimeH: number; invoice: string;
 }
+export interface DemoPart {
+  id: string;
+  part_number: string;
+  name: string;
+  spec: string | null;
+  category: string;
+  compatible_models: string[];
+  stock_quantity: number;
+  unit_price: number;
+  location: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DemoPartRequest {
+  id: string;
+  repair_request_id: string;
+  part_id: string;
+  quantity: number;
+  status: "PENDING" | "HANDED_OFF" | "CANCELLED";
+  requested_by: string;
+  handed_off_by?: string | null;
+  handed_off_at?: string | null;
+  notes?: string | null | undefined;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DemoStockAudit {
+  id: string;
+  part_id: string;
+  change_quantity: number;
+  previous_stock: number;
+  new_stock: number;
+  reason: string;
+  changed_by: string;
+  repair_request_id?: string | null;
+  part_request_id?: string | null;
+  created_at: string;
+}
+
+export const INITIAL_DEMO_PARTS: DemoPart[] = [
+  {
+    id: "00000000-0000-0000-0040-000000000001",
+    part_number: "0433171",
+    name: "Fuel Injector Nozzle Set",
+    spec: "Bosch 0433171 (x4)",
+    category: "Fuel system",
+    compatible_models: ["Mahindra 575 DI"],
+    stock_quantity: 3,
+    unit_price: 2200,
+    location: "Depot Shelf A-02",
+    created_at: "2026-10-01T00:00:00.000Z",
+    updated_at: "2026-10-01T00:00:00.000Z",
+  },
+  {
+    id: "00000000-0000-0000-0040-000000000002",
+    part_number: "005556958R1",
+    name: "Inline Fuel Filter",
+    spec: "Mahindra 005556958R1",
+    category: "Fuel system",
+    compatible_models: ["Mahindra 575 DI"],
+    stock_quantity: 8,
+    unit_price: 350,
+    location: "Depot Shelf A-03",
+    created_at: "2026-10-01T00:00:00.000Z",
+    updated_at: "2026-10-01T00:00:00.000Z",
+  },
+  {
+    id: "00000000-0000-0000-0040-000000000003",
+    part_number: "AL120788",
+    name: "Lift Cylinder Seal Kit",
+    spec: "JD AL120788",
+    category: "Hydraulics",
+    compatible_models: ["John Deere 5050D"],
+    stock_quantity: 2,
+    unit_price: 1650,
+    location: "Depot Shelf B-01",
+    created_at: "2026-10-01T00:00:00.000Z",
+    updated_at: "2026-10-01T00:00:00.000Z",
+  },
+  {
+    id: "00000000-0000-0000-0040-000000000004",
+    part_number: "HY-GARD-15W30",
+    name: "Hydraulic Oil 15W-30",
+    spec: "JD Hy-Gard, litres",
+    category: "Hydraulics",
+    compatible_models: ["John Deere 5050D"],
+    stock_quantity: 5,
+    unit_price: 320,
+    location: "Depot Drum Rack B-04",
+    created_at: "2026-10-01T00:00:00.000Z",
+    updated_at: "2026-10-01T00:00:00.000Z",
+  },
+  {
+    id: "00000000-0000-0000-0040-000000000005",
+    part_number: "26243171",
+    name: "Starter Motor Assembly",
+    spec: "Lucas-TVS 12V 2.2kW",
+    category: "Electrical",
+    compatible_models: ["Mahindra 575 DI", "Swaraj 744 FE"],
+    stock_quantity: 1,
+    unit_price: 5800,
+    location: "Depot Shelf C-01",
+    created_at: "2026-10-01T00:00:00.000Z",
+    updated_at: "2026-10-01T00:00:00.000Z",
+  },
+];
+
 export interface Notification { id: string; role: Role; userId?: string; text: string; at: number; read: boolean; link?: string }
 
 export interface TBState {
   session: { role: Role; userId: string } | null;
   farmers: Farmer[]; equipment: Equipment[]; technicians: Technician[];
   repairs: Repair[]; service: ServiceRecord[]; notifications: Notification[];
+  serviceCentreParts: DemoPart[];
+  serviceCentrePartRequests: DemoPartRequest[];
+  serviceCentreStockAudit: DemoStockAudit[];
 }
 
 const KEY = "terrabyte-demo-v1";
@@ -151,6 +263,9 @@ function seed(): TBState {
       { id: "n2", role: "technician", userId: "t2", text: "Quote for TB-8902 sent to Suresh Jadhav", at: now - 70 * MIN, read: true },
       { id: "n3", role: "admin", text: "TB-8898 unassigned for 28 min — exception", at: now - 5 * MIN, read: false, link: "/admin/repair/TB-8898" },
     ],
+    serviceCentreParts: INITIAL_DEMO_PARTS.map((p) => ({ ...p })),
+    serviceCentrePartRequests: [],
+    serviceCentreStockAudit: [],
   };
 }
 
@@ -165,8 +280,21 @@ function load() {
   hydrated = true;
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) state = JSON.parse(raw);
+    if (raw) {
+      state = JSON.parse(raw);
+    }
   } catch { /* ignore */ }
+
+  // Ensure demo parts and requests arrays are always hydrated cleanly
+  if (!state.serviceCentreParts || state.serviceCentreParts.length === 0) {
+    state.serviceCentreParts = INITIAL_DEMO_PARTS.map((p) => ({ ...p }));
+  }
+  if (!state.serviceCentrePartRequests) {
+    state.serviceCentrePartRequests = [];
+  }
+  if (!state.serviceCentreStockAudit) {
+    state.serviceCentreStockAudit = [];
+  }
 }
 function set(fn: (s: TBState) => TBState) {
   load();
@@ -184,7 +312,15 @@ export function useTB(): TBState {
   );
 }
 export const getTB = () => { load(); return state; };
-export function resetDemo() { set(() => ({ ...seed(), session: state.session })); }
+export function resetDemo() {
+  set(() => ({
+    ...seed(),
+    session: state.session,
+    serviceCentreParts: INITIAL_DEMO_PARTS.map((p) => ({ ...p })),
+    serviceCentrePartRequests: [],
+    serviceCentreStockAudit: [],
+  }));
+}
 
 // ---------- helpers ----------
 const uid = () => Math.random().toString(36).slice(2, 9);
@@ -371,3 +507,221 @@ export const ago = (t: number) => {
 export const inr = (n: number) => "₹" + n.toLocaleString("en-IN");
 export const fmtDate = (t: number) => new Date(t).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 export const fmtTime = (t: number) => new Date(t).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "numeric", minute: "2-digit" });
+
+
+// ---------- demo parts desk helpers ----------
+export function getDemoParts(): DemoPart[] {
+  load();
+  if (!state.serviceCentreParts || state.serviceCentreParts.length === 0) {
+    state.serviceCentreParts = INITIAL_DEMO_PARTS.map((p) => ({ ...p }));
+  }
+  return state.serviceCentreParts;
+}
+
+export function getDemoPartById(id: string): DemoPart | null {
+  load();
+  return (
+    state.serviceCentreParts?.find((p) => p.id === id || p.part_number === id) ??
+    INITIAL_DEMO_PARTS.find((p) => p.id === id || p.part_number === id) ??
+    null
+  );
+}
+
+export function adjustDemoPartStock(
+  partId: string,
+  changeQuantity: number,
+  reason: string,
+  callerName: string = "Nagpur Service Centre",
+): DemoPart {
+  let updatedPart: DemoPart | null = null;
+  set((s) => {
+    const parts = s.serviceCentreParts ?? INITIAL_DEMO_PARTS.map((p) => ({ ...p }));
+    const target = parts.find((p) => p.id === partId || p.part_number === partId);
+    if (!target) {
+      throw new Error("Part not found in Service Centre catalog.");
+    }
+
+    const previousStock = target.stock_quantity;
+    const newStock = previousStock + changeQuantity;
+    if (newStock < 0) {
+      throw new Error(`Insufficient stock: Cannot adjust below 0 (current: ${previousStock}, change: ${changeQuantity}).`);
+    }
+
+    const nowIso = new Date().toISOString();
+    updatedPart = { ...target, stock_quantity: newStock, updated_at: nowIso };
+
+    const auditEntry: DemoStockAudit = {
+      id: "aud-" + uid(),
+      part_id: target.id,
+      change_quantity: changeQuantity,
+      previous_stock: previousStock,
+      new_stock: newStock,
+      reason,
+      changed_by: callerName,
+      created_at: nowIso,
+    };
+
+    return {
+      ...s,
+      serviceCentreParts: parts.map((p) => (p.id === target.id ? updatedPart! : p)),
+      serviceCentreStockAudit: [auditEntry, ...(s.serviceCentreStockAudit ?? [])],
+    };
+  });
+
+  return updatedPart!;
+}
+
+export function requestDemoPart(input: {
+  repairRequestId: string;
+  partId: string;
+  quantity: number;
+  notes?: string | null;
+  requesterId?: string | undefined;
+  requesterName?: string | undefined;
+}): DemoPartRequest {
+  let newReq: DemoPartRequest | null = null;
+  set((s) => {
+    const parts = s.serviceCentreParts ?? INITIAL_DEMO_PARTS.map((p) => ({ ...p }));
+    const target = parts.find((p) => p.id === input.partId || p.part_number === input.partId);
+    if (!target) {
+      throw new Error("Part not found in Service Centre catalog.");
+    }
+
+    const nowIso = new Date().toISOString();
+    newReq = {
+      id: "req-" + uid(),
+      repair_request_id: input.repairRequestId,
+      part_id: target.id,
+      quantity: input.quantity,
+      status: "PENDING",
+      requested_by: input.requesterId || "t1",
+      notes: input.notes?.trim() || null,
+      created_at: nowIso,
+      updated_at: nowIso,
+    };
+
+    const notifText = `New parts requisition for ${input.repairRequestId}: ${target.name} (Qty ${input.quantity})`;
+    return {
+      ...s,
+      serviceCentrePartRequests: [newReq!, ...(s.serviceCentrePartRequests ?? [])],
+      notifications: notify(s, {
+        role: "admin",
+        text: notifText,
+        link: "/admin/parts-desk",
+      }),
+    };
+  });
+
+  return newReq!;
+}
+
+export function confirmDemoPartHandoff(
+  requestId: string,
+  adminName: string = "Nagpur Service Centre",
+): { request: DemoPartRequest; part: DemoPart } {
+  let result: { request: DemoPartRequest; part: DemoPart } | null = null;
+  set((s) => {
+    const reqs = s.serviceCentrePartRequests ?? [];
+    const targetReq = reqs.find((r) => r.id === requestId);
+    if (!targetReq) {
+      throw new Error("Part requisition not found.");
+    }
+    if (targetReq.status !== "PENDING") {
+      throw new Error(`Requisition is already ${targetReq.status}.`);
+    }
+
+    const parts = s.serviceCentreParts ?? INITIAL_DEMO_PARTS.map((p) => ({ ...p }));
+    const part = parts.find((p) => p.id === targetReq.part_id);
+    if (!part) {
+      throw new Error("Requested part not found in catalog.");
+    }
+
+    if (part.stock_quantity < targetReq.quantity) {
+      throw new Error(`Insufficient stock: ${targetReq.quantity} requested, but only ${part.stock_quantity} available.`);
+    }
+
+    const nowIso = new Date().toISOString();
+    const previousStock = part.stock_quantity;
+    const newStock = previousStock - targetReq.quantity;
+
+    const updatedPart: DemoPart = {
+      ...part,
+      stock_quantity: newStock,
+      updated_at: nowIso,
+    };
+
+    const updatedReq: DemoPartRequest = {
+      ...targetReq,
+      status: "HANDED_OFF",
+      handed_off_by: adminName,
+      handed_off_at: nowIso,
+      updated_at: nowIso,
+    };
+
+    const auditEntry: DemoStockAudit = {
+      id: "aud-" + uid(),
+      part_id: part.id,
+      change_quantity: -targetReq.quantity,
+      previous_stock: previousStock,
+      new_stock: newStock,
+      reason: "technician_handoff",
+      changed_by: adminName,
+      repair_request_id: targetReq.repair_request_id,
+      part_request_id: targetReq.id,
+      created_at: nowIso,
+    };
+
+    result = { request: updatedReq, part: updatedPart };
+
+    return {
+      ...s,
+      serviceCentreParts: parts.map((p) => (p.id === part.id ? updatedPart : p)),
+      serviceCentrePartRequests: reqs.map((r) => (r.id === targetReq.id ? updatedReq : r)),
+      serviceCentreStockAudit: [auditEntry, ...(s.serviceCentreStockAudit ?? [])],
+      notifications: notify(s, {
+        role: "technician",
+        userId: targetReq.requested_by,
+        text: `Parts handed off: ${part.name} (Qty ${targetReq.quantity}) for ${targetReq.repair_request_id}`,
+        link: targetReq.repair_request_id.startsWith("TB-")
+          ? `/technician/job/${targetReq.repair_request_id}`
+          : "/technician",
+      }),
+    };
+  });
+
+  return result!;
+}
+
+export function cancelDemoPartRequest(requestId: string): DemoPartRequest {
+  let updatedReq: DemoPartRequest | null = null;
+  set((s) => {
+    const reqs = s.serviceCentrePartRequests ?? [];
+    const target = reqs.find((r) => r.id === requestId);
+    if (!target) throw new Error("Requisition not found.");
+    if (target.status !== "PENDING") throw new Error("Only pending requisitions can be cancelled.");
+
+    const nowIso = new Date().toISOString();
+    updatedReq = { ...target, status: "CANCELLED", updated_at: nowIso };
+
+    return {
+      ...s,
+      serviceCentrePartRequests: reqs.map((r) => (r.id === requestId ? updatedReq! : r)),
+    };
+  });
+
+  return updatedReq!;
+}
+
+export function getDemoPartRequests(repairId?: string): DemoPartRequest[] {
+  load();
+  const reqs = state.serviceCentrePartRequests ?? [];
+  if (!repairId) return reqs;
+  return reqs.filter(
+    (r) => r.repair_request_id === repairId || r.repair_request_id.toLowerCase() === repairId.toLowerCase(),
+  );
+}
+
+export function getDemoStockAuditLog(): DemoStockAudit[] {
+  load();
+  return state.serviceCentreStockAudit ?? [];
+}

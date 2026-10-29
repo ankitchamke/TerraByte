@@ -245,3 +245,83 @@ No phase promotion or production deployment may occur if:
 4. Any client request can read or modify another user's private profile.
 5. Farmer dashboards render mock data or cross-contaminate data across different farmers.
 6. TypeScript errors (`tsc --noEmit`) or Vite build failures exist.
+
+
+---
+
+### Phase 9.1 — Service Centre Parts Pickup & Demo Inventory Verification Suite
+
+| Test ID | Test Case | Target State / Persona | Action / Steps | Expected Result | Verification Method | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :---: |
+| **P9.1-01** | Database schema, constraints, location column, safeupdate compliance & idempotent upsert | `public.service_centre_parts`, `service_centre_part_requests`, `service_centre_stock_audit` | Inspect migration `20261029100000_phase9_1_parts_pickup.sql` | Tables created with `stock_quantity >= 0`, `unit_price >= 0`, `quantity > 0`, `location` column, status check `('PENDING', 'HANDED_OFF', 'CANCELLED')`, audit foreign keys, safeupdate `WHERE` clauses, and idempotent `ON CONFLICT (part_number) DO UPDATE SET`. | `tests/parts-desk.test.mjs` & SQL schema inspection | **PASS** |
+| **P9.1-02** | Strict RLS: Technician assignment authorization & Farmer isolation | Unassigned tech, assigned tech, farmer, admin | Test SELECT, INSERT, UPDATE across roles | Farmers denied SELECT/mutation; technicians view catalog and request parts only for repairs assigned to them; admins have full management. | `tests/parts-desk.test.mjs` & RLS policy audit | **PASS** |
+| **P9.1-03** | Canonical five demo parts population, verified equipment compatibility & depot locations | Demo parts store & catalog | Query parts via `getDemoParts()` | Exactly 5 canonical parts returned (`0433171`, `005556958R1`, `AL120788`, `HY-GARD-15W30`, `26243171`) with verified compatibility (`Mahindra 575 DI`, `John Deere 5050D`, `Swaraj 744 FE`) and shelf locations (`Depot Shelf A-02`, `A-03`, `B-01`, `Drum Rack B-04`, `Shelf C-01`). | `tests/parts-desk.test.mjs` catalog completeness test | **PASS** |
+| **P9.1-04** | Multi-field technician part search & filtering across name, SKU, spec, category, model, and shelf location | Technician search modal | Search query simulation | Matches across tractor model (Mahindra 575 DI $\rightarrow$ 3 parts, John Deere $\rightarrow$ 2 parts), SKU/part number (`0433171`), brand/spec (`Bosch`, `Lucas-TVS`), and physical shelf location (`Shelf B-01`, `Drum Rack`). | `tests/parts-desk.test.mjs` multi-field search test | **PASS** |
+| **P9.1-05** | Deterministic stock quantity restoration & request/audit log purging on Reset Demo | `reset_demo_data()` / `resetDemo()` | Trigger demo reset | Baseline stock quantities restored deterministically (Bosch: 3, Filter: 8, Seal kit: 2, Hydraulic oil: 5, Starter motor: 1); in-flight requisitions and stock audits purged. | `tests/parts-desk.test.mjs` deterministic reset test | **PASS** |
+| **P9.1-06** | Concurrency-safe atomic handoff, on-hand vs pending request separation & audit logging | Handoff workflow | Request part, inspect on-hand stock prior to handoff, confirm handoff | On-hand quantity remains distinct until physical handoff; handoff decrements stock atomically to 0; records audit log with `change_quantity: -1`; repeated handoff blocked with `Requisition is already HANDED_OFF`. | `tests/parts-desk.test.mjs` atomic handoff test | **PASS** |
+| **P9.1-07** | Farmer privacy boundary quarantine from internal stock, costs, and requisitions | Farmer Repair Detail (`/farmer/repair/:id`) | Inspect route code & DOM queries | Zero imports or queries to `service_centre_parts` or requests; zero rendering of depot stock, unit costs, or audit remarks. | `tests/parts-desk.test.mjs` route code audit | **PASS** |
+
+---
+
+## 9. Phase 9.1 Manual QA Walkthrough (For Owner Execution)
+
+> [!IMPORTANT]
+> The automated test suite has passed (7/7 passing in `tests/parts-desk.test.mjs`). The following manual QA steps are documented for the owner's verification and have **not** been marked as passed.
+
+### Step 1: Service Centre Parts Desk Overview & Depot Inventory Verification
+1. Log in as **Nagpur Service Centre** (`admin.nagpur@terrabyte.demo` / `terrabyte2026`).
+2. On `/admin`, notice the **"Parts Desk"** navigation link in the top bar.
+3. Click **"Parts Desk"** to navigate to `/admin/parts-desk`:
+   - Verify the informational banner: *"Nagpur Central Depot · Approved demo catalog for Nagpur RISE evaluation."*
+   - Verify metrics cards: Total Items (5), Low Stock count (2 — Starter Motor & Seal Kit), Pending Requisitions count (0), Total Stock Value (₹19,050).
+   - Switch to the **"Depot Inventory"** tab: verify the 5 canonical tractor spare parts:
+     1. `0433171` — **Fuel Injector Nozzle Set** (Fuel system · Bosch · Compatible with *Mahindra 575 DI*) · `Depot Shelf A-02` · ₹2,200 · **3 on hand**
+     2. `005556958R1` — **Inline Fuel Filter** (Fuel system · Mahindra Genuine · Compatible with *Mahindra 575 DI*) · `Depot Shelf A-03` · ₹350 · **8 on hand**
+     3. `AL120788` — **Lift Cylinder Seal Kit** (Hydraulics · John Deere OEM · Compatible with *John Deere 5050D*) · `Depot Shelf B-01` · ₹1,650 · **2 on hand**
+     4. `HY-GARD-15W30` — **Hydraulic Oil 15W-30** (Hydraulics · John Deere Hy-Gard · Compatible with *John Deere 5050D*) · `Depot Drum Rack B-04` · ₹320 · **5 on hand**
+     5. `26243171` — **Starter Motor Assembly** (Electrical · Lucas-TVS · Compatible with *Mahindra 575 DI*, *Swaraj 744 FE*) · `Depot Shelf C-01` · ₹5,800 · **1 on hand**
+   - Click **"Adjust Stock"** on the Bosch nozzle:
+     - Increase quantity by `+2` with reason *"Depot transfer receipt"*.
+     - Verify stock updates to `5 on hand` and the entry is recorded in the **"Stock Audit Log"** tab with timestamp, admin email, previous count (3), new count (5), and reason.
+
+### Step 2: Technician Parts Requisition from Active Job
+1. Sign out and log in as **Ramesh Kumar** (`tech.nagpur@terrabyte.demo` / `terrabyte2026`).
+2. On `/technician`, open active assigned repair **`TB-8841`** (Mahindra 575 DI).
+3. Scroll to the **"Spare Parts Pickup"** card:
+   - Click **"Request Part from Depot"**.
+   - In the modal dialog, test multi-field search:
+     - Search `"Mahindra"`: displays 3 compatible parts (Nozzle, Fuel Filter, Starter Motor).
+     - Search `"Shelf A-02"`: displays the Bosch Injector Nozzle.
+     - Search `"Bosch"`: displays the Bosch Injector Nozzle.
+   - Verify on-hand stock is clearly labeled (e.g., `3 on hand` or updated count).
+   - Select quantity `1`, add note *"Urgent for fuel injection pump overhaul"*, and submit requisition.
+   - Verify the request appears under the card with status badge **"Pending Handoff"**. Notice the stock on hand remains unreduced until handoff is confirmed.
+
+### Step 3: Service Centre Confirmation & Atomic Stock Decrement
+1. Switch back or log in as **Nagpur Service Centre** (`admin.nagpur@terrabyte.demo`).
+2. Navigate to `/admin/parts-desk`:
+   - Under the **"Pending Requisitions"** tab, verify Ramesh Kumar's requisition for `TB-8841` appears.
+   - Click **"Confirm Handoff"**.
+   - Verify status transitions to **"Handed Off"** and depot stock count decrements by 1.
+   - Check the **"Stock Audit Log"** tab: verify the handoff is logged with previous stock, new stock, and reference to `TB-8841`.
+
+### Step 4: Out-of-Stock Notice & Parts Hold Workflow
+1. As technician on an assigned repair, open the Parts Pickup dialog.
+2. Filter or search for a part with 0 stock (or temporarily adjust a part to 0 stock as admin).
+3. Verify the modal shows an amber **"Out of Stock"** banner.
+4. Verify the modal guides the technician: *"This component is currently unavailable at the Service Centre depot. Place the repair on hold with a supplier ETA using the Pause for Parts action."*
+5. Close modal, click **"Pause for parts"** on the workbench, enter missing component and estimated delivery date, and confirm.
+6. Verify repair transitions cleanly to `WAITING_FOR_PARTS` without state conflicts.
+
+### Step 5: Farmer Privacy Quarantine
+1. Sign out and log in as **Balasaheb Patil** (`farmer.nagpur@terrabyte.demo` / `terrabyte2026`).
+2. Navigate to `/farmer/repair/:id` for `TB-8841`:
+   - Verify the farmer sees high-level status (*"Waiting for Parts"* and technician delay reason).
+   - Verify **zero** internal depot stock counts, wholesale prices, staff audit notes, or requisition buttons are visible anywhere on the farmer interface.
+
+### Step 6: Deterministic Demo Reset Hygiene
+1. Click the **Reset Demo** icon (`RotateCcw`) in the top navigation bar.
+2. Confirm the reset dialog.
+3. Once completed, navigate to `/admin/parts-desk`:
+   - Verify pending requisitions are cleared (0 pending).
+   - Verify depot inventory stock counts are restored deterministically to their canonical baselines (Bosch: 3, Filter: 8, Seal kit: 2, Hydraulic oil: 5, Starter motor: 1).

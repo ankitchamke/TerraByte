@@ -25,7 +25,9 @@ flowchart TD
     P55 --> P56["PHASE 5.6: Handover & Completion Polish<br/>(STATUS: COMPLETE)"]
     P56 --> P6["PHASE 6: Production Readiness & Hardening<br/>(STATUS: COMPLETE — Commit 27a1e69)"]
     P6 --> P7["PHASE 7: Realtime Foundation & Concurrency<br/>(STATUS: COMPLETE — Commit 91b7c83)"]
-    P7 --> FREEZE["MILESTONE: NAGPUR RISE 2026 SUBMISSION FREEZE<br/>(STATUS: FROZEN / SUBMISSION READY)"]
+    P7 --> P8["PHASE 8: Route Logistics & Demo Cleanup<br/>(STATUS: COMPLETE)"]
+    P8 --> P91["PHASE 9.1: Service Centre Parts Pickup<br/>(STATUS: COMPLETE)"]
+    P91 -.-> P92["PHASE 9.2: Supplier Network & Sourcing<br/>(STATUS: SCOPED / FUTURE)"]
 ```
 
 ---
@@ -325,6 +327,89 @@ flowchart TD
   2. **Debounced Coalescing Realtime Hooks**: Built `useRepairTicketRealtime` and `useRepairListRealtime` in `src/hooks/use-repair-realtime.ts`. Treats websocket payloads as invalidation signals, applies a 300ms coalescing window, and triggers authoritative refetches.
   3. **Concurrency Hardening (OCC)**: Updated `repair-requests.ts` and `quotes.ts` with precondition row checks (e.g. verifying `technician_id IS NULL` before job acceptance) preventing race conditions across concurrent sessions.
   4. **Technician Decline RLS Policy**: Migration `supabase/migrations/20261006110000_phase7_3_technician_decline_rls.sql` permitting assigned technicians to decline an assigned request back to `REQUESTED` while appending their ID to `declined_by`.
+
+---
+
+### PHASE 8 — Logistics, Route Estimates & Health Monitoring
+- **Status**: **COMPLETE**
+- **Objective**: Integrate road-distance estimations, clean up legacy demo repairs, and provide health verification endpoints.
+- **Deliverables Completed**:
+  1. **OSRM Route Estimation**: Calculated realistic road distances and travel time ETAs for technician dispatch.
+  2. **Demo Data Hygiene**: Retained Balasaheb Patil's tractor fleet while purging obsolete sample repairs.
+  3. **Health Monitoring**: Verified system endpoints and deployment configuration.
+
+---
+
+### PHASE 9.1 — Service Centre Parts Pickup
+- **Status**: **COMPLETE**
+- **Objective**: Establish centralized Nagpur Service Centre depot spare-parts inventory, allow technicians to submit pickup requisitions for active assigned repairs, and provide administrators with a dedicated Parts Desk to manage stock, confirm physical handoffs atomically, and maintain an immutable stock audit trail.
+
+#### Step 1 — Database Migration & Schema Foundation
+- **Status**: **COMPLETE**
+- **Deliverables**:
+  1. Forward migration `supabase/migrations/20261029100000_phase9_1_parts_pickup.sql`.
+  2. Relational schema:
+     - `public.service_centre_parts`: Tracks catalog parts with `stock_quantity >= 0` and `unit_price >= 0`. Seeded with 5 canonical verified tractor parts from `tb-store.ts`.
+     - `public.service_centre_part_requests`: Tracks technician pickup requisitions with `quantity > 0`, statuses `('PENDING', 'HANDED_OFF', 'CANCELLED')`, and cascade on repair delete.
+     - `public.service_centre_stock_audit`: Tracks `change_quantity`, `previous_stock`, `new_stock`, `reason`, `changed_by`, and linking foreign keys.
+  3. Row Level Security:
+     - `service_centre_parts`: SELECT allowed for `admin` and `technician`; ALL for `admin`; farmers denied.
+     - `service_centre_part_requests`: SELECT for `admin` and assigned `technician`; INSERT for assigned `technician` and `admin`; UPDATE for `admin` and `technician` (cancelling own PENDING request).
+     - `service_centre_stock_audit`: SELECT for `admin` only.
+  4. Stored Procedures (`SECURITY DEFINER`):
+     - `confirm_service_centre_part_handoff(p_request_id)`: Locks part row with `SELECT ... FOR UPDATE`, verifies sufficient stock, decrements stock atomically, logs audit record, and updates request to `HANDED_OFF`.
+     - `adjust_service_centre_part_stock(p_part_id, p_change_quantity, p_reason)`: Adjusts depot stock with reason audit trail.
+     - `request_service_centre_part(p_repair_request_id, p_part_id, p_quantity, p_notes)`: Validates assigned technician status and inserts requisition.
+
+#### Step 2 — Service Layer & Type Integration
+- **Status**: **COMPLETE**
+- **Deliverables**:
+  1. Updated `src/integrations/supabase/types.ts` with exact database types for tables, enums, and RPC functions.
+  2. Created `src/lib/services/parts-desk.ts`:
+     - `getServiceCentreParts()`: Retrieves depot parts with search and category filtering.
+     - `requestServiceCentrePart()`: Submits pickup requisition with assignment authorization and admin notification.
+     - `confirmPartHandoff()`: Calls atomic stored procedure and dispatches pickup confirmation notification to technician.
+     - `adjustPartStock()`: Submits audited manual stock adjustments.
+     - `cancelPartRequest()`: Cancels pending pickup request.
+     - `getStockAuditLog()`: Retrieves immutable stock ledger for admin review.
+
+#### Step 3 — Service Centre Parts Desk UI
+- **Status**: **COMPLETE**
+- **Deliverables**:
+  1. Created `src/routes/admin/parts-desk.tsx`:
+     - Metric summary cards (Total Items, Low Stock, Pending Requisitions, Total Stock Value).
+     - Tabbed interface: **Pending Requisitions** queue with 1-click "Confirm Handoff" action, **Depot Inventory** table with search and "Adjust Stock" modal, and **Stock Audit Log** with before/after counts and reasons.
+  2. Added prominent **Parts Desk** navigation shortcut in `src/routes/admin/index.tsx` alongside Technicians.
+
+#### Step 4 — Technician Requisition Card & Job Integration
+- **Status**: **COMPLETE**
+- **Deliverables**:
+  1. Created `src/components/parts-pickup-card.tsx`:
+     - Displays requisitioned parts with live status badges (`Pending Handoff`, `Handed Off`, `Cancelled`).
+     - Accessible modal dialog to search depot catalog, check live availability, and submit requests for active repairs.
+     - Integrated clear guidance when parts are out of stock to use the existing `WAITING_FOR_PARTS` action with ETA.
+  2. Embedded into `src/routes/technician/job/$id.tsx` for verified mechanics on assigned repairs.
+
+#### Step 5 — State Machine & Privacy Boundaries
+- **Status**: **COMPLETE**
+- **Deliverables**:
+  1. Preserved repair state machine: requesting a part never alters repair status automatically. Technicians explicitly pause/resume repairs via established `WAITING_FOR_PARTS` workflows.
+  2. Enforced farmer privacy boundary: zero internal stock counts, wholesale prices, or depot audit logs are exposed to farmers or queried on farmer routes.
+
+#### Step 6 — Demo Reset Hygiene & Automated Testing
+- **Status**: **COMPLETE**
+- **Deliverables**:
+  1. Updated `reset_demo_data()` to clean `service_centre_part_requests` and `service_centre_stock_audit`, and restore canonical verified baseline stock.
+  2. Created automated test suite `tests/parts-desk.test.mjs` with 6 passing behavioral checks verifying schema, RLS, concurrency protection, authorization, farmer privacy, and demo reset.
+
+---
+
+### PHASE 9.2 — Taluka Supplier Network & Procurement (Future Scope)
+- **Status**: **SCOPED / DEFERRED**
+- **Future Scope**:
+  1. Local taluka supplier directory (verified private parts shops across Katol, Saoner, Umred).
+  2. Out-of-stock purchase order issuance and external procurement ETA coordination.
+  3. Multi-centre depot transfer requests and regional stock balancing.
 
 ---
 

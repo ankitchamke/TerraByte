@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { AlertOctagon, AlertTriangle, ChevronDown, ChevronRight, ChevronUp, Users } from "lucide-react";
+import { AlertOctagon, AlertTriangle, ChevronDown, ChevronRight, ChevronUp, Package, Users } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Card, DemoTag, StatusPill } from "@/components/tb";
 import { ago } from "@/lib/tb-store";
@@ -195,7 +195,14 @@ function Admin() {
           </p>
           <h1 className="text-3xl font-bold">Repair operations</h1>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <Link
+            to="/admin/parts-desk"
+            className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-border px-3 text-sm font-semibold hover:bg-muted"
+          >
+            <Package className="h-4 w-4 text-primary" />
+            Parts Desk
+          </Link>
           <Link
             to="/admin/technicians"
             className="inline-flex h-10 items-center gap-1 rounded-lg border border-border px-3 text-sm font-semibold hover:bg-muted"

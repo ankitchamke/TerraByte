@@ -661,6 +661,173 @@ export type Database = {
           },
         ]
       }
+      service_centre_parts: {
+        Row: {
+          category: string
+          compatible_models: string[]
+          created_at: string
+          id: string
+          location: string | null
+          name: string
+          part_number: string
+          spec: string | null
+          stock_quantity: number
+          unit_price: number
+          updated_at: string
+        }
+        Insert: {
+          category?: string
+          compatible_models?: string[]
+          created_at?: string
+          id?: string
+          location?: string | null
+          name: string
+          part_number: string
+          spec?: string | null
+          stock_quantity?: number
+          unit_price?: number
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          compatible_models?: string[]
+          created_at?: string
+          id?: string
+          location?: string | null
+          name?: string
+          part_number?: string
+          spec?: string | null
+          stock_quantity?: number
+          unit_price?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      service_centre_part_requests: {
+        Row: {
+          created_at: string
+          handed_off_at: string | null
+          handed_off_by: string | null
+          id: string
+          notes: string | null
+          part_id: string
+          quantity: number
+          repair_request_id: string
+          requested_by: string
+          status: "PENDING" | "HANDED_OFF" | "CANCELLED"
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          handed_off_at?: string | null
+          handed_off_by?: string | null
+          id?: string
+          notes?: string | null
+          part_id: string
+          quantity?: number
+          repair_request_id: string
+          requested_by: string
+          status?: "PENDING" | "HANDED_OFF" | "CANCELLED"
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          handed_off_at?: string | null
+          handed_off_by?: string | null
+          id?: string
+          notes?: string | null
+          part_id?: string
+          quantity?: number
+          repair_request_id?: string
+          requested_by?: string
+          status?: "PENDING" | "HANDED_OFF" | "CANCELLED"
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_centre_part_requests_part_id_fkey"
+            columns: ["part_id"]
+            isOneToOne: false
+            referencedRelation: "service_centre_parts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_centre_part_requests_repair_request_id_fkey"
+            columns: ["repair_request_id"]
+            isOneToOne: false
+            referencedRelation: "repair_requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_centre_part_requests_requested_by_fkey"
+            columns: ["requested_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_centre_part_requests_handed_off_by_fkey"
+            columns: ["handed_off_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      service_centre_stock_audit: {
+        Row: {
+          change_quantity: number
+          changed_by: string
+          created_at: string
+          id: string
+          new_stock: number
+          part_id: string
+          part_request_id: string | null
+          previous_stock: number
+          reason: string
+          repair_request_id: string | null
+        }
+        Insert: {
+          change_quantity: number
+          changed_by: string
+          created_at?: string
+          id?: string
+          new_stock: number
+          part_id: string
+          part_request_id?: string | null
+          previous_stock: number
+          reason: string
+          repair_request_id?: string | null
+        }
+        Update: {
+          change_quantity?: number
+          changed_by?: string
+          created_at?: string
+          id?: string
+          new_stock?: number
+          part_id?: string
+          part_request_id?: string | null
+          previous_stock?: number
+          reason?: string
+          repair_request_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_centre_stock_audit_part_id_fkey"
+            columns: ["part_id"]
+            isOneToOne: false
+            referencedRelation: "service_centre_parts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_centre_stock_audit_changed_by_fkey"
+            columns: ["changed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -695,6 +862,29 @@ export type Database = {
       }
       reset_demo_data: {
         Args: never
+        Returns: Json
+      }
+      confirm_service_centre_part_handoff: {
+        Args: {
+          p_request_id: string
+        }
+        Returns: Json
+      }
+      adjust_service_centre_part_stock: {
+        Args: {
+          p_part_id: string
+          p_change_quantity: number
+          p_reason: string
+        }
+        Returns: Json
+      }
+      request_service_centre_part: {
+        Args: {
+          p_repair_request_id: string
+          p_part_id: string
+          p_quantity?: number
+          p_notes?: string
+        }
         Returns: Json
       }
     }

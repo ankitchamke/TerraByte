@@ -1,16 +1,58 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { AlertCircle, Camera, Clock, Loader2, Lock, PackageSearch, Plus, Trash2, XCircle } from "lucide-react";
+import {
+  AlertCircle,
+  Camera,
+  Clock,
+  Loader2,
+  Lock,
+  MapPin,
+  PackageSearch,
+  Plus,
+  Trash2,
+  XCircle,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AssessmentCard, QuoteTable, Timeline } from "@/components/repair-parts";
-import { btn, CallButton, Card, ClickableImage, ContextualBack, DateTimePicker, formatEtaDateTime, input, Label, StatusPill } from "@/components/tb";
+import { DirectionsButton } from "@/components/directions-button";
+import { RouteEstimateCard } from "@/components/route-estimate-card";
+import { formatGpsAccuracy } from "@/lib/location";
+import {
+  btn,
+  CallButton,
+  Card,
+  ClickableImage,
+  ContextualBack,
+  DateTimePicker,
+  formatEtaDateTime,
+  input,
+  Label,
+  StatusPill,
+} from "@/components/tb";
 import { fileToSmallDataUrl } from "@/lib/image";
-import { actions, ago, fmtTime, inr, quoteTotals, STAFF_LABEL, useTB, type Quote, type QuotePart, type Repair } from "@/lib/tb-store";
-import { formatEtaDateTime as formatEta, getEtaPresets, toDateTimeLocalString, valueToDateTimeLocal } from "@/lib/date-utils";
+import {
+  actions,
+  ago,
+  fmtTime,
+  inr,
+  quoteTotals,
+  STAFF_LABEL,
+  useTB,
+  type BlockerPartItem,
+  type Quote,
+  type QuotePart,
+  type Repair,
+} from "@/lib/tb-store";
+import {
+  formatEtaDateTime as formatEta,
+  getEtaPresets,
+  toDateTimeLocalString,
+  valueToDateTimeLocal,
+} from "@/lib/date-utils";
 import { useAuth } from "@/lib/auth";
 import { meta } from "@/lib/seo";
 import { cn } from "@/lib/utils";
-import { useRepairTicketRealtime } from "@/hooks/use-repair-realtime";
+import { useRepairTicketRealtime, isUuid } from "@/hooks/use-repair-realtime";
 import {
   acceptRepairRequest,
   completeRepair,
@@ -21,12 +63,25 @@ import {
   startTesting,
   updatePartsEta,
   waitForParts,
+  getRepairDispatchLocation,
+  type RepairDispatchLocation,
   type RepairRequestDetail,
 } from "@/lib/services/repair-requests";
-import { addRepairNote, getRepairNotes, type RepairNoteWithAuthor } from "@/lib/services/repair-notes";
+import {
+  addRepairNote,
+  getRepairNotes,
+  type RepairNoteWithAuthor,
+} from "@/lib/services/repair-notes";
 import { QuoteComparison } from "@/components/quote-comparison";
 import { RepairChat } from "@/components/repair-chat";
 import { PartsPickupCard } from "@/components/parts-pickup-card";
+import {
+  getRepairPartRequests,
+  getServiceCentreParts,
+  syncPartRequestToQuoteLines,
+  type ServiceCentrePart,
+  type ServiceCentrePartRequestDetail,
+} from "@/lib/services/parts-desk";
 import {
   createQuote,
   getQuotesForRepair,
@@ -42,9 +97,33 @@ import {
 export const Route = createFileRoute("/technician/job/$id")({
   head: () => meta("Job", "Repair job details and actions."),
   component: Job,
+  errorComponent: ({ error, reset }) => {
+    const err = error as Error | undefined;
+    return (
+      <div className="space-y-5 p-4">
+        <ContextualBack to="/technician" label="Jobs" />
+        <Card className="border-destructive text-destructive space-y-2">
+          <p className="font-bold text-lg">Failed to load technician job</p>
+          <p className="text-sm">{err?.message || "An unexpected error occurred while loading this job."}</p>
+          {err?.stack && (
+            <pre className="text-xs bg-muted/60 p-3 rounded-lg overflow-x-auto text-foreground font-mono">
+              {err.stack}
+            </pre>
+          )}
+          <button
+            onClick={() => reset()}
+            className="mt-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
+          >
+            Try again
+          </button>
+        </Card>
+      </div>
+    );
+  },
 });
 
 function toQuoteView(q: QuoteDetail): Quote {
+  const sentAtMs = q.created_at ? new Date(q.created_at).getTime() : Date.now();
   return {
     parts: (q.quote_items || []).map((item) => ({
       name: item.part_name,
@@ -59,14 +138,15 @@ function toQuoteView(q: QuoteDetail): Quote {
     eta: q.estimated_completion || "TBD",
     warranty: q.warranty_terms || "90 days on parts & labour",
     version: q.version,
-    sentAt: new Date(q.created_at).getTime(),
+    sentAt: isNaN(sentAtMs) ? Date.now() : sentAtMs,
   };
 }
 
 function Job() {
   const { id } = Route.useParams();
-  const { profile } = useAuth();
+  const { profile, ready } = useAuth();
   const nav = useNavigate();
+  const tb = useTB();
   const hasLoadedRef = useRef(false);
   const [r, setR] = useState<RepairRequestDetail | null>(null);
   const [quotes, setQuotes] = useState<QuoteDetail[]>([]);
@@ -76,6 +156,8 @@ function Job() {
   const [error, setError] = useState<string | null>(null);
   const [accepting, setAccepting] = useState(false);
   const [declineOpen, setDeclineOpen] = useState(false);
+  const [dispatchLocation, setDispatchLocation] = useState<RepairDispatchLocation | null>(null);
+  const [partRequests, setPartRequests] = useState<ServiceCentrePartRequestDetail[]>([]);
 
   const loadData = useCallback(async () => {
     try {
@@ -83,16 +165,98 @@ function Job() {
         setLoading(true);
       }
       setError(null);
-      const [repairData, quotesData, notesData, versionsData] = await Promise.all([
-        getRepairRequestById(id),
-        getQuotesForRepair(id).catch(() => []),
-        getRepairNotes(id).catch(() => []),
-        getQuoteVersions(id).catch(() => []),
+      let repairData = await getRepairRequestById(id).catch(() => null);
+      if (!repairData) {
+        // Fallback to demo store if it's a demo ticket (e.g. TB-5653 or in-memory ticket)
+        const demo = tb.repairs.find((x) => x.id === id || (x as any).jobNumber === id);
+        if (demo) {
+          const eq = tb.equipment.find((e) => e.id === demo.equipmentId);
+          const tech = tb.technicians.find((t) => t.id === demo.technicianId);
+          const farmer = tb.farmers.find((f) => f.id === demo.farmerId);
+          repairData = {
+            id: demo.id,
+            job_number: demo.id,
+            farmer_id: demo.farmerId,
+            technician_id: demo.technicianId || null,
+            equipment_id: demo.equipmentId,
+            status: demo.status,
+            is_testing: Boolean(demo.testing),
+            description: demo.description,
+            symptoms: demo.symptoms,
+            location: demo.location,
+            created_at: new Date(demo.createdAt).toISOString(),
+            updated_at: new Date(demo.statusSince || demo.createdAt).toISOString(),
+            clarification_note: demo.clarification || null,
+            parts_hold: demo.parts || null,
+            completion_details: demo.completion || null,
+            cancellation_reason: (demo as any).cancellation?.reason || null,
+            cancellation_note: (demo as any).cancellation?.note || null,
+            cancellation_requested_at: (demo as any).cancellation?.requestedAt
+              ? new Date((demo as any).cancellation.requestedAt).toISOString()
+              : null,
+            equipment: eq
+              ? {
+                  id: eq.id,
+                  farmer_id: eq.farmerId,
+                  make: eq.make,
+                  model: eq.model,
+                  year: eq.year,
+                  serial_number: eq.serial,
+                  operating_hours: eq.hours,
+                  photo_url: eq.photo || null,
+                  status: eq.status,
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                }
+              : null,
+            farmer: farmer
+              ? {
+                  id: farmer.id,
+                  full_name: farmer.name,
+                  phone: farmer.phone,
+                  village: farmer.village,
+                }
+              : null,
+            technician: tech
+              ? {
+                  id: tech.id,
+                  full_name: tech.name,
+                  phone: tech.phone,
+                  village: tech.workshop,
+                }
+              : null,
+            repair_timeline: (demo.timeline || []).map((t, idx) => ({
+              id: `tl-${idx}`,
+              repair_request_id: demo.id,
+              status: t.status,
+              note: t.note || null,
+              created_at: new Date(t.at).toISOString(),
+              created_by_role: t.by,
+              created_by_id: null,
+              created_by: null,
+            })),
+          } as any;
+        }
+      }
+
+      if (!repairData) {
+        setR(null);
+        setError("Repair job not found.");
+        return;
+      }
+      const [quotesData, notesData, versionsData, dispatchLocData, reqsData] = await Promise.all([
+        getQuotesForRepair(repairData.id).catch(() => []),
+        getRepairNotes(repairData.id).catch(() => []),
+        getQuoteVersions(repairData.id).catch(() => []),
+        getRepairDispatchLocation(repairData.id).catch(() => null),
+        getRepairPartRequests(repairData.id).catch(() => []),
       ]);
       setR(repairData);
       setQuotes(quotesData);
       setNotes(notesData);
       setQuoteVersions(versionsData);
+      setDispatchLocation(dispatchLocData);
+      setPartRequests(reqsData);
       hasLoadedRef.current = true;
     } catch (err: any) {
       console.error("[TerraByte] Failed to load job details:", err);
@@ -102,11 +266,17 @@ function Job() {
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, tb.repairs, tb.equipment, tb.technicians, tb.farmers]);
 
   useEffect(() => {
     void loadData();
-  }, [loadData]);
+  }, [
+    loadData,
+    tb.serviceCentrePartRequests,
+    tb.serviceCentreParts,
+    tb.repairs,
+    tb.serviceCentrePartSales,
+  ]);
 
   // Scoped Supabase Realtime synchronization with debounced coalescing
   useRepairTicketRealtime({
@@ -137,13 +307,32 @@ function Job() {
     );
   }
 
-  if (r.technician_id !== profile?.id && r.status !== "COMPLETED" && r.status !== "CANCELLED" && profile?.role !== "service_centre") {
+  if (!ready && !profile) {
+    return (
+      <div className="space-y-5">
+        <ContextualBack to="/technician" label="Jobs" />
+        <div className="py-12 text-center text-muted-foreground">Loading session…</div>
+      </div>
+    );
+  }
+
+  const isAssignedToMe = r.technician_id === profile?.id;
+  const isUnassignedIncoming = !r.technician_id && r.status === "REQUESTED";
+  const isStaffAuthorized = profile?.role === "service_centre" || isAssignedToMe || isUnassignedIncoming;
+
+  if (
+    !isStaffAuthorized &&
+    r.status !== "COMPLETED" &&
+    r.status !== "CANCELLED"
+  ) {
     return (
       <div className="space-y-5">
         <ContextualBack to="/technician" label="Jobs" />
         <Card>
           This job isn't assigned to you.{" "}
-          <Link to="/technician" className="font-semibold text-primary">Back to jobs</Link>
+          <Link to="/technician" className="font-semibold text-primary">
+            Back to jobs
+          </Link>
         </Card>
       </div>
     );
@@ -151,19 +340,52 @@ function Job() {
 
   const e = r.equipment;
   const f = r.farmer;
-  const createdAtMs = new Date(r.created_at).getTime();
+  const createdAtMs = r.created_at ? new Date(r.created_at).getTime() : Date.now();
+  const safeCreatedAtMs = isNaN(createdAtMs) ? Date.now() : createdAtMs;
+  const statusSinceMs = r.status_since ? new Date(r.status_since).getTime() : safeCreatedAtMs;
+  const safeStatusSinceMs = isNaN(statusSinceMs) ? safeCreatedAtMs : statusSinceMs;
 
-  const pendingQuote = quotes.find((q) => q.status === "PENDING");
+  const demoRepair = tb.repairs.find(
+    (x) =>
+      x.id === id ||
+      (x as any).jobNumber === id ||
+      (r && (x.id === r.job_number || x.id === r.id))
+  );
+
+  const pendingQuote = quotes.find(
+    (q) =>
+      q.status === "PENDING" &&
+      ((q.quote_items && q.quote_items.length > 0) || Number(q.labour_amount || 0) > 0),
+  );
   const approvedQuote = quotes.find((q) => q.status === "APPROVED");
   const latestQuote = quotes[quotes.length - 1];
   const activeQuote = pendingQuote || approvedQuote || latestQuote;
-  const viewQuote = activeQuote ? toQuoteView(activeQuote) : undefined;
+  const viewQuote = activeQuote ? toQuoteView(activeQuote) : demoRepair?.quote || undefined;
 
   const breakdownPhotos: string[] = Array.isArray(r.photos)
-    ? r.photos.filter((p) => typeof p === "string" && p.trim().length > 0)
+    ? r.photos.filter((p): p is string => typeof p === "string" && p.trim().length > 0)
     : typeof r.photos === "string"
-    ? ((r.photos as string).trim().startsWith("[") ? JSON.parse(r.photos) : [(r.photos as string).trim()]).filter(Boolean)
-    : [];
+      ? (() => {
+          const raw = (r.photos as string).trim();
+          if (raw.startsWith("[") && raw.endsWith("]")) {
+            try {
+              const parsed = JSON.parse(raw);
+              return Array.isArray(parsed)
+                ? parsed.filter((p): p is string => typeof p === "string" && p.trim().length > 0)
+                : [raw];
+            } catch {
+              return [raw];
+            }
+          }
+          return raw ? [raw] : [];
+        })()
+      : [];
+
+  const symptoms: string[] = Array.isArray(r.symptoms)
+    ? r.symptoms.filter((x): x is string => typeof x === "string" && x.trim().length > 0)
+    : typeof r.symptoms === "string" && (r.symptoms as string).trim()
+      ? [(r.symptoms as string).trim()]
+      : [];
 
   const adaptedRepair: Repair = {
     id: r.job_number || r.id,
@@ -171,10 +393,10 @@ function Job() {
     farmerId: r.farmer_id,
     technicianId: r.technician_id || "",
     status: r.status,
-    statusSince: new Date(r.status_since).getTime(),
-    createdAt: createdAtMs,
+    statusSince: safeStatusSinceMs,
+    createdAt: safeCreatedAtMs,
     location: r.location,
-    symptoms: r.symptoms,
+    symptoms,
     description: r.description,
     photos: breakdownPhotos,
     assessment: (r.assessment as any) || {},
@@ -187,14 +409,16 @@ function Job() {
             reason: (r.parts_hold as any).reason || "Parts hold",
             eta: (r.parts_hold as any).eta || "TBD",
             note: (r.parts_hold as any).note || "",
+            items: Array.isArray((r.parts_hold as any).items) ? (r.parts_hold as any).items : [],
+            allPartsArrived: Boolean((r.parts_hold as any).allPartsArrived),
             revisedCompletion:
               (r.parts_hold as any).revisedCompletion ||
               (r.parts_hold as any).revised_completion ||
               "",
             since:
-              typeof (r.parts_hold as any).since === "number"
+              typeof (r.parts_hold as any).since === "number" && !isNaN((r.parts_hold as any).since)
                 ? (r.parts_hold as any).since
-                : new Date((r.parts_hold as any).since || r.status_since).getTime(),
+                : new Date((r.parts_hold as any).since || r.status_since || safeCreatedAtMs).getTime() || safeCreatedAtMs,
           },
         }
       : {}),
@@ -202,15 +426,23 @@ function Job() {
     testing: Boolean(r.is_testing),
     ...(r.verified_at ? { verifiedAt: new Date(r.verified_at).getTime() } : {}),
     declinedBy: r.declined_by || [],
-    notes: notes.map((n) => ({
-      text: n.note_text,
-      by: (n.author?.role === "admin" ? "admin" : n.author?.role === "farmer" ? "farmer" : "technician") as any,
-      at: new Date(n.created_at).getTime(),
+    notes: (Array.isArray(notes) ? notes : []).map((n) => ({
+      text: n.note_text || "",
+      by: (n.author?.role === "admin"
+        ? "admin"
+        : n.author?.role === "farmer"
+          ? "farmer"
+          : "technician") as any,
+      at: n.created_at ? new Date(n.created_at).getTime() : safeCreatedAtMs,
     })),
-    timeline: (r.repair_timeline || []).map((tl) => ({
+    timeline: (Array.isArray(r.repair_timeline) ? r.repair_timeline : []).map((tl) => ({
       status: tl.status as any,
-      by: (tl.created_by_role === "admin" ? "admin" : tl.created_by_role === "farmer" ? "farmer" : "technician") as any,
-      at: new Date(tl.created_at).getTime(),
+      by: (tl.created_by_role === "admin"
+        ? "admin"
+        : tl.created_by_role === "farmer"
+          ? "farmer"
+          : "technician") as any,
+      at: tl.created_at ? new Date(tl.created_at).getTime() : safeCreatedAtMs,
       note: tl.note || "",
     })),
   };
@@ -220,10 +452,13 @@ function Job() {
       <ContextualBack to="/technician" label="Jobs" />
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="font-mono text-sm text-muted-foreground">Job {r.job_number || r.id} · {ago(createdAtMs)} ago</p>
+          <p className="font-mono text-sm text-muted-foreground">
+            Job {r.job_number || r.id} · {ago(safeCreatedAtMs)} ago
+          </p>
           <h1 className="text-3xl font-bold">{e ? `${e.make} ${e.model}` : "Equipment"}</h1>
           <p className="text-sm text-muted-foreground">
-            {e?.type} · {e?.year} · {e?.operating_hours?.toLocaleString("en-IN")} hrs · <span className="font-mono">{e?.serial_number}</span>
+            {e?.type} · {e?.year} · {e?.operating_hours?.toLocaleString("en-IN")} hrs ·{" "}
+            <span className="font-mono">{e?.serial_number}</span>
           </p>
         </div>
         <StatusPill r={{ status: r.status, testing: r.is_testing }} audience="staff" />
@@ -245,7 +480,8 @@ function Job() {
           <div className="space-y-4 p-5">
             <p className="text-sm text-foreground">
               The farmer has submitted a formal cancellation request for repair ticket{" "}
-              <b className="font-mono">{r.job_number || r.id}</b>. The Service Centre is currently reviewing the request.
+              <b className="font-mono">{r.job_number || r.id}</b>. The Service Centre is currently
+              reviewing the request.
             </p>
 
             <div className="rounded-xl border border-warning/30 bg-warning/5 p-4 text-sm space-y-3">
@@ -294,8 +530,13 @@ function Job() {
               <p className="font-semibold text-foreground">Instructions while on hold:</p>
               <ul className="list-disc list-inside space-y-0.5">
                 <li>All active physical repair work and parts ordering are temporarily paused.</li>
-                <li>Normal repair progression actions (quotes, parts, testing, completion) are locked until the Service Centre resolves the request.</li>
-                <li>You will receive a notification as soon as the Service Centre reaches a decision.</li>
+                <li>
+                  Normal repair progression actions (quotes, parts, testing, completion) are locked
+                  until the Service Centre resolves the request.
+                </li>
+                <li>
+                  You will receive a notification as soon as the Service Centre reaches a decision.
+                </li>
               </ul>
             </div>
           </div>
@@ -310,7 +551,8 @@ function Job() {
           </div>
           <div className="space-y-4 p-5 text-sm">
             <p className="text-foreground">
-              This repair ticket was cancelled by the Service Centre upon farmer request. Equipment has been restored to Operational status. No further action is required.
+              This repair ticket was cancelled by the Service Centre upon farmer request. Equipment
+              has been restored to Operational status. No further action is required.
             </p>
             <div className="grid gap-3 sm:grid-cols-2 rounded-xl bg-muted/40 p-4">
               <div>
@@ -343,36 +585,71 @@ function Job() {
       )}
 
       {/* Declined / Resumed Notice */}
-      {r.cancellation_admin_response && r.status !== "CANCELLED" && r.status !== "CANCELLATION_REQUESTED" && (
-        <div className="rounded-xl border border-info/30 bg-info/10 p-4 text-sm space-y-1">
-          <p className="font-semibold text-info flex items-center gap-1.5">
-            <Clock className="h-4 w-4" /> Cancellation Request Declined · Work Resumed
-          </p>
-          <p className="text-foreground text-xs">
-            The previous cancellation request was declined by the Service Centre with explanation:{" "}
-            <span className="italic font-medium">"{r.cancellation_admin_response}"</span>. Repair work on this job has resumed.
-          </p>
-        </div>
-      )}
+      {r.cancellation_admin_response &&
+        r.status !== "CANCELLED" &&
+        r.status !== "CANCELLATION_REQUESTED" && (
+          <div className="rounded-xl border border-info/30 bg-info/10 p-4 text-sm space-y-1">
+            <p className="font-semibold text-info flex items-center gap-1.5">
+              <Clock className="h-4 w-4" /> Cancellation Request Declined · Work Resumed
+            </p>
+            <p className="text-foreground text-xs">
+              The previous cancellation request was declined by the Service Centre with explanation:{" "}
+              <span className="italic font-medium">"{r.cancellation_admin_response}"</span>. Repair
+              work on this job has resumed.
+            </p>
+          </div>
+        )}
 
       <Card>
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <Label>Farmer</Label>
             <p className="font-semibold">{f?.full_name || "Farmer"}</p>
-            <p className="text-sm text-muted-foreground">{r.location}</p>
+            <p className="text-sm text-muted-foreground flex flex-wrap items-center gap-1.5 mt-0.5">
+              <span>{r.location}</span>
+              {dispatchLocation ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                  <MapPin className="h-3 w-3" /> Exact GPS saved (
+                  {formatGpsAccuracy(dispatchLocation.accuracy)})
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                  <MapPin className="h-3 w-3" /> Coarse location only
+                </span>
+              )}
+            </p>
           </div>
-          <div className="flex items-end">
-            {f?.phone && r.status !== "CANCELLED" ? <CallButton phone={f.phone} label="Call farmer" className="w-full" /> : null}
+          <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-end justify-end">
+            {f?.phone && r.status !== "CANCELLED" ? (
+              <CallButton phone={f.phone} label="Call farmer" className="flex-1 sm:flex-initial" />
+            ) : null}
+            <DirectionsButton
+              dispatchLocation={dispatchLocation}
+              fallbackLocation={r.location}
+              isAuthorized={r.technician_id === profile?.id || profile?.role === "service_centre"}
+              className="flex-1 sm:flex-initial"
+            />
           </div>
+          {dispatchLocation && r.status !== "CANCELLED" && r.status !== "COMPLETED" && (
+            <div className="sm:col-span-2 pt-1 border-t border-border/60">
+              <RouteEstimateCard repairId={r.id} hasGpsLocation={Boolean(dispatchLocation)} />
+            </div>
+          )}
           <div className="sm:col-span-2">
             <Label>Reported symptoms</Label>
             <div className="flex flex-wrap gap-1.5">
-              {r.symptoms.map((x) => (
-                <span key={x} className="rounded-lg bg-destructive/10 px-2 py-1 text-sm font-semibold text-destructive">
-                  {x}
-                </span>
-              ))}
+              {symptoms.length > 0 ? (
+                symptoms.map((x) => (
+                  <span
+                    key={x}
+                    className="rounded-lg bg-destructive/10 px-2 py-1 text-sm font-semibold text-destructive"
+                  >
+                    {x}
+                  </span>
+                ))
+              ) : (
+                <span className="text-xs text-muted-foreground italic">No symptoms specified</span>
+              )}
             </div>
           </div>
           {r.description && (
@@ -413,8 +690,8 @@ function Job() {
         </div>
       </Card>
 
-      {r.status === "REQUESTED" && (
-        declineOpen ? (
+      {r.status === "REQUESTED" &&
+        (declineOpen ? (
           <DeclineBox
             repairId={r.id}
             onDone={() => nav({ to: "/technician" })}
@@ -444,8 +721,7 @@ function Job() {
               {accepting ? "Accepting…" : "Accept job"}
             </button>
           </div>
-        )
-      )}
+        ))}
 
       <AssessmentCard r={adaptedRepair} />
 
@@ -488,58 +764,122 @@ function Job() {
         </Card>
       )}
 
-      {(r.status === "ACCEPTED" || r.status === "QUOTE_REVISED") && (
+      {pendingQuote ? (
+        <Card className="border-accent">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <h2 className="text-lg font-bold flex items-center gap-2">
+              <Lock className="h-4 w-4 text-accent" /> Quote v{pendingQuote.version} (Pending Farmer Review)
+            </h2>
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/30">
+              Awaiting Farmer
+            </span>
+          </div>
+          <p className="text-xs text-muted-foreground mb-3">
+            This quotation has been submitted to the farmer. Repair work is locked until the farmer approves or requests changes.
+          </p>
+          <QuoteTable q={toQuoteView(pendingQuote)} />
+          <div className="mt-4 pt-3 border-t border-border/60 text-xs text-muted-foreground space-y-1">
+            <p className="font-semibold text-foreground">Next Available Actions:</p>
+            <ul className="list-disc list-inside space-y-0.5">
+              <li>Wait for the farmer to review and approve the quote.</li>
+              <li>If the farmer requests clarification or changes, status will advance to <b>Changes Requested</b> and you can submit a revised quote.</li>
+              <li>Use the ticket chat below to discuss details or answer questions with the farmer.</li>
+            </ul>
+          </div>
+        </Card>
+      ) : (r.status === "ACCEPTED" || r.status === "QUOTE_REVISED") ? (
         <QuoteBuilder
           repairId={r.id}
           status={r.status}
           clarification={r.clarification_note}
           previousQuote={latestQuote}
           defaultPartName={(r.assessment as any)?.partsCategory?.[0] || ""}
+          partRequests={partRequests}
           onDone={loadData}
         />
-      )}
-
-      {r.status === "QUOTE_PENDING" && (
+      ) : (r.status === "WAITING_FOR_PARTS" && !approvedQuote) ? (
+        <QuoteBuilder
+          repairId={r.id}
+          status={r.status}
+          clarification={r.clarification_note}
+          previousQuote={latestQuote}
+          defaultPartName={(r.assessment as any)?.partsCategory?.[0] || ""}
+          partRequests={partRequests}
+          onDone={loadData}
+        />
+      ) : r.status === "QUOTE_PENDING" ? (
         <Card className="border-accent">
           <p className="mb-3 flex items-center gap-2 font-semibold">
-            <Lock className="h-4 w-4" /> Waiting for farmer approval — repair work is locked until approved.
+            <Lock className="h-4 w-4" /> Waiting for farmer approval — repair work is locked until
+            approved.
           </p>
           {adaptedRepair.quote ? (
             <QuoteTable q={adaptedRepair.quote} />
           ) : (
-            <p className="text-sm text-muted-foreground">Quote submitted. Awaiting farmer response.</p>
+            <p className="text-sm text-muted-foreground">
+              Quote submitted. Awaiting farmer response.
+            </p>
           )}
+        </Card>
+      ) : null}
+
+      {quoteVersions.length >= 2 &&
+        quoteVersions[quoteVersions.length - 2] &&
+        quoteVersions[quoteVersions.length - 1] && (
+          <QuoteComparison
+            v1={quoteVersions[quoteVersions.length - 2]}
+            v2={quoteVersions[quoteVersions.length - 1]}
+          />
+        )}
+
+      {!pendingQuote && approvedQuote && (
+        <Card className="border-success/30 bg-card">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <h2 className="text-lg font-bold flex items-center gap-2 text-foreground">
+              Approved quote (v{approvedQuote.version})
+            </h2>
+            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-success/15 text-success border border-success/30">
+              Authorized by Farmer
+            </span>
+          </div>
+          <QuoteTable q={toQuoteView(approvedQuote)} />
         </Card>
       )}
 
-      {quoteVersions.length >= 2 && quoteVersions[quoteVersions.length - 2] && quoteVersions[quoteVersions.length - 1] && (
-        <QuoteComparison
-          v1={quoteVersions[quoteVersions.length - 2]}
-          v2={quoteVersions[quoteVersions.length - 1]}
+      {r.status === "IN_PROGRESS" && !pendingQuote && (
+        <InProgress
+          repairId={r.id}
+          r={adaptedRepair}
+          notes={notes}
+          onUpdate={loadData}
+          isQuoteApproved={Boolean(approvedQuote)}
+          hasPendingParts={
+            partRequests.length > 0
+              ? partRequests.some((pr) => pr.status === "PENDING")
+              : Boolean(
+                  (r.parts_hold as any)?.items?.some((it: any) => it.status === "PENDING") ||
+                  (adaptedRepair.parts as any)?.items?.some((it: any) => it.status === "PENDING")
+                )
+          }
         />
       )}
 
-      {r.status === "IN_PROGRESS" && (
-        <>
-          {adaptedRepair.quote && (
-            <Card>
-              <h2 className="mb-3 text-lg font-bold">Approved quote</h2>
-              <QuoteTable q={adaptedRepair.quote} />
-            </Card>
-          )}
-          <InProgress repairId={r.id} r={adaptedRepair} notes={notes} onUpdate={loadData} />
-        </>
-      )}
-
       {r.status === "WAITING_FOR_PARTS" && (
-        <Waiting repairId={r.id} r={adaptedRepair} onUpdate={loadData} />
+        <Waiting
+          repairId={r.id}
+          r={adaptedRepair}
+          onUpdate={loadData}
+          hasPendingQuote={Boolean(pendingQuote)}
+          isQuoteApproved={Boolean(approvedQuote)}
+        />
       )}
 
-      {["IN_PROGRESS", "WAITING_FOR_PARTS", "ACCEPTED", "QUOTE_REVISED"].includes(r.status) && (
+      {["IN_PROGRESS", "WAITING_FOR_PARTS", "ACCEPTED", "QUOTE_REVISED", "QUOTE_PENDING"].includes(r.status) && (
         <PartsPickupCard
           repairId={r.id}
           repairStatus={r.status}
           isAssigned={r.technician_id === profile?.id}
+          partRequests={partRequests}
           onUpdate={loadData}
         />
       )}
@@ -547,10 +887,13 @@ function Job() {
       {r.status === "COMPLETED" && (
         <Card className="border-success">
           <p className="font-bold text-success">
-            Completed{adaptedRepair.quote ? ` · ${inr(quoteTotals(adaptedRepair.quote).total)}` : ""}
+            Completed
+            {adaptedRepair.quote ? ` · ${inr(quoteTotals(adaptedRepair.quote).total)}` : ""}
           </p>
           <p className="text-sm">
-            {adaptedRepair.completion?.notes || (r.completion_details as any)?.notes || "Repair completed and verified."}
+            {adaptedRepair.completion?.notes ||
+              (r.completion_details as any)?.notes ||
+              "Repair completed and verified."}
           </p>
           <p className="mt-2 text-sm text-muted-foreground">
             Repair completed and recorded in equipment service history.
@@ -572,15 +915,20 @@ function Job() {
         <summary className="cursor-pointer font-semibold">Status timeline</summary>
         <div className="mt-4">
           <ol className="space-y-3 text-sm">
-            {[...(r.repair_timeline || [])].reverse().map((e, i) => (
+            {(Array.isArray(r.repair_timeline) ? r.repair_timeline : []).slice().reverse().map((e, i) => (
               <li key={i} className="flex gap-3">
                 <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
                 <div className="min-w-0">
                   <p>
                     <b className="font-mono text-xs">{e.status}</b>{" "}
                     <span className="text-muted-foreground">
-                      · {e.created_by_role === "technician" ? "Technician" : e.created_by_role === "admin" ? "Service Centre" : "Farmer"}{" "}
-                      · {fmtTime(new Date(e.created_at).getTime())}
+                      ·{" "}
+                      {e.created_by_role === "technician"
+                        ? "Technician"
+                        : e.created_by_role === "admin"
+                          ? "Service Centre"
+                          : "Farmer"}{" "}
+                      · {fmtTime(e.created_at ? new Date(e.created_at).getTime() : safeCreatedAtMs)}
                     </span>
                   </p>
                   {e.note && <p className="text-muted-foreground">{e.note}</p>}
@@ -630,14 +978,23 @@ function DeclineBox({
           <button
             key={x}
             onClick={() => setReason(x)}
-            className={cn("min-h-12 rounded-xl border-2 p-2 text-sm font-semibold", reason === x ? "border-primary bg-primary/10" : "border-border")}
+            className={cn(
+              "min-h-12 rounded-xl border-2 p-2 text-sm font-semibold",
+              reason === x ? "border-primary bg-primary/10" : "border-border",
+            )}
           >
             {x}
           </button>
         ))}
       </div>
       {reason === "Other" && (
-        <input className={input} maxLength={120} value={other} onChange={(e) => setOther(e.target.value)} placeholder="Reason" />
+        <input
+          className={input}
+          maxLength={120}
+          value={other}
+          onChange={(e) => setOther(e.target.value)}
+          placeholder="Reason"
+        />
       )}
       <div className="grid grid-cols-2 gap-2">
         <button disabled={submitting} onClick={onCancel} className={btn.ghost}>
@@ -655,7 +1012,13 @@ function DeclineBox({
   );
 }
 
-const blankPart = (): QuotePart => ({ name: "", spec: "", qty: 1, price: 0, source: "In van stock" });
+const blankPart = (): QuotePart => ({
+  name: "",
+  spec: "",
+  qty: 1,
+  price: 0,
+  source: "In van stock",
+});
 
 interface QuoteBuilderProps {
   repairId: string;
@@ -663,6 +1026,7 @@ interface QuoteBuilderProps {
   clarification?: string | null;
   previousQuote?: QuoteDetail | null | undefined;
   defaultPartName?: string;
+  partRequests?: ServiceCentrePartRequestDetail[];
   onDone: () => Promise<void>;
 }
 
@@ -672,10 +1036,86 @@ function QuoteBuilder({
   clarification,
   previousQuote,
   defaultPartName,
+  partRequests,
   onDone,
 }: QuoteBuilderProps) {
+  const tb = useTB();
   const [submitting, setSubmitting] = useState(false);
   const [technicianExplanation, setTechnicianExplanation] = useState("");
+  const [catalogParts, setCatalogParts] = useState<ServiceCentrePart[]>([]);
+  const hasPreviousQuote = Boolean(
+    previousQuote && (previousQuote.version > 0 || isUuid(previousQuote.id))
+  );
+
+  useEffect(() => {
+    void getServiceCentreParts().then(setCatalogParts).catch(() => {});
+  }, []);
+
+  // Automatically sync technician part requests into quote parts
+  useEffect(() => {
+    if (!partRequests || partRequests.length === 0) return;
+
+    setQ((prev) => {
+      let currentParts = [...prev.parts];
+
+      for (const req of partRequests) {
+        if (req.status === "CANCELLED") continue;
+        const partInfo =
+          req.part ||
+          catalogParts.find((cp) => cp.id === req.part_id || cp.part_number === req.part_id);
+        if (!partInfo && !req.part_id) continue;
+
+        const targetId = req.part_id;
+        const targetName = partInfo?.name || "Spare part";
+        const targetPrice = partInfo ? Number(partInfo.unit_price) : 0;
+        const targetSpec = partInfo?.spec || partInfo?.part_number || "";
+
+        const matchIdx = currentParts.findIndex(
+          (p) =>
+            (p.catalogPartId && p.catalogPartId === targetId) ||
+            p.name.trim().toLowerCase() === targetName.trim().toLowerCase() ||
+            (targetSpec && (p.spec || "").trim().toLowerCase() === targetSpec.trim().toLowerCase()),
+        );
+
+        if (matchIdx >= 0 && currentParts[matchIdx]) {
+          const prevItem = currentParts[matchIdx]!;
+          currentParts[matchIdx] = {
+            ...prevItem,
+            name: prevItem.name,
+            qty: req.quantity,
+            price: targetPrice > 0 ? targetPrice : prevItem.price,
+            spec: targetSpec || prevItem.spec,
+            catalogPartId: targetId,
+            source: "Nagpur Service Centre Depot",
+          };
+        } else {
+          const newLine: QuotePart = {
+            name: targetName,
+            spec: targetSpec,
+            qty: req.quantity,
+            price: targetPrice,
+            source: "Nagpur Service Centre Depot",
+            catalogPartId: targetId,
+          };
+          if (
+            currentParts.length === 1 &&
+            currentParts[0] &&
+            !currentParts[0].name.trim() &&
+            currentParts[0].qty === 1
+          ) {
+            currentParts = [newLine];
+          } else {
+            currentParts.push(newLine);
+          }
+        }
+      }
+
+      return {
+        ...prev,
+        parts: currentParts,
+      };
+    });
+  }, [partRequests]);
   const [q, setQ] = useState<Omit<Quote, "version" | "sentAt">>(() => {
     if (previousQuote) {
       return {
@@ -685,6 +1125,7 @@ function QuoteBuilder({
           qty: item.quantity,
           price: Number(item.unit_price),
           source: item.part_source || "In van stock",
+          catalogPartId: item.catalog_part_id || null,
         })),
         labourDesc: previousQuote.labour_description || "Inspection, repair and test run",
         labour: Number(previousQuote.labour_amount),
@@ -711,13 +1152,24 @@ function QuoteBuilder({
 
   const t = quoteTotals({ ...q, version: 0, sentAt: 0 });
   const valid =
-    q.parts.length > 0 &&
-    q.parts.every((p) => p.name.trim() && p.qty > 0 && p.price >= 0) &&
+    (q.parts.length === 0
+      ? Number(q.labour) > 0
+      : q.parts.every((p) => p.name.trim() && p.qty > 0 && p.price >= 0)) &&
     q.labourDesc.trim().length > 0 &&
     q.eta.trim().length > 0;
 
   const handleSend = async () => {
     if (!valid || submitting) return;
+
+    for (const p of q.parts) {
+      if (p.catalogPartId && (!p.price || Number(p.price) <= 0 || isNaN(Number(p.price)))) {
+        toast.error(
+          `Catalog part "${p.name}" does not have a valid customer-facing selling price. Please contact Service Centre staff to verify catalog pricing.`
+        );
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
       const payload: CreateQuoteInput = {
@@ -732,11 +1184,47 @@ function QuoteBuilder({
           quantity: Number(p.qty),
           unit_price: Number(p.price),
           part_source: p.source,
+          catalog_part_id: p.catalogPartId || null,
           ...(p.spec.trim() ? { part_spec: p.spec.trim() } : {}),
         })),
       };
 
-      if (status === "QUOTE_REVISED" && previousQuote) {
+      const isDemo =
+        !isUuid(repairId) ||
+        tb.repairs.some((x) => x.id === repairId || (x as any).jobNumber === repairId);
+
+      const hasPreviousQuote = Boolean(
+        previousQuote && (previousQuote.version > 0 || isUuid(previousQuote.id))
+      );
+
+      if (isDemo) {
+        actions.sendQuote(repairId, {
+          parts: q.parts,
+          labourDesc: q.labourDesc.trim(),
+          labour: Number(q.labour),
+          taxPct: Number(q.taxPct),
+          eta: q.eta.trim(),
+          warranty: q.warranty.trim(),
+        });
+        if (isUuid(repairId)) {
+          try {
+            if (hasPreviousQuote && isUuid(previousQuote!.id)) {
+              await reviseQuote({
+                ...payload,
+                previous_quote_id: previousQuote!.id,
+                technician_explanation: technicianExplanation.trim() || undefined,
+              });
+            } else {
+              await createQuote(payload);
+            }
+          } catch {
+            // Non-fatal remote sync in demo mode
+          }
+        }
+        toast.success(
+          hasPreviousQuote ? "Revised quote sent to farmer" : "Quote sent to farmer"
+        );
+      } else if (hasPreviousQuote && previousQuote) {
         await reviseQuote({
           ...payload,
           previous_quote_id: previousQuote.id,
@@ -767,17 +1255,26 @@ function QuoteBuilder({
         <section className="rounded-2xl border-2 border-amber-500/40 bg-amber-500/10 p-4 space-y-3">
           <div className="flex items-center gap-2 font-bold text-amber-800 dark:text-amber-300">
             <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0" />
-            <span>Farmer requested quote revision {previousQuote ? `(Quote v${previousQuote.version})` : ""}</span>
+            <span>
+              Farmer requested quote revision{" "}
+              {previousQuote ? `(Quote v${previousQuote.version})` : ""}
+            </span>
           </div>
           {parsedClarification.reason && (
             <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Reason</p>
-              <p className="text-base font-semibold text-foreground">{parsedClarification.reason}</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Reason
+              </p>
+              <p className="text-base font-semibold text-foreground">
+                {parsedClarification.reason}
+              </p>
             </div>
           )}
           {parsedClarification.explanation && (
             <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Farmer message</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Farmer message
+              </p>
               <p className="mt-1 rounded-xl bg-card p-3 text-sm italic border border-border">
                 "{parsedClarification.explanation}"
               </p>
@@ -785,7 +1282,9 @@ function QuoteBuilder({
           )}
           {parsedClarification.photo && (
             <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Attached Photo</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Attached Photo
+              </p>
               <ClickableImage
                 src={parsedClarification.photo}
                 alt="Farmer attachment"
@@ -801,8 +1300,10 @@ function QuoteBuilder({
                 <span className="font-mono text-sm">
                   {inr(
                     previousQuote.totals?.totalAmount ??
-                      (previousQuote.quote_items || []).reduce((s, it) => s + it.quantity * it.unit_price, 0) +
-                        Number(previousQuote.labour_amount)
+                      (previousQuote.quote_items || []).reduce(
+                        (s, it) => s + it.quantity * it.unit_price,
+                        0,
+                      ) + Number(previousQuote.labour_amount),
                   )}
                 </span>
               </div>
@@ -811,7 +1312,10 @@ function QuoteBuilder({
                   Parts:{" "}
                   {inr(
                     previousQuote.totals?.partsTotal ??
-                      (previousQuote.quote_items || []).reduce((s, it) => s + it.quantity * it.unit_price, 0)
+                      (previousQuote.quote_items || []).reduce(
+                        (s, it) => s + it.quantity * it.unit_price,
+                        0,
+                      ),
                   )}
                 </span>
                 <span>Labour: {inr(Number(previousQuote.labour_amount))}</span>
@@ -856,6 +1360,39 @@ function QuoteBuilder({
               <Trash2 className="h-4 w-4" />
             </button>
           </div>
+          {catalogParts.length > 0 && (
+            <div>
+              <select
+                aria-label="Select from Depot Catalog"
+                className={cn(input, "h-10 min-h-[2.5rem] py-1.5 px-3 text-xs leading-normal cursor-pointer")}
+                value={p.catalogPartId || ""}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (!val) {
+                    setPart(i, { catalogPartId: null });
+                    return;
+                  }
+                  const found = catalogParts.find((cp) => cp.id === val || cp.part_number === val);
+                  if (found) {
+                    setPart(i, {
+                      name: found.name,
+                      spec: found.spec || found.part_number,
+                      price: Number(found.unit_price),
+                      source: "Service Centre Depot",
+                      catalogPartId: found.id,
+                    });
+                  }
+                }}
+              >
+                <option value="">-- Custom / Unlisted part --</option>
+                {catalogParts.map((cp) => (
+                  <option key={cp.id} value={cp.id}>
+                    {cp.name} ({cp.part_number}) — ₹{cp.unit_price} [{cp.stock_quantity} on hand]
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <input
             className={input}
             placeholder="Part name"
@@ -879,12 +1416,27 @@ function QuoteBuilder({
               />
             </div>
             <div>
-              <Label>Unit price ₹</Label>
+              <div className="flex items-center justify-between">
+                <Label>Unit price ₹</Label>
+                {Boolean(p.catalogPartId) && (
+                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+                    Catalog price (fixed)
+                  </span>
+                )}
+              </div>
               <input
-                className={input}
+                className={cn(
+                  input,
+                  Boolean(p.catalogPartId) && "bg-muted cursor-not-allowed opacity-90 font-medium select-none"
+                )}
                 inputMode="numeric"
                 value={p.price}
-                onChange={(e) => setPart(i, { price: Math.max(0, Number(e.target.value) || 0) })}
+                readOnly={Boolean(p.catalogPartId)}
+                onChange={(e) => {
+                  if (!p.catalogPartId) {
+                    setPart(i, { price: Math.max(0, Number(e.target.value) || 0) });
+                  }
+                }}
               />
             </div>
           </div>
@@ -944,14 +1496,15 @@ function QuoteBuilder({
         </div>
         <div className="space-y-1">
           <Label>Est. completion</Label>
-          <DateTimePicker
-            value={q.eta}
-            onChange={(val) => setQ({ ...q, eta: val })}
-          />
+          <DateTimePicker value={q.eta} onChange={(val) => setQ({ ...q, eta: val })} />
         </div>
         <div>
           <Label>Warranty</Label>
-          <input className={input} value={q.warranty} onChange={(e) => setQ({ ...q, warranty: e.target.value })} />
+          <input
+            className={input}
+            value={q.warranty}
+            onChange={(e) => setQ({ ...q, warranty: e.target.value })}
+          />
         </div>
       </div>
       <dl className="rounded-xl bg-muted p-3 text-sm">
@@ -979,7 +1532,7 @@ function QuoteBuilder({
       >
         {submitting
           ? "Sending quote…"
-          : status === "QUOTE_REVISED"
+          : hasPreviousQuote
             ? `Send revised quote (v${(previousQuote?.version ?? 1) + 1}) to farmer`
             : "Send quote to farmer"}
       </button>
@@ -992,9 +1545,19 @@ interface InProgressProps {
   r: Repair;
   notes: RepairNoteWithAuthor[];
   onUpdate: () => Promise<void>;
+  isQuoteApproved?: boolean;
+  hasPendingParts?: boolean;
 }
 
-function InProgress({ repairId, r, notes, onUpdate }: InProgressProps) {
+function InProgress({
+  repairId,
+  r,
+  notes,
+  onUpdate,
+  isQuoteApproved = true,
+  hasPendingParts = false,
+}: InProgressProps) {
+  const isWorkLocked = !isQuoteApproved || hasPendingParts;
   const [note, setNote] = useState("");
   const [mode, setMode] = useState<"none" | "parts" | "complete" | "test_failed">("none");
   const [p, setP] = useState(() => {
@@ -1146,7 +1709,9 @@ function InProgress({ repairId, r, notes, onUpdate }: InProgressProps) {
             {notes.map((n) => (
               <div key={n.id} className="rounded-xl border border-border bg-muted/40 p-3 text-sm">
                 <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-                  <span className="font-semibold text-foreground">{n.author?.full_name || "Technician"}</span>
+                  <span className="font-semibold text-foreground">
+                    {n.author?.full_name || "Technician"}
+                  </span>
                   <span>{ago(new Date(n.created_at).getTime())} ago</span>
                 </div>
                 <p className="text-foreground leading-relaxed">{n.note_text}</p>
@@ -1157,6 +1722,16 @@ function InProgress({ repairId, r, notes, onUpdate }: InProgressProps) {
       )}
       {mode === "none" && (
         <div className="space-y-2">
+          {isWorkLocked && (
+            <div className="flex items-center gap-2 p-3 rounded-xl border border-warning/40 bg-warning/5 text-xs text-warning-foreground font-semibold">
+              <Lock className="h-4 w-4 shrink-0 text-warning" />
+              <span>
+                {!isQuoteApproved
+                  ? "Repair work is locked: Quotation is awaiting farmer approval."
+                  : "Testing and sign-off are locked: Requested spare parts are awaiting delivery/handoff."}
+              </span>
+            </div>
+          )}
           {r.testing && (
             <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 rounded-xl border border-primary/40 bg-primary/5">
               <span className="flex items-center gap-2 font-semibold text-primary">
@@ -1178,7 +1753,7 @@ function InProgress({ repairId, r, notes, onUpdate }: InProgressProps) {
             </button>
             {!r.testing ? (
               <button
-                disabled={submitting}
+                disabled={submitting || isWorkLocked}
                 onClick={handleStartTesting}
                 className={cn(btn.ghost, "h-14 disabled:opacity-50")}
               >
@@ -1195,14 +1770,23 @@ function InProgress({ repairId, r, notes, onUpdate }: InProgressProps) {
               </button>
             )}
             <button
+              disabled={isWorkLocked}
               onClick={() => {
+                if (isWorkLocked) {
+                  toast.error(
+                    !isQuoteApproved
+                      ? "Quotation awaiting farmer approval before work can continue."
+                      : "Requested parts awaiting delivery/handoff.",
+                  );
+                  return;
+                }
                 if (!r.testing) {
                   toast.error("Please start machine testing before completing the repair.");
                   return;
                 }
                 setMode("complete");
               }}
-              className={cn(btn.primary, "h-14")}
+              className={cn(btn.primary, "h-14 disabled:opacity-50")}
             >
               Complete & sign off
             </button>
@@ -1215,7 +1799,8 @@ function InProgress({ repairId, r, notes, onUpdate }: InProgressProps) {
             <AlertCircle className="h-5 w-5" /> Testing failed — return to repair
           </div>
           <p className="text-sm text-muted-foreground">
-            Operational testing identified an issue. Enter details below to return this machine to active repair work and notify the farmer.
+            Operational testing identified an issue. Enter details below to return this machine to
+            active repair work and notify the farmer.
           </p>
           <div>
             <Label>Issue observed during testing (optional)</Label>
@@ -1270,10 +1855,7 @@ function InProgress({ repairId, r, notes, onUpdate }: InProgressProps) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>Expected arrival</Label>
-              <DateTimePicker
-                value={p.eta}
-                onChange={(val) => setP({ ...p, eta: val })}
-              />
+              <DateTimePicker value={p.eta} onChange={(val) => setP({ ...p, eta: val })} />
             </div>
             <div className="space-y-1">
               <Label>Revised completion</Label>
@@ -1293,11 +1875,7 @@ function InProgress({ repairId, r, notes, onUpdate }: InProgressProps) {
             />
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <button
-              disabled={submitting}
-              onClick={() => setMode("none")}
-              className={btn.ghost}
-            >
+            <button disabled={submitting} onClick={() => setMode("none")} className={btn.ghost}>
               Cancel
             </button>
             <button
@@ -1314,7 +1892,8 @@ function InProgress({ repairId, r, notes, onUpdate }: InProgressProps) {
         <Card className="space-y-3 border-success">
           <h3 className="text-lg font-bold">Complete repair & sign off</h3>
           <p className="text-sm text-muted-foreground">
-            Final sign-off on completed repair. This marks the equipment as Operational, saves the repair to permanent service history, and notifies the farmer and Service Centre.
+            Final sign-off on completed repair. This marks the equipment as Operational, saves the
+            repair to permanent service history, and notifies the farmer and Service Centre.
           </p>
           <div>
             <Label>Final repair notes</Label>
@@ -1351,11 +1930,7 @@ function InProgress({ repairId, r, notes, onUpdate }: InProgressProps) {
             Machine tested under load and working
           </label>
           <div className="grid grid-cols-2 gap-2">
-            <button
-              disabled={submitting}
-              onClick={() => setMode("none")}
-              className={btn.ghost}
-            >
+            <button disabled={submitting} onClick={() => setMode("none")} className={btn.ghost}>
               Cancel
             </button>
             <button
@@ -1376,9 +1951,18 @@ interface WaitingProps {
   repairId: string;
   r: Repair;
   onUpdate: () => Promise<void>;
+  hasPendingQuote?: boolean;
+  isQuoteApproved?: boolean;
 }
 
-function Waiting({ repairId, r, onUpdate }: WaitingProps) {
+function Waiting({
+  repairId,
+  r,
+  onUpdate,
+  hasPendingQuote = false,
+  isQuoteApproved = false,
+}: WaitingProps) {
+  const tb = useTB();
   const parts = r.parts || {
     part: "Spare part",
     reason: "Waiting for parts",
@@ -1405,12 +1989,31 @@ function Waiting({ repairId, r, onUpdate }: WaitingProps) {
     }
   };
 
+  const isDemo =
+    !isUuid(repairId) ||
+    tb.repairs.some((x) => x.id === repairId || (x as any).jobNumber === repairId);
+
   const handleResume = async () => {
     if (submitting) return;
     setSubmitting(true);
     try {
-      await resumeRepair(repairId);
-      toast.success("Work resumed");
+      if (isDemo) {
+        actions.resume(repairId);
+        if (isUuid(repairId)) {
+          try {
+            await resumeRepair(repairId);
+          } catch {
+            // Non-fatal remote sync in demo mode
+          }
+        }
+      } else {
+        await resumeRepair(repairId);
+      }
+      toast.success(
+        hasPendingQuote
+          ? "Parts hold cleared. Awaiting farmer approval on quote."
+          : "Work resumed",
+      );
       await onUpdate();
     } catch (err: any) {
       console.error("[TerraByte] Failed to resume repair:", err);
@@ -1420,21 +2023,73 @@ function Waiting({ repairId, r, onUpdate }: WaitingProps) {
     }
   };
 
+  const partsItems: BlockerPartItem[] = Array.isArray(parts.items) ? parts.items : [];
+  const hasPendingItems = partsItems.length > 0 ? partsItems.some((it) => it.status === "PENDING") : true;
+  const allArrived = Boolean(parts.allPartsArrived) || (partsItems.length > 0 && !hasPendingItems);
+
   return (
     <Card className="space-y-3 border-warning">
       <p className="flex items-center gap-2 text-lg font-bold">
         <PackageSearch className="h-5 w-5" /> Paused for {parts.part}
       </p>
-      <p className="text-sm text-muted-foreground">
-        {parts.reason} · paused {ago(parts.since)} ago
-      </p>
+
+      {partsItems.length > 0 ? (
+        <div className="space-y-2 rounded-xl border border-warning/30 bg-warning/5 p-3">
+          <Label className="text-xs font-bold text-foreground">
+            Blocking Parts Requisitions ({partsItems.length})
+          </Label>
+          <div className="space-y-1.5">
+            {partsItems.map((item, idx) => {
+              const isDone = item.status === "HANDED_OFF" || item.status === "RESOLVED";
+              return (
+                <div
+                  key={idx}
+                  className="flex items-center justify-between text-xs rounded-lg bg-background/80 p-2.5 border border-border/60"
+                >
+                  <div>
+                    <p className="font-semibold text-foreground">
+                      {item.part} {item.quantity ? `(Qty: ${item.quantity})` : ""}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">{item.reason}</p>
+                  </div>
+                  <div className="text-right">
+                    <span
+                      className={cn(
+                        "inline-block rounded-full px-2 py-0.5 text-[10px] font-bold",
+                        isDone
+                          ? "bg-success/20 text-success"
+                          : "bg-warning/20 text-warning-foreground",
+                      )}
+                    >
+                      {isDone ? "Handed Off / Ready" : "Awaiting Handoff"}
+                    </span>
+                    {item.eta && (
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                        ETA: {formatEta(item.eta)}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          {parts.reason} · paused {ago(parts.since)} ago
+        </p>
+      )}
+
+      {allArrived && (
+        <div className="rounded-xl border border-success/40 bg-success/10 p-3 text-xs font-semibold text-success flex items-center gap-2">
+          <span>✓ All requested parts have been handed off from Nagpur Service Centre.</span>
+        </div>
+      )}
+
       <div className="space-y-1.5">
         <Label>Expected arrival</Label>
         <div className="flex gap-2">
-          <DateTimePicker
-            value={eta}
-            onChange={(val) => setEta(val)}
-          />
+          <DateTimePicker value={eta} onChange={(val) => setEta(val)} />
           <button
             disabled={!eta.trim() || submitting}
             onClick={handleUpdateEta}
@@ -1444,7 +2099,9 @@ function Waiting({ repairId, r, onUpdate }: WaitingProps) {
           </button>
         </div>
         <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-          <span>Current: <b className="text-foreground">{formatEta(parts.eta)}</b></span>
+          <span>
+            Current: <b className="text-foreground">{formatEta(parts.eta)}</b>
+          </span>
         </div>
       </div>
       <button
@@ -1452,7 +2109,11 @@ function Waiting({ repairId, r, onUpdate }: WaitingProps) {
         onClick={handleResume}
         className={cn(btn.primary, "h-14 w-full text-lg disabled:opacity-50")}
       >
-        {submitting ? "Resuming…" : "Parts received — Resume repair"}
+        {submitting
+          ? "Resuming…"
+          : hasPendingQuote
+            ? "Parts received — Awaiting farmer approval"
+            : "Parts received — Resume repair"}
       </button>
     </Card>
   );

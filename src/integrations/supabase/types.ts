@@ -177,6 +177,7 @@ export type Database = {
       }
       quote_items: {
         Row: {
+          catalog_part_id: string | null
           created_at: string
           id: string
           part_name: string
@@ -187,6 +188,7 @@ export type Database = {
           unit_price: number
         }
         Insert: {
+          catalog_part_id?: string | null
           created_at?: string
           id?: string
           part_name: string
@@ -197,6 +199,7 @@ export type Database = {
           unit_price?: number
         }
         Update: {
+          catalog_part_id?: string | null
           created_at?: string
           id?: string
           part_name?: string
@@ -365,6 +368,44 @@ export type Database = {
             foreignKeyName: "repair_notes_repair_request_id_fkey"
             columns: ["repair_request_id"]
             isOneToOne: false
+            referencedRelation: "repair_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      repair_dispatch_locations: {
+        Row: {
+          accuracy: number | null
+          captured_at: string
+          created_at: string
+          id: string
+          latitude: number
+          longitude: number
+          repair_request_id: string
+        }
+        Insert: {
+          accuracy?: number | null
+          captured_at?: string
+          created_at?: string
+          id?: string
+          latitude: number
+          longitude: number
+          repair_request_id: string
+        }
+        Update: {
+          accuracy?: number | null
+          captured_at?: string
+          created_at?: string
+          id?: string
+          latitude?: number
+          longitude?: number
+          repair_request_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "repair_dispatch_locations_repair_request_id_fkey"
+            columns: ["repair_request_id"]
+            isOneToOne: true
             referencedRelation: "repair_requests"
             referencedColumns: ["id"]
           },
@@ -670,6 +711,7 @@ export type Database = {
           location: string | null
           name: string
           part_number: string
+          service_centre_id: string | null
           spec: string | null
           stock_quantity: number
           unit_price: number
@@ -683,6 +725,7 @@ export type Database = {
           location?: string | null
           name: string
           part_number: string
+          service_centre_id?: string | null
           spec?: string | null
           stock_quantity?: number
           unit_price?: number
@@ -696,6 +739,7 @@ export type Database = {
           location?: string | null
           name?: string
           part_number?: string
+          service_centre_id?: string | null
           spec?: string | null
           stock_quantity?: number
           unit_price?: number
@@ -780,36 +824,54 @@ export type Database = {
           changed_by: string
           created_at: string
           id: string
+          movement_type: "RECEIVED" | "ISSUED_TO_REPAIR" | "RETURNED" | "ADJUSTMENT"
           new_stock: number
+          notes: string | null
           part_id: string
           part_request_id: string | null
           previous_stock: number
+          quote_id: string | null
+          quote_item_id: string | null
           reason: string
           repair_request_id: string | null
+          total_value: number | null
+          unit_price: number | null
         }
         Insert: {
           change_quantity: number
           changed_by: string
           created_at?: string
           id?: string
+          movement_type?: "RECEIVED" | "ISSUED_TO_REPAIR" | "RETURNED" | "ADJUSTMENT"
           new_stock: number
+          notes?: string | null
           part_id: string
           part_request_id?: string | null
           previous_stock: number
+          quote_id?: string | null
+          quote_item_id?: string | null
           reason: string
           repair_request_id?: string | null
+          total_value?: number | null
+          unit_price?: number | null
         }
         Update: {
           change_quantity?: number
           changed_by?: string
           created_at?: string
           id?: string
+          movement_type?: "RECEIVED" | "ISSUED_TO_REPAIR" | "RETURNED" | "ADJUSTMENT"
           new_stock?: number
+          notes?: string | null
           part_id?: string
           part_request_id?: string | null
           previous_stock?: number
+          quote_id?: string | null
+          quote_item_id?: string | null
           reason?: string
           repair_request_id?: string | null
+          total_value?: number | null
+          unit_price?: number | null
         }
         Relationships: [
           {
@@ -822,6 +884,87 @@ export type Database = {
           {
             foreignKeyName: "service_centre_stock_audit_changed_by_fkey"
             columns: ["changed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+
+      service_centre_part_sales: {
+        Row: {
+          created_at: string
+          id: string
+          movement_audit_id: string | null
+          notes: string | null
+          part_id: string
+          part_request_id: string | null
+          quantity: number
+          quote_id: string
+          quote_item_id: string | null
+          recorded_by: string
+          repair_request_id: string
+          sold_at: string
+          total_amount: number
+          unit_price: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          movement_audit_id?: string | null
+          notes?: string | null
+          part_id: string
+          part_request_id?: string | null
+          quantity: number
+          quote_id: string
+          quote_item_id?: string | null
+          recorded_by: string
+          repair_request_id: string
+          sold_at?: string
+          total_amount: number
+          unit_price: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          movement_audit_id?: string | null
+          notes?: string | null
+          part_id?: string
+          part_request_id?: string | null
+          quantity?: number
+          quote_id?: string
+          quote_item_id?: string | null
+          recorded_by?: string
+          repair_request_id?: string
+          sold_at?: string
+          total_amount?: number
+          unit_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_centre_part_sales_part_id_fkey"
+            columns: ["part_id"]
+            isOneToOne: false
+            referencedRelation: "service_centre_parts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_centre_part_sales_repair_request_id_fkey"
+            columns: ["repair_request_id"]
+            isOneToOne: false
+            referencedRelation: "repair_requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_centre_part_sales_quote_id_fkey"
+            columns: ["quote_id"]
+            isOneToOne: false
+            referencedRelation: "quotes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_centre_part_sales_recorded_by_fkey"
+            columns: ["recorded_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -867,6 +1010,23 @@ export type Database = {
       confirm_service_centre_part_handoff: {
         Args: {
           p_request_id: string
+        }
+        Returns: Json
+      }
+      receive_service_centre_stock: {
+        Args: {
+          p_part_id: string
+          p_quantity: number
+          p_reason: string
+        }
+        Returns: Json
+      }
+      return_service_centre_part: {
+        Args: {
+          p_repair_request_id: string
+          p_part_id: string
+          p_quantity: number
+          p_reason: string
         }
         Returns: Json
       }

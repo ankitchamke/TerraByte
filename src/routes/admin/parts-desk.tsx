@@ -1,13 +1,19 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   AlertTriangle,
+  ArrowDownLeft,
+  ArrowUpRight,
   CheckCircle2,
   Clock,
+  DollarSign,
   History,
+  MapPin,
   Package,
   Plus,
   RefreshCw,
+  RotateCcw,
   Search,
+  TrendingUp,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -20,39 +26,51 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { usePartsDeskRealtime } from "@/hooks/use-repair-realtime";
 import { meta } from "@/lib/seo";
 import {
   adjustPartStock,
   confirmPartHandoff,
   getAllPartRequests,
+  getPartSales,
   getServiceCentreParts,
   getStockAuditLog,
+  receiveStock,
+  returnPart,
+  type PartSaleDetail,
   type ServiceCentrePart,
   type ServiceCentrePartRequestDetail,
   type StockAuditLogDetail,
 } from "@/lib/services/parts-desk";
-import { fmtTime, inr } from "@/lib/tb-store";
+import { fmtTime, inr, useTB } from "@/lib/tb-store";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/admin/parts-desk")({
   head: () =>
     meta(
       "Parts Desk",
-      "Manage spare-parts inventory, review technician requests, and confirm pickup handoffs.",
+      "Manage spare-parts inventory, review technician requests, and track repair sales.",
     ),
   component: PartsDesk,
 });
 
-type Tab = "requests" | "inventory" | "audit";
+type Tab = "requests" | "inventory" | "movements" | "sales";
 
 function PartsDesk() {
+  const tb = useTB();
   const [tab, setTab] = useState<Tab>("requests");
   const [parts, setParts] = useState<ServiceCentrePart[]>([]);
   const [requests, setRequests] = useState<ServiceCentrePartRequestDetail[]>([]);
   const [auditLog, setAuditLog] = useState<StockAuditLogDetail[]>([]);
+  const [sales, setSales] = useState<PartSaleDetail[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+
+  // Filters for Movements & Sales
+  const [movementFilter, setMovementFilter] = useState<string>("ALL");
+  const [salesPartFilter, setSalesPartFilter] = useState<string>("ALL");
+  const [salesDateFilter, setSalesDateFilter] = useState<"all" | "7d" | "30d">("all");
 
   // Handoff confirmation modal state
   const [handoffTarget, setHandoffTarget] = useState<ServiceCentrePartRequestDetail | null>(null);
@@ -65,18 +83,39 @@ function PartsDesk() {
   const [adjustReason, setAdjustReason] = useState("");
   const [adjusting, setAdjusting] = useState(false);
 
+  // Receive stock delivery modal state
+  const [receiveModalOpen, setReceiveModalOpen] = useState(false);
+  const [receivePartId, setReceivePartId] = useState("");
+  const [receiveQty, setReceiveQty] = useState(1);
+  const [receiveReason, setReceiveReason] = useState("");
+  const [receiving, setReceiving] = useState(false);
+
+  // Return unused part modal state
+  const [returnModalOpen, setReturnModalOpen] = useState(false);
+  const [returnRepairId, setReturnRepairId] = useState("");
+  const [returnPartId, setReturnPartId] = useState("");
+  const [returnQty, setReturnQty] = useState(1);
+  const [returnReason, setReturnReason] = useState("");
+  const [returning, setReturning] = useState(false);
+
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      const [partsData, requestsData, auditData] = await Promise.all([
+      const [partsData, requestsData, auditData, salesData] = await Promise.all([
         getServiceCentreParts().catch(() => []),
         getAllPartRequests().catch(() => []),
         getStockAuditLog().catch(() => []),
+        getPartSales().catch(() => []),
       ]);
       setParts(partsData);
       setRequests(requestsData);
       setAuditLog(auditData);
+      setSales(salesData);
+      if (partsData.length > 0 && partsData[0] && !receivePartId) {
+        setReceivePartId(partsData[0].id);
+        setReturnPartId(partsData[0].id);
+      }
     } catch (err: unknown) {
       console.error("[TerraByte] Failed to load Parts Desk data:", err);
       const msg = err instanceof Error ? err.message : "Failed to load Parts Desk records.";
@@ -84,15 +123,44 @@ function PartsDesk() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [receivePartId]);
 
   useEffect(() => {
     loadData();
-  }, [loadData]);
+  }, [
+    loadData,
+    tb.serviceCentreParts,
+    tb.serviceCentrePartRequests,
+    tb.serviceCentreStockAudit,
+    tb.serviceCentrePartSales,
+  ]);
+
+  // Keep Parts Desk records synchronized via Supabase Realtime across all active tabs/devices
+  usePartsDeskRealtime({
+    onUpdate: loadData,
+  });
 
   const pendingRequests = useMemo(
     () => requests.filter((r) => r.status === "PENDING"),
     [requests],
+  );
+
+  const totalOnHand = useMemo(
+    () => parts.reduce((sum, p) => sum + p.stock_quantity, 0),
+    [parts],
+  );
+
+  const totalIssued = useMemo(
+    () =>
+      auditLog
+        .filter((a) => a.movement_type === "ISSUED_TO_REPAIR")
+        .reduce((sum, a) => sum + Math.abs(a.change_quantity), 0),
+    [auditLog],
+  );
+
+  const totalSalesRevenue = useMemo(
+    () => sales.reduce((sum, s) => sum + Number(s.total_amount), 0),
+    [sales],
   );
 
   const lowStockCount = useMemo(
@@ -108,17 +176,42 @@ function PartsDesk() {
         p.name.toLowerCase().includes(q) ||
         p.part_number.toLowerCase().includes(q) ||
         p.category.toLowerCase().includes(q) ||
+        (p.location && p.location.toLowerCase().includes(q)) ||
         p.compatible_models.some((m) => m.toLowerCase().includes(q)),
     );
   }, [parts, search]);
+
+  const filteredMovements = useMemo(() => {
+    let list = auditLog;
+    if (movementFilter !== "ALL") {
+      list = list.filter((a) => a.movement_type === movementFilter);
+    }
+    return list;
+  }, [auditLog, movementFilter]);
+
+  const filteredSales = useMemo(() => {
+    let list = sales;
+    if (salesPartFilter !== "ALL") {
+      list = list.filter((s) => s.part_id === salesPartFilter);
+    }
+    if (salesDateFilter === "7d") {
+      const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      list = list.filter((s) => new Date(s.sold_at).getTime() >= cutoff);
+    } else if (salesDateFilter === "30d") {
+      const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      list = list.filter((s) => new Date(s.sold_at).getTime() >= cutoff);
+    }
+    return list;
+  }, [sales, salesPartFilter, salesDateFilter]);
 
   const handleConfirmHandoff = async () => {
     if (!handoffTarget) return;
     setConfirmingHandoff(true);
     try {
-      await confirmPartHandoff(handoffTarget.id);
+      const res = await confirmPartHandoff(handoffTarget.id);
+      const isSaleText = res.is_sale ? " (Recorded as sale against approved quote)" : "";
       toast.success(
-        `Handoff confirmed: ${handoffTarget.part?.name} handed to technician.`,
+        `Handoff confirmed: ${handoffTarget.part?.name} handed to technician.${isSaleText}`,
       );
       setHandoffTarget(null);
       await loadData();
@@ -159,6 +252,64 @@ function PartsDesk() {
     }
   };
 
+  const handleReceiveStock = async () => {
+    if (!receivePartId) return;
+    if (receiveQty <= 0) {
+      toast.error("Please enter a valid positive quantity.");
+      return;
+    }
+    setReceiving(true);
+    try {
+      await receiveStock({
+        partId: receivePartId,
+        quantity: receiveQty,
+        reason: receiveReason.trim() || "Supplier shipment received",
+      });
+      toast.success("Stock delivery received into depot.");
+      setReceiveModalOpen(false);
+      setReceiveQty(1);
+      setReceiveReason("");
+      await loadData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to record stock delivery.";
+      toast.error(msg);
+    } finally {
+      setReceiving(false);
+    }
+  };
+
+  const handleReturnPart = async () => {
+    if (!returnPartId) return;
+    if (!returnRepairId.trim()) {
+      toast.error("Please specify the repair job reference (e.g. TB-8841).");
+      return;
+    }
+    if (returnQty <= 0) {
+      toast.error("Please enter a valid positive quantity.");
+      return;
+    }
+    setReturning(true);
+    try {
+      await returnPart({
+        repairRequestId: returnRepairId.trim(),
+        partId: returnPartId,
+        quantity: returnQty,
+        reason: returnReason.trim() || "Unused component returned from repair",
+      });
+      toast.success("Unused part returned back to depot stock.");
+      setReturnModalOpen(false);
+      setReturnQty(1);
+      setReturnReason("");
+      setReturnRepairId("");
+      await loadData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to process part return.";
+      toast.error(msg);
+    } finally {
+      setReturning(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <ContextualBack to="/admin" label="Back to operations triage" />
@@ -175,7 +326,7 @@ function PartsDesk() {
             </span>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            Manage spare parts inventory, review technician pickup requests, and confirm physical handoffs.
+            Nagpur Central Depot · Manage inventory, pickup requisitions, stock movements, and repair sales.
           </p>
         </div>
 
@@ -197,12 +348,26 @@ function PartsDesk() {
       )}
 
       {/* Overview Stat Cards */}
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-4">
         <Card>
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Pending Handoffs
+                On Hand (Depot)
+              </p>
+              <p className="mt-1 font-display text-2xl font-bold">{totalOnHand} units</p>
+            </div>
+            <span className="rounded-xl bg-primary/15 p-2.5 text-primary">
+              <Package className="h-5 w-5" />
+            </span>
+          </div>
+        </Card>
+
+        <Card>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Pending Pickups
               </p>
               <p className="mt-1 font-display text-2xl font-bold">
                 {pendingRequests.length}
@@ -218,12 +383,12 @@ function PartsDesk() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Cataloged Parts
+                Issued to Repairs
               </p>
-              <p className="mt-1 font-display text-2xl font-bold">{parts.length}</p>
+              <p className="mt-1 font-display text-2xl font-bold">{totalIssued} units</p>
             </div>
-            <span className="rounded-xl bg-primary/15 p-2.5 text-primary">
-              <Package className="h-5 w-5" />
+            <span className="rounded-xl bg-accent/20 p-2.5 text-foreground">
+              <TrendingUp className="h-5 w-5" />
             </span>
           </div>
         </Card>
@@ -232,19 +397,22 @@ function PartsDesk() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Low Stock Alerts
+                Fulfilled Quote Value (Sales)
               </p>
-              <p className="mt-1 font-display text-2xl font-bold">{lowStockCount}</p>
+              <p className="mt-1 font-display text-2xl font-bold">{inr(totalSalesRevenue)}</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                Parts issued against approved quotes · Payment collection is not recorded
+              </p>
             </div>
-            <span className="rounded-xl bg-destructive/15 p-2.5 text-destructive">
-              <AlertTriangle className="h-5 w-5" />
+            <span className="rounded-xl bg-success/15 p-2.5 text-success">
+              <DollarSign className="h-5 w-5" />
             </span>
           </div>
         </Card>
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex gap-2 border-b border-border pb-2">
+      <div className="flex flex-wrap gap-2 border-b border-border pb-2">
         <button
           type="button"
           onClick={() => setTab("requests")}
@@ -273,15 +441,28 @@ function PartsDesk() {
 
         <button
           type="button"
-          onClick={() => setTab("audit")}
+          onClick={() => setTab("movements")}
           className={cn(
             "rounded-lg px-4 py-2 text-sm font-semibold transition-colors",
-            tab === "audit"
+            tab === "movements"
               ? "bg-primary text-primary-foreground"
               : "text-muted-foreground hover:bg-muted hover:text-foreground",
           )}
         >
-          Stock Audit Log
+          Stock Movements ({auditLog.length})
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setTab("sales")}
+          className={cn(
+            "rounded-lg px-4 py-2 text-sm font-semibold transition-colors",
+            tab === "sales"
+              ? "bg-primary text-primary-foreground"
+              : "text-muted-foreground hover:bg-muted hover:text-foreground",
+          )}
+        >
+          Repair Sales & History ({sales.length})
         </button>
       </div>
 
@@ -298,132 +479,59 @@ function PartsDesk() {
             </Card>
           ) : (
             <div className="space-y-3">
-              {pendingRequests.map((req) => {
-                const stock = req.part?.stock_quantity ?? 0;
-                const canFulfill = stock >= req.quantity;
-
-                return (
-                  <Card key={req.id} className="transition-all">
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="space-y-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Link
-                            to="/admin/repair/$id"
-                            params={{ id: req.repair?.id || req.repair_request_id }}
-                            className="font-mono text-sm font-bold text-primary hover:underline"
-                          >
-                            {req.repair?.job_number || "Repair Ticket"}
-                          </Link>
-                          <span className="rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                            {req.repair?.location || "Nagpur"}
-                          </span>
-                          <span className="rounded-full bg-warning/15 px-2.5 py-0.5 text-xs font-semibold text-warning-foreground">
-                            Pickup Requested
-                          </span>
-                        </div>
-
-                        <p className="text-base font-bold">
-                          {req.part?.name || "Spare part"}
-                          {req.part?.spec && (
-                            <span className="ml-2 font-mono text-xs font-normal text-muted-foreground">
-                              ({req.part.spec})
-                            </span>
-                          )}
-                        </p>
-
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                          <span>
-                            Requested by:{" "}
-                            <b>{req.requester?.full_name || "Assigned Technician"}</b>
-                          </span>
-                          <span>Requested: {fmtTime(new Date(req.created_at).getTime())}</span>
-                          <span>SKU: {req.part?.part_number || "—"}</span>
-                        </div>
-
-                        {req.notes && (
-                          <p className="mt-2 text-xs italic text-muted-foreground">
-                            Note: "{req.notes}"
-                          </p>
-                        )}
-                      </div>
-
-                      <div className="flex flex-row items-center justify-between gap-4 border-t border-border pt-3 sm:flex-col sm:items-end sm:border-t-0 sm:pt-0">
-                        <div className="text-right">
-                          <p className="text-sm font-semibold">
-                            Qty Requested: <span className="font-bold">{req.quantity}</span>
-                          </p>
-                          <p className="text-xs">
-                            Available in Depot:{" "}
-                            <span
-                              className={cn(
-                                "font-bold",
-                                canFulfill ? "text-success" : "text-destructive",
-                              )}
-                            >
-                              {stock} units
-                            </span>
-                          </p>
-                        </div>
-
-                        <button
-                          type="button"
-                          disabled={!canFulfill}
-                          onClick={() => setHandoffTarget(req)}
-                          className={cn(
-                            "inline-flex h-9 items-center justify-center gap-1.5 rounded-lg px-4 text-xs font-bold transition-colors",
-                            canFulfill
-                              ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                              : "bg-muted text-muted-foreground cursor-not-allowed opacity-50",
-                          )}
-                        >
-                          <CheckCircle2 className="h-4 w-4" />
-                          Confirm Handoff
-                        </button>
-                      </div>
+              {pendingRequests.map((req) => (
+                <Card
+                  key={req.id}
+                  className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-bold text-primary">
+                        {req.part?.part_number}
+                      </span>
+                      <h3 className="font-bold">{req.part?.name}</h3>
+                      <span className="rounded-full bg-warning/15 px-2 py-0.5 text-xs font-semibold text-warning-foreground">
+                        Qty: {req.quantity}
+                      </span>
+                      {req.part?.location && (
+                        <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                          Shelf: {req.part.location}
+                        </span>
+                      )}
                     </div>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
+                    <p className="text-xs text-muted-foreground">
+                      Assigned repair:{" "}
+                      <Link
+                        to="/admin/repair/$id"
+                        params={{ id: req.repair?.id || req.repair_request_id }}
+                        className="font-semibold text-foreground underline"
+                      >
+                        {req.repair?.job_number || req.repair_request_id}
+                      </Link>{" "}
+                      · Requested by {req.requester?.full_name || "Assigned Technician"}
+                    </p>
+                    <p className="text-xs text-muted-foreground flex items-center gap-1.5 mt-0.5">
+                      <MapPin className="h-3 w-3 text-primary shrink-0" />
+                      <span>Service Location: <span className="font-medium text-foreground">{req.repair?.location || "Field breakdown location"}</span></span>
+                    </p>
+                    {req.notes && (
+                      <p className="text-xs italic text-muted-foreground">
+                        Note: "{req.notes}"
+                      </p>
+                    )}
+                  </div>
 
-          {/* Fulfilled / Historical Requests Accordion */}
-          {requests.some((r) => r.status !== "PENDING") && (
-            <div className="mt-6">
-              <p className="mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Recent Handoff History
-              </p>
-              <div className="divide-y divide-border rounded-xl border border-border bg-card">
-                {requests
-                  .filter((r) => r.status !== "PENDING")
-                  .slice(0, 5)
-                  .map((req) => (
-                    <div
-                      key={req.id}
-                      className="flex items-center justify-between p-3 text-xs"
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setHandoffTarget(req)}
+                      className="inline-flex h-9 items-center justify-center rounded-xl bg-primary px-4 text-xs font-bold text-primary-foreground hover:bg-primary/90"
                     >
-                      <div>
-                        <span className="font-mono font-bold">
-                          {req.repair?.job_number || "Repair"}
-                        </span>{" "}
-                        — {req.part?.name} (Qty {req.quantity})
-                        <span className="ml-2 text-muted-foreground">
-                          to {req.requester?.full_name}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="rounded-full bg-success/15 px-2 py-0.5 font-semibold text-success">
-                          {req.status}
-                        </span>
-                        <span className="text-muted-foreground">
-                          {req.handed_off_at
-                            ? fmtTime(new Date(req.handed_off_at).getTime())
-                            : ""}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-              </div>
+                      Confirm Handoff
+                    </button>
+                  </div>
+                </Card>
+              ))}
             </div>
           )}
         </div>
@@ -432,15 +540,37 @@ function PartsDesk() {
       {/* TAB 2: INVENTORY CATALOG */}
       {tab === "inventory" && (
         <div className="space-y-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by part name, SKU, category, or tractor model..."
-              className="h-10 w-full rounded-xl border border-border bg-background pl-9 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-            />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by part name, SKU, spec, category, model, shelf location..."
+                className="h-10 w-full rounded-xl border border-border bg-background pl-9 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setReceiveModalOpen(true)}
+                className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl bg-success px-3.5 text-xs font-bold text-success-foreground hover:bg-success/90"
+              >
+                <ArrowDownLeft className="h-4 w-4" />
+                Receive Delivery
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setReturnModalOpen(true)}
+                className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl border border-border bg-card px-3.5 text-xs font-bold hover:bg-muted"
+              >
+                <RotateCcw className="h-3.5 w-3.5 text-primary" />
+                Return Part
+              </button>
+            </div>
           </div>
 
           <div className="overflow-hidden rounded-xl border border-border bg-card">
@@ -451,8 +581,9 @@ function PartsDesk() {
                     <th className="px-4 py-3">Part Name & SKU</th>
                     <th className="px-4 py-3">Category</th>
                     <th className="px-4 py-3">Compatible Machines</th>
+                    <th className="px-4 py-3">Shelf Location</th>
                     <th className="px-4 py-3">Unit Price</th>
-                    <th className="px-4 py-3 text-center">Available Stock</th>
+                    <th className="px-4 py-3 text-center">On Hand</th>
                     <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -478,6 +609,9 @@ function PartsDesk() {
                           ))}
                         </div>
                       </td>
+                      <td className="px-4 py-3 text-xs font-mono text-muted-foreground">
+                        {part.location || "Depot Main Floor"}
+                      </td>
                       <td className="px-4 py-3 font-mono font-semibold">
                         {inr(Number(part.unit_price))}
                       </td>
@@ -492,7 +626,7 @@ function PartsDesk() {
                                 : "bg-success/15 text-success",
                           )}
                         >
-                          {part.stock_quantity} units
+                          {part.stock_quantity} on hand
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -518,20 +652,54 @@ function PartsDesk() {
         </div>
       )}
 
-      {/* TAB 3: AUDIT LOG */}
-      {tab === "audit" && (
+      {/* TAB 3: STOCK MOVEMENTS LEDGER */}
+      {tab === "movements" && (
         <div className="space-y-4">
           <Card>
-            <div className="flex items-center gap-2 mb-3">
-              <History className="h-5 w-5 text-primary" />
-              <h2 className="text-lg font-bold">Stock Movement Audit Ledger</h2>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <History className="h-5 w-5 text-primary" />
+                <h2 className="text-lg font-bold">Stock Movement Audit Ledger</h2>
+              </div>
+
+              {/* Movement Type Filter Pills */}
+              <div className="flex flex-wrap gap-1.5 text-xs font-semibold">
+                {["ALL", "RECEIVED", "ISSUED_TO_REPAIR", "RETURNED", "ADJUSTMENT"].map(
+                  (type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => setMovementFilter(type)}
+                      className={cn(
+                        "rounded-lg px-2.5 py-1 transition-colors",
+                        movementFilter === type
+                          ? "bg-primary text-primary-foreground"
+                          : "border border-border text-muted-foreground hover:bg-muted",
+                      )}
+                    >
+                      {type === "ALL"
+                        ? "All Movements"
+                        : type === "RECEIVED"
+                          ? "Received"
+                          : type === "ISSUED_TO_REPAIR"
+                            ? "Issued to Repair"
+                            : type === "RETURNED"
+                              ? "Returned"
+                              : "Adjustments"}
+                    </button>
+                  ),
+                )}
+              </div>
             </div>
+
             <p className="text-xs text-muted-foreground mb-4">
-              Immutable ledger of all parts handoffs, incoming stock deliveries, and manual adjustments.
+              Immutable ledger of all incoming stock receipts, repair issues, unused returns, and manual adjustments.
             </p>
 
-            {auditLog.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No stock adjustments recorded.</p>
+            {filteredMovements.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-6 text-center">
+                No stock movements matching the selected filter.
+              </p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
@@ -539,20 +707,43 @@ function PartsDesk() {
                     <tr>
                       <th className="px-3 py-2">Timestamp</th>
                       <th className="px-3 py-2">Part</th>
+                      <th className="px-3 py-2">Movement Type</th>
                       <th className="px-3 py-2">Change</th>
                       <th className="px-3 py-2">Previous → New</th>
-                      <th className="px-3 py-2">Reason</th>
-                      <th className="px-3 py-2">Logged By</th>
+                      <th className="px-3 py-2">Related Repair</th>
+                      <th className="px-3 py-2">Reason / Note</th>
+                      <th className="px-3 py-2">Staff</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {auditLog.map((log) => (
+                    {filteredMovements.map((log) => (
                       <tr key={log.id}>
                         <td className="px-3 py-2 text-muted-foreground">
                           {fmtTime(new Date(log.created_at).getTime())}
                         </td>
                         <td className="px-3 py-2 font-semibold">
                           {log.part?.name || "Part"}
+                          {log.part?.part_number && (
+                            <span className="block font-mono text-[10px] text-muted-foreground">
+                              {log.part.part_number}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2">
+                          <span
+                            className={cn(
+                              "inline-block rounded px-2 py-0.5 text-[10px] font-bold uppercase",
+                              log.movement_type === "RECEIVED"
+                                ? "bg-success/15 text-success"
+                                : log.movement_type === "ISSUED_TO_REPAIR"
+                                  ? "bg-primary/15 text-primary"
+                                  : log.movement_type === "RETURNED"
+                                    ? "bg-purple-500/15 text-purple-600 dark:text-purple-400"
+                                    : "bg-muted text-muted-foreground",
+                            )}
+                          >
+                            {log.movement_type || "ADJUSTMENT"}
+                          </span>
                         </td>
                         <td className="px-3 py-2 font-mono font-bold">
                           <span
@@ -562,14 +753,162 @@ function PartsDesk() {
                                 : "text-destructive"
                             }
                           >
-                            {log.change_quantity > 0 ? `+${log.change_quantity}` : log.change_quantity}
+                            {log.change_quantity > 0
+                              ? `+${log.change_quantity}`
+                              : log.change_quantity}
                           </span>
                         </td>
                         <td className="px-3 py-2 font-mono">
                           {log.previous_stock} → {log.new_stock}
                         </td>
+                        <td className="px-3 py-2">
+                          {log.repair_request_id ? (
+                            <span className="font-mono text-primary font-semibold">
+                              {log.repair_request_id}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </td>
                         <td className="px-3 py-2 capitalize">{log.reason}</td>
                         <td className="px-3 py-2">{log.actor?.full_name || "Staff"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+
+      {/* TAB 4: REPAIR SALES & HISTORY */}
+      {tab === "sales" && (
+        <div className="space-y-4">
+          <Card>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-bold">Repair Sales & Sourcing History</h2>
+                <p className="text-xs text-muted-foreground">
+                  Durable sales records counting parts physically issued against farmer-approved quotes.
+                </p>
+              </div>
+
+              {/* Filters */}
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={salesPartFilter}
+                  onChange={(e) => setSalesPartFilter(e.target.value)}
+                  className="h-8 rounded-lg border border-border bg-background px-2.5 text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value="ALL">All Catalog Parts</option>
+                  {parts.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.part_number})
+                    </option>
+                  ))}
+                </select>
+
+                <div className="flex rounded-lg border border-border p-0.5 text-xs font-semibold">
+                  <button
+                    type="button"
+                    onClick={() => setSalesDateFilter("all")}
+                    className={cn(
+                      "rounded px-2.5 py-1 transition-colors",
+                      salesDateFilter === "all"
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:bg-muted",
+                    )}
+                  >
+                    All Time
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSalesDateFilter("30d")}
+                    className={cn(
+                      "rounded px-2.5 py-1 transition-colors",
+                      salesDateFilter === "30d"
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:bg-muted",
+                    )}
+                  >
+                    Last 30 Days
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSalesDateFilter("7d")}
+                    className={cn(
+                      "rounded px-2.5 py-1 transition-colors",
+                      salesDateFilter === "7d"
+                        ? "bg-primary text-primary-foreground"
+                        : "text-muted-foreground hover:bg-muted",
+                    )}
+                  >
+                    Last 7 Days
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {filteredSales.length === 0 ? (
+              <div className="py-10 text-center space-y-2">
+                <CheckCircle2 className="mx-auto h-7 w-7 text-muted-foreground" />
+                <p className="font-semibold text-sm">No repair sales recorded yet</p>
+                <p className="text-xs text-muted-foreground max-w-md mx-auto">
+                  A technician handoff is an issue to a repair. It is counted as a sale only when it is physically handed off against a farmer-approved quote line identifying this catalog part.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="border-b border-border bg-muted/40 uppercase text-muted-foreground font-semibold">
+                    <tr>
+                      <th className="px-3 py-2">Sale Date</th>
+                      <th className="px-3 py-2">Part Name & SKU</th>
+                      <th className="px-3 py-2">Qty Sold</th>
+                      <th className="px-3 py-2">Quote Price (Snapshot)</th>
+                      <th className="px-3 py-2">Total Amount</th>
+                      <th className="px-3 py-2">Repair Job</th>
+                      <th className="px-3 py-2">Recorded By</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {filteredSales.map((s) => (
+                      <tr key={s.id}>
+                        <td className="px-3 py-2 text-muted-foreground">
+                          {fmtTime(new Date(s.sold_at).getTime())}
+                        </td>
+                        <td className="px-3 py-2 font-semibold">
+                          <p>{s.part?.name || "Part"}</p>
+                          <p className="font-mono text-[10px] text-muted-foreground">
+                            {s.part?.part_number} · {s.part?.spec || "OEM"}
+                          </p>
+                        </td>
+                        <td className="px-3 py-2 font-bold font-mono">
+                          {s.quantity} units
+                        </td>
+                        <td className="px-3 py-2 font-mono">
+                          {inr(Number(s.unit_price))}
+                        </td>
+                        <td className="px-3 py-2 font-mono font-bold text-success">
+                          {inr(Number(s.total_amount))}
+                        </td>
+                        <td className="px-3 py-2 font-mono font-semibold text-primary">
+                          <Link
+                            to="/admin/repair/$id"
+                            params={{ id: s.repair?.id || s.repair_request_id }}
+                            className="underline"
+                          >
+                            {s.repair?.job_number || s.repair_request_id}
+                          </Link>
+                          <div className="text-[11px] font-normal text-muted-foreground flex items-center gap-1 mt-0.5">
+                            <MapPin className="h-3 w-3 text-primary shrink-0" />
+                            <span>{s.repair?.location || "Katol, Nagpur"}</span>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground">
+                          {s.actor?.full_name || "Staff"}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -637,6 +976,157 @@ function PartsDesk() {
         </DialogContent>
       </Dialog>
 
+      {/* RECEIVE STOCK DELIVERY MODAL */}
+      <Dialog open={receiveModalOpen} onOpenChange={setReceiveModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Receive Stock Delivery</DialogTitle>
+            <DialogDescription>
+              Record incoming tractor spare parts received at the Nagpur Service Centre depot.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div>
+              <Label>Spare Part</Label>
+              <select
+                value={receivePartId}
+                onChange={(e) => setReceivePartId(e.target.value)}
+                className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                {parts.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.part_number}) — {p.stock_quantity} currently on hand
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <Label>Quantity Received</Label>
+              <input
+                type="number"
+                min="1"
+                value={receiveQty}
+                onChange={(e) => setReceiveQty(Math.max(1, parseInt(e.target.value) || 1))}
+                className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+
+            <div>
+              <Label>Supplier Delivery Note / PO Reference</Label>
+              <input
+                type="text"
+                value={receiveReason}
+                onChange={(e) => setReceiveReason(e.target.value)}
+                placeholder="e.g. Received from Bosch Taluka Distributor (PO-8821)"
+                className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <button
+              type="button"
+              disabled={receiving}
+              onClick={() => setReceiveModalOpen(false)}
+              className="rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-muted"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={receiving}
+              onClick={handleReceiveStock}
+              className="rounded-lg bg-success px-4 py-2 text-sm font-bold text-success-foreground hover:bg-success/90 disabled:opacity-50"
+            >
+              {receiving ? "Recording..." : "Confirm Stock Receipt"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* RETURN UNUSED PART MODAL */}
+      <Dialog open={returnModalOpen} onOpenChange={setReturnModalOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Return Unused Part to Depot</DialogTitle>
+            <DialogDescription>
+              Record an unused component returned from a field repair back into central depot inventory.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div>
+              <Label>Repair Job Reference</Label>
+              <input
+                type="text"
+                value={returnRepairId}
+                onChange={(e) => setReturnRepairId(e.target.value)}
+                placeholder="e.g. TB-8841"
+                className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+
+            <div>
+              <Label>Component Returned</Label>
+              <select
+                value={returnPartId}
+                onChange={(e) => setReturnPartId(e.target.value)}
+                className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                {parts.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.part_number})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <Label>Quantity Returned</Label>
+              <input
+                type="number"
+                min="1"
+                value={returnQty}
+                onChange={(e) => setReturnQty(Math.max(1, parseInt(e.target.value) || 1))}
+                className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+
+            <div>
+              <Label>Reason for Return</Label>
+              <input
+                type="text"
+                value={returnReason}
+                onChange={(e) => setReturnReason(e.target.value)}
+                placeholder="e.g. Secondary gasket unused; returned in sealed packaging"
+                className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <button
+              type="button"
+              disabled={returning}
+              onClick={() => setReturnModalOpen(false)}
+              className="rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-muted"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={returning || !returnRepairId.trim()}
+              onClick={handleReturnPart}
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {returning ? "Processing..." : "Confirm Part Return"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* ADJUST STOCK MODAL */}
       <Dialog
         open={Boolean(adjustTarget)}
@@ -696,7 +1186,7 @@ function PartsDesk() {
                   type="text"
                   value={adjustReason}
                   onChange={(e) => setAdjustReason(e.target.value)}
-                  placeholder="e.g. Distributor stock shipment received, damaged in transit"
+                  placeholder="e.g. Physical inventory count recount, shelf damaged box"
                   className="h-10 w-full rounded-xl border border-border bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>

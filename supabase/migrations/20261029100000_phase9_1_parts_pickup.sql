@@ -13,7 +13,8 @@
 -- 1. SERVICE CENTRE PARTS CATALOG & INVENTORY TABLE
 CREATE TABLE IF NOT EXISTS public.service_centre_parts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  part_number text NOT NULL UNIQUE,
+  service_centre_id uuid REFERENCES public.profiles(id) DEFAULT '00000000-0000-0000-0003-000000000001'::uuid,
+  part_number text NOT NULL,
   name text NOT NULL,
   spec text,
   category text NOT NULL DEFAULT 'General Mechanical',
@@ -22,7 +23,8 @@ CREATE TABLE IF NOT EXISTS public.service_centre_parts (
   unit_price numeric NOT NULL DEFAULT 0 CHECK (unit_price >= 0),
   location text DEFAULT 'Depot Main Floor',
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT service_centre_parts_centre_part_key UNIQUE (service_centre_id, part_number)
 );
 
 -- 2. SERVICE CENTRE PART REQUISITIONS TABLE
@@ -504,6 +506,10 @@ AS $$
 DECLARE
   v_caller_id uuid;
   v_caller_email text;
+  v_demo_farmer_id CONSTANT uuid := '00000000-0000-0000-0001-000000000001'::uuid;
+  v_demo_tech_id CONSTANT uuid := '00000000-0000-0000-0002-000000000001'::uuid;
+  v_demo_admin_id CONSTANT uuid := '00000000-0000-0000-0003-000000000001'::uuid;
+  v_demo_repair_ids uuid[] := '{}';
   v_repairs_deleted int := 0;
   v_equipment_reset int := 0;
   v_notifications_deleted int := 0;
@@ -538,19 +544,50 @@ BEGIN
   END IF;
 
   -- ============================================================================
-  -- 2. PURGE PART REQUISITIONS & AUDIT LOGS
+  -- 2. IDENTIFY DEMO REPAIRS (EXCLUSIVELY DEMO-OWNED: BALASAHEB'S TRACTORS & REPAIRS)
+  -- Real customer repairs are NEVER matched, even if Ramesh Kumar is assigned.
   -- ============================================================================
-  WITH del_reqs AS (
-    DELETE FROM public.service_centre_part_requests
-    WHERE id IS NOT NULL
-    RETURNING id
-  )
-  SELECT count(*) INTO v_part_requests_deleted FROM del_reqs;
+  SELECT COALESCE(ARRAY_AGG(id), '{}') INTO v_demo_repair_ids
+  FROM public.repair_requests
+  WHERE farmer_id = v_demo_farmer_id
+     OR equipment_id IN (
+       SELECT id FROM public.equipment WHERE farmer_id = v_demo_farmer_id
+     );
 
-  DELETE FROM public.service_centre_stock_audit WHERE id IS NOT NULL;
+  -- ============================================================================
+  -- 3. SCOPED DELETION OF DEMO PART REQUISITIONS & AUDIT LOGS
+  -- ============================================================================
+  IF v_demo_repair_ids IS NOT NULL AND array_length(v_demo_repair_ids, 1) > 0 THEN
+    WITH del_reqs AS (
+      DELETE FROM public.service_centre_part_requests
+      WHERE repair_request_id = ANY(v_demo_repair_ids)
+      RETURNING id
+    )
+    SELECT count(*) INTO v_part_requests_deleted FROM del_reqs;
 
-  -- Restore canonical stock quantities (idempotent upsert)
+    DELETE FROM public.service_centre_stock_audit
+    WHERE repair_request_id = ANY(v_demo_repair_ids);
+  END IF;
+
+  -- Delete non-repair stock audit movements exclusively for Nagpur Service Centre's canonical parts
+  DELETE FROM public.service_centre_stock_audit
+  WHERE changed_by = v_demo_admin_id
+    AND repair_request_id IS NULL
+    AND part_id IN (
+      SELECT id FROM public.service_centre_parts 
+      WHERE (service_centre_id = v_demo_admin_id OR service_centre_id IS NULL)
+        AND part_number IN ('0433171', '005556958R1', 'AL120788', 'HY-GARD-15W30', '26243171')
+    );
+
+  -- Clean up any non-canonical spare parts created under Nagpur Service Centre during testing
+  DELETE FROM public.service_centre_parts
+  WHERE (service_centre_id = v_demo_admin_id OR service_centre_id IS NULL)
+    AND part_number NOT IN ('0433171', '005556958R1', 'AL120788', 'HY-GARD-15W30', '26243171');
+
+  -- Restore canonical stock quantities (idempotent upsert scoped strictly to Nagpur Service Centre)
   INSERT INTO public.service_centre_parts (
+    id,
+    service_centre_id,
     part_number,
     name,
     spec,
@@ -560,47 +597,76 @@ BEGIN
     unit_price,
     location
   ) VALUES
-    ('0433171', 'Fuel Injector Nozzle Set', 'Bosch 0433171 (x4)', 'Fuel system', ARRAY['Mahindra 575 DI'], 3, 2200, 'Depot Shelf A-02'),
-    ('005556958R1', 'Inline Fuel Filter', 'Mahindra 005556958R1', 'Fuel system', ARRAY['Mahindra 575 DI'], 8, 350, 'Depot Shelf A-03'),
-    ('AL120788', 'Lift Cylinder Seal Kit', 'JD AL120788', 'Hydraulics', ARRAY['John Deere 5050D'], 2, 1650, 'Depot Shelf B-01'),
-    ('HY-GARD-15W30', 'Hydraulic Oil 15W-30', 'JD Hy-Gard, litres', 'Hydraulics', ARRAY['John Deere 5050D'], 5, 320, 'Depot Drum Rack B-04'),
-    ('26243171', 'Starter Motor Assembly', 'Lucas-TVS 12V 2.2kW', 'Electrical', ARRAY['Mahindra 575 DI', 'Swaraj 744 FE'], 1, 5800, 'Depot Shelf C-01')
-  ON CONFLICT (part_number) DO UPDATE SET
+    ('00000000-0000-0000-0040-000000000001'::uuid, v_demo_admin_id, '0433171', 'Fuel Injector Nozzle Set', 'Bosch 0433171 (x4)', 'Fuel system', ARRAY['Mahindra 575 DI'], 3, 2200, 'Depot Shelf A-02'),
+    ('00000000-0000-0000-0040-000000000002'::uuid, v_demo_admin_id, '005556958R1', 'Inline Fuel Filter', 'Mahindra 005556958R1', 'Fuel system', ARRAY['Mahindra 575 DI'], 8, 350, 'Depot Shelf A-03'),
+    ('00000000-0000-0000-0040-000000000003'::uuid, v_demo_admin_id, 'AL120788', 'Lift Cylinder Seal Kit', 'JD AL120788', 'Hydraulics', ARRAY['John Deere 5050D'], 2, 1650, 'Depot Shelf B-01'),
+    ('00000000-0000-0000-0040-000000000004'::uuid, v_demo_admin_id, 'HY-GARD-15W30', 'Hydraulic Oil 15W-30', 'JD Hy-Gard, litres', 'Hydraulics', ARRAY['John Deere 5050D'], 5, 320, 'Depot Drum Rack B-04'),
+    ('00000000-0000-0000-0040-000000000005'::uuid, v_demo_admin_id, '26243171', 'Starter Motor Assembly', 'Lucas-TVS 12V 2.2kW', 'Electrical', ARRAY['Mahindra 575 DI', 'Swaraj 744 FE'], 1, 5800, 'Depot Shelf C-01')
+  ON CONFLICT (service_centre_id, part_number) DO UPDATE SET
     stock_quantity = EXCLUDED.stock_quantity,
     location = EXCLUDED.location,
     unit_price = EXCLUDED.unit_price,
-    updated_at = now();
+    updated_at = now()
+  WHERE public.service_centre_parts.service_centre_id = v_demo_admin_id;
 
   -- ============================================================================
-  -- 3. PURGE ALL SAMPLE REPAIR REQUESTS & DEPENDENT DATA
+  -- 4. SCOPED DELETION OF DEMO REPAIR REQUESTS & DEPENDENT DATA
   -- ============================================================================
-  WITH deleted_repairs AS (
-    DELETE FROM public.repair_requests
-    WHERE id IS NOT NULL
-    RETURNING id
-  )
-  SELECT count(*) INTO v_repairs_deleted FROM deleted_repairs;
+  IF v_demo_repair_ids IS NOT NULL AND array_length(v_demo_repair_ids, 1) > 0 THEN
+    DELETE FROM public.repair_dispatch_locations
+    WHERE repair_request_id = ANY(v_demo_repair_ids);
 
-  DELETE FROM public.repair_dispatch_locations WHERE id IS NOT NULL;
-  DELETE FROM public.repair_messages WHERE id IS NOT NULL;
-  DELETE FROM public.repair_notes WHERE id IS NOT NULL;
-  DELETE FROM public.repair_timeline WHERE id IS NOT NULL;
-  DELETE FROM public.quote_items WHERE id IS NOT NULL;
-  DELETE FROM public.quotes WHERE id IS NOT NULL;
+    DELETE FROM public.repair_messages
+    WHERE repair_request_id = ANY(v_demo_repair_ids);
+
+    DELETE FROM public.repair_notes
+    WHERE repair_request_id = ANY(v_demo_repair_ids);
+
+    DELETE FROM public.repair_timeline
+    WHERE repair_request_id = ANY(v_demo_repair_ids);
+
+    DELETE FROM public.quote_items
+    WHERE quote_id IN (
+      SELECT id FROM public.quotes
+      WHERE repair_request_id = ANY(v_demo_repair_ids)
+    );
+
+    DELETE FROM public.quotes
+    WHERE repair_request_id = ANY(v_demo_repair_ids);
+
+    WITH deleted_repairs AS (
+      DELETE FROM public.repair_requests
+      WHERE id = ANY(v_demo_repair_ids)
+      RETURNING id
+    )
+    SELECT count(*) INTO v_repairs_deleted FROM deleted_repairs;
+  END IF;
 
   -- ============================================================================
-  -- 4. PURGE SERVICE HISTORY & NOTIFICATIONS
+  -- 5. PURGE DEMO SERVICE HISTORY (ONLY BALASAHEB'S TRACTORS)
   -- ============================================================================
   WITH deleted_history AS (
     DELETE FROM public.service_history
-    WHERE id IS NOT NULL
+    WHERE equipment_id IN (
+      SELECT id FROM public.equipment WHERE farmer_id = v_demo_farmer_id
+    )
     RETURNING id
   )
   SELECT count(*) INTO v_service_history_deleted FROM deleted_history;
 
+  -- ============================================================================
+  -- 6. PURGE DEMO NOTIFICATIONS (EXCLUSIVELY DEMO-OWNED)
+  -- ============================================================================
   WITH deleted_notifs AS (
     DELETE FROM public.notifications
-    WHERE id IS NOT NULL
+    WHERE recipient_user_id = v_demo_farmer_id
+       OR (
+         v_demo_repair_ids IS NOT NULL AND array_length(v_demo_repair_ids, 1) > 0
+         AND (
+           link_target LIKE '%/repair/' || ANY(SELECT id::text FROM unnest(v_demo_repair_ids) id)
+           OR link_target LIKE '%/job/' || ANY(SELECT id::text FROM unnest(v_demo_repair_ids) id)
+         )
+       )
     RETURNING id
   )
   SELECT count(*) INTO v_notifications_deleted FROM deleted_notifs;

@@ -23,7 +23,8 @@ export interface AssignTechnicianInput {
   technician_id: string; // The technician's profile UUID (profiles.id / technician_profiles.profile_id)
 }
 
-let cachedProfile: { auth_user_id: string; id: string; role: string; expiresAt: number } | null = null;
+let cachedProfile: { auth_user_id: string; id: string; role: string; expiresAt: number } | null =
+  null;
 
 /**
  * Resolves the authenticated user's profile ID and role.
@@ -35,7 +36,12 @@ async function getAuthenticatedProfile(): Promise<{ id: string; role: string }> 
   } = await supabase.auth.getSession();
   const sessionUser = session?.user;
 
-  if (sessionUser && cachedProfile && cachedProfile.auth_user_id === sessionUser.id && Date.now() < cachedProfile.expiresAt) {
+  if (
+    sessionUser &&
+    cachedProfile &&
+    cachedProfile.auth_user_id === sessionUser.id &&
+    Date.now() < cachedProfile.expiresAt
+  ) {
     return { id: cachedProfile.id, role: cachedProfile.role };
   }
 
@@ -45,7 +51,11 @@ async function getAuthenticatedProfile(): Promise<{ id: string; role: string }> 
     throw new Error("Authentication required: Please sign in.");
   }
 
-  if (cachedProfile && cachedProfile.auth_user_id === user.id && Date.now() < cachedProfile.expiresAt) {
+  if (
+    cachedProfile &&
+    cachedProfile.auth_user_id === user.id &&
+    Date.now() < cachedProfile.expiresAt
+  ) {
     return { id: cachedProfile.id, role: cachedProfile.role };
   }
 
@@ -76,16 +86,28 @@ async function getAuthenticatedProfile(): Promise<{ id: string; role: string }> 
  * - Ranked using multi-factor scoring: brand specialization (40), skill match (30),
  *   current availability (20), and travel ETA proximity (up to 10).
  */
-export async function getEligibleTechnicians(repairRequestId: string): Promise<ScoredTechnicianMatch[]> {
+export async function getEligibleTechnicians(
+  repairRequestId: string,
+): Promise<ScoredTechnicianMatch[]> {
   if (!repairRequestId) throw new Error("Repair request ID is required.");
 
   await getAuthenticatedProfile();
 
   // 1. Fetch repair request with equipment and assessment details
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairRequestId);
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    repairRequestId,
+  );
   const { data: repair, error: repairError } = isUuid
-    ? await supabase.from("repair_requests").select("*, equipment(*)").eq("id", repairRequestId).maybeSingle()
-    : await supabase.from("repair_requests").select("*, equipment(*)").eq("job_number", repairRequestId).maybeSingle();
+    ? await supabase
+        .from("repair_requests")
+        .select("*, equipment(*)")
+        .eq("id", repairRequestId)
+        .maybeSingle()
+    : await supabase
+        .from("repair_requests")
+        .select("*, equipment(*)")
+        .eq("job_number", repairRequestId)
+        .maybeSingle();
 
   if (repairError || !repair) {
     throw new Error("Repair request not found or inaccessible.");
@@ -110,7 +132,14 @@ export async function getEligibleTechnicians(repairRequestId: string): Promise<S
 
   // 3. Score and rank candidates (matching algorithm helper)
   const matches: ScoredTechnicianMatch[] = verifiedTechs
-    .filter((t) => !declinedBy.has(t.profile_id))
+    .filter(
+      (t) =>
+        Boolean(t.is_verified) &&
+        Boolean(t.profile) &&
+        Boolean(t.profile?.full_name?.trim()) &&
+        t.profile?.full_name !== "Former Member" &&
+        !declinedBy.has(t.profile_id),
+    )
     .map((t) => {
       const brandMatch = Boolean(make && t.brands && t.brands.includes(make));
       const skillMatch = Boolean(targetSkill && t.skills && t.skills.includes(targetSkill));
@@ -121,7 +150,8 @@ export async function getEligibleTechnicians(repairRequestId: string): Promise<S
       if (t.is_available) reasons.push("Available now");
 
       const proximityScore = Math.max(0, 10 - (t.eta_minutes ?? 45) / 10);
-      const score = (brandMatch ? 40 : 0) + (skillMatch ? 30 : 0) + (t.is_available ? 20 : 0) + proximityScore;
+      const score =
+        (brandMatch ? 40 : 0) + (skillMatch ? 30 : 0) + (t.is_available ? 20 : 0) + proximityScore;
 
       return {
         technician: t,
@@ -152,10 +182,20 @@ export async function assignTechnician(input: AssignTechnicianInput): Promise<Re
   if (!input.technician_id) throw new Error("Technician ID is required.");
 
   // 1. Fetch repair request to validate ownership and state
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.repair_request_id);
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    input.repair_request_id,
+  );
   const { data: repair, error: repairError } = isUuid
-    ? await supabase.from("repair_requests").select("*").eq("id", input.repair_request_id).maybeSingle()
-    : await supabase.from("repair_requests").select("*").eq("job_number", input.repair_request_id).maybeSingle();
+    ? await supabase
+        .from("repair_requests")
+        .select("*")
+        .eq("id", input.repair_request_id)
+        .maybeSingle()
+    : await supabase
+        .from("repair_requests")
+        .select("*")
+        .eq("job_number", input.repair_request_id)
+        .maybeSingle();
 
   if (repairError || !repair) {
     throw new Error("Repair request not found or inaccessible.");
@@ -166,7 +206,9 @@ export async function assignTechnician(input: AssignTechnicianInput): Promise<Re
   const isAdmin = profile.role === "admin";
 
   if (!isOwner && !isAdmin) {
-    throw new Error("Unauthorized: Only the machinery owner or Service Centre can assign technicians.");
+    throw new Error(
+      "Unauthorized: Only the machinery owner or Service Centre can assign technicians.",
+    );
   }
 
   // Terminal states cannot receive assignments
@@ -176,13 +218,17 @@ export async function assignTechnician(input: AssignTechnicianInput): Promise<Re
 
   // Farmers can only nominate/assign while ticket is in REQUESTED state
   if (isOwner && !isAdmin && repair.status !== "REQUESTED") {
-    throw new Error(`Cannot reassign technician: Repair is already in '${repair.status}' stage. Contact Service Centre.`);
+    throw new Error(
+      `Cannot reassign technician: Repair is already in '${repair.status}' stage. Contact Service Centre.`,
+    );
   }
 
   // 3. Validate candidate technician existence, role, and verification status
   const { data: techRecord, error: techCheckError } = await supabase
     .from("technician_profiles")
-    .select("profile_id, workshop_name, is_verified, is_available, profile:profile_id(id, full_name, role)")
+    .select(
+      "profile_id, workshop_name, is_verified, is_available, profile:profile_id(id, full_name, role)",
+    )
     .eq("profile_id", input.technician_id)
     .maybeSingle();
 
@@ -196,12 +242,16 @@ export async function assignTechnician(input: AssignTechnicianInput): Promise<Re
   }
 
   if (!techRecord.is_verified) {
-    throw new Error("Assignment rejected: Selected technician has not been verified by the Service Centre.");
+    throw new Error(
+      "Assignment rejected: Selected technician has not been verified by the Service Centre.",
+    );
   }
 
   // Check if technician previously declined this ticket
   if (repair.declined_by && repair.declined_by.includes(input.technician_id)) {
-    throw new Error("Assignment rejected: This technician has already declined this repair request.");
+    throw new Error(
+      "Assignment rejected: This technician has already declined this repair request.",
+    );
   }
 
   const now = new Date().toISOString();
@@ -223,9 +273,7 @@ export async function assignTechnician(input: AssignTechnicianInput): Promise<Re
     updateQuery = updateQuery.neq("status", "COMPLETED").neq("status", "CANCELLED");
   }
 
-  const { data: updatedRepair, error: updateError } = await updateQuery
-    .select()
-    .maybeSingle();
+  const { data: updatedRepair, error: updateError } = await updateQuery.select().maybeSingle();
 
   if (updateError) {
     throw new Error(`Failed to assign technician: ${updateError.message}`);
@@ -233,28 +281,29 @@ export async function assignTechnician(input: AssignTechnicianInput): Promise<Re
 
   if (!updatedRepair) {
     throw new Error(
-      "This repair request could not be assigned because its status changed. Please refresh."
+      "This repair request could not be assigned because its status changed. Please refresh.",
     );
   }
 
   // 5. Record chronological audit event in repair_timeline
   const timelineStatus = isAdmin && repair.technician_id ? "REASSIGNED" : "REQUESTED";
-  const timelineNote = isAdmin && repair.technician_id
-    ? `Reassigned to ${techName} (${workshopName}) by Service Centre`
-    : `Technician assigned: ${techName} (${workshopName})`;
+  const timelineNote =
+    isAdmin && repair.technician_id
+      ? `Reassigned to ${techName} (${workshopName}) by Service Centre`
+      : `Technician assigned: ${techName} (${workshopName})`;
 
-  const { error: timelineError } = await supabase
-    .from("repair_timeline")
-    .insert({
-      repair_request_id: repair.id,
-      status: timelineStatus,
-      note: timelineNote,
-      created_by_role: isAdmin ? "admin" : "farmer",
-      created_by_id: profile.id,
-    });
+  const { error: timelineError } = await supabase.from("repair_timeline").insert({
+    repair_request_id: repair.id,
+    status: timelineStatus,
+    note: timelineNote,
+    created_by_role: isAdmin ? "admin" : "farmer",
+    created_by_id: profile.id,
+  });
 
   if (timelineError) {
-    console.warn(`[TerraByte] Warning: Failed to record assignment timeline entry: ${timelineError.message}`);
+    console.warn(
+      `[TerraByte] Warning: Failed to record assignment timeline entry: ${timelineError.message}`,
+    );
   }
 
   // Notify technician of assignment
@@ -284,15 +333,27 @@ export async function assignTechnician(input: AssignTechnicianInput): Promise<Re
 /**
  * Fetches the currently assigned technician for a repair request, if any.
  */
-export async function getAssignedTechnician(repairRequestId: string): Promise<VerifiedTechnicianWithProfile | null> {
+export async function getAssignedTechnician(
+  repairRequestId: string,
+): Promise<VerifiedTechnicianWithProfile | null> {
   if (!repairRequestId) throw new Error("Repair request ID is required.");
 
   await getAuthenticatedProfile();
 
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairRequestId);
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    repairRequestId,
+  );
   const { data: repair, error: repairError } = isUuid
-    ? await supabase.from("repair_requests").select("technician_id").eq("id", repairRequestId).maybeSingle()
-    : await supabase.from("repair_requests").select("technician_id").eq("job_number", repairRequestId).maybeSingle();
+    ? await supabase
+        .from("repair_requests")
+        .select("technician_id")
+        .eq("id", repairRequestId)
+        .maybeSingle()
+    : await supabase
+        .from("repair_requests")
+        .select("technician_id")
+        .eq("job_number", repairRequestId)
+        .maybeSingle();
 
   if (repairError || !repair || !repair.technician_id) {
     return null;
@@ -379,11 +440,16 @@ export async function getVerifiedTechnicians(): Promise<VerifiedTechnicianWithPr
  * Sets verification status for a technician profile (admin-only).
  * When approved (isVerified = true), dispatches an idempotent notification to the technician.
  */
-export async function setTechnicianVerification(profileId: string, isVerified: boolean): Promise<void> {
+export async function setTechnicianVerification(
+  profileId: string,
+  isVerified: boolean,
+): Promise<void> {
   if (!profileId) throw new Error("Technician profile ID is required.");
   const profile = await getAuthenticatedProfile();
   if (profile.role !== "admin") {
-    throw new Error("Unauthorized: Only service centre administrators can update technician verification.");
+    throw new Error(
+      "Unauthorized: Only service centre administrators can update technician verification.",
+    );
   }
 
   const { error } = await supabase
@@ -409,12 +475,16 @@ export async function setTechnicianVerification(profileId: string, isVerified: b
         await createNotification({
           recipient_role: "technician",
           recipient_user_id: profileId,
-          notification_text: "Your technician account has been approved by the Service Centre. You can now accept repair jobs.",
+          notification_text:
+            "Your technician account has been approved by the Service Centre. You can now accept repair jobs.",
           link_target: "/technician",
         });
       }
     } catch (notifErr) {
-      console.warn("[TerraByte] Warning: Failed to send technician verification notification:", notifErr);
+      console.warn(
+        "[TerraByte] Warning: Failed to send technician verification notification:",
+        notifErr,
+      );
     }
   }
 }
@@ -424,7 +494,7 @@ export async function setTechnicianVerification(profileId: string, isVerified: b
  */
 export async function notifyAdminOnTechnicianRegistration(
   technicianName: string,
-  workshopName?: string
+  workshopName?: string,
 ): Promise<void> {
   const name = technicianName?.trim() || "New technician";
   const workshop = workshopName?.trim() || "Workshop";
@@ -446,7 +516,9 @@ export async function notifyAdminOnTechnicianRegistration(
       });
     }
   } catch (notifErr) {
-    console.warn("[TerraByte] Warning: Failed to send admin notification for technician registration:", notifErr);
+    console.warn(
+      "[TerraByte] Warning: Failed to send admin notification for technician registration:",
+      notifErr,
+    );
   }
 }
-

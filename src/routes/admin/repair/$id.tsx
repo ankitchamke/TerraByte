@@ -8,18 +8,24 @@ import {
   Clock,
   History,
   Loader2,
+  MapPin,
+  Package,
   PackageSearch,
   XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AssessmentCard, QuoteTable } from "@/components/repair-parts";
+import { DirectionsButton } from "@/components/directions-button";
+import { formatGpsAccuracy } from "@/lib/location";
 import {
   btn,
   CallButton,
   Card,
   ClickableImage,
   ContextualBack,
+  DateTimePicker,
+  formatEtaDateTime,
   input,
   Label,
   StatusPill,
@@ -32,12 +38,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ago, inr, quoteTotals, STAFF_LABEL, useTB, type Quote, type Repair } from "@/lib/tb-store";
+import { actions, ago, fmtTime, inr, quoteTotals, STAFF_LABEL, useTB, type Quote, type Repair } from "@/lib/tb-store";
 import { useAuth } from "@/lib/auth";
 import type { Assessment } from "@/lib/assessment";
 import { meta } from "@/lib/seo";
 import { cn } from "@/lib/utils";
 import { useRepairTicketRealtime } from "@/hooks/use-repair-realtime";
+import {
+  confirmPartHandoff,
+  getRepairPartRequests,
+  type ServiceCentrePartRequestDetail,
+} from "@/lib/services/parts-desk";
 import {
   getServiceHistoryForRepair,
   type ServiceHistoryRow,
@@ -48,6 +59,8 @@ import {
   getRepairRequestById,
   rejectCancellation,
   updatePartsEta,
+  getRepairDispatchLocation,
+  type RepairDispatchLocation,
   type RepairRequestDetail,
 } from "@/lib/services/repair-requests";
 import {
@@ -210,6 +223,9 @@ function AdminRepair() {
   const [rejectError, setRejectError] = useState<string | null>(null);
 
   const [reviewActionBusy, setReviewActionBusy] = useState<"approve" | "reject" | null>(null);
+  const [dispatchLocation, setDispatchLocation] = useState<RepairDispatchLocation | null>(null);
+  const [partRequests, setPartRequests] = useState<ServiceCentrePartRequestDetail[]>([]);
+  const [confirmingHandoffId, setConfirmingHandoffId] = useState<string | null>(null);
 
   const hasLoadedRef = useRef(false);
 
@@ -232,20 +248,25 @@ function AdminRepair() {
           setEta(ph["eta"] || "");
         }
 
-        // Concurrently fetch quotes, quote versions, eligible technicians, and service history (if completed)
-        const [quotesData, eligibleData, versionsData, shData] = await Promise.all([
-          getQuotesForRepair(realRepair.id).catch(() => []),
-          getEligibleTechnicians(realRepair.id).catch(() => []),
-          getQuoteVersions(realRepair.id).catch(() => []),
-          realRepair.status === "COMPLETED"
-            ? getServiceHistoryForRepair(realRepair.id).catch(() => null)
-            : Promise.resolve(null),
-        ]);
+        // Concurrently fetch quotes, quote versions, eligible technicians, service history, dispatch location, and parts requests
+        const [quotesData, eligibleData, versionsData, shData, dispatchLocData, reqsData] =
+          await Promise.all([
+            getQuotesForRepair(realRepair.id).catch(() => []),
+            getEligibleTechnicians(realRepair.id).catch(() => []),
+            getQuoteVersions(realRepair.id).catch(() => []),
+            realRepair.status === "COMPLETED"
+              ? getServiceHistoryForRepair(realRepair.id).catch(() => null)
+              : Promise.resolve(null),
+            getRepairDispatchLocation(realRepair.id).catch(() => null),
+            getRepairPartRequests(realRepair.id).catch(() => []),
+          ]);
 
         setQuotes(quotesData);
         setQuoteVersions(versionsData);
         setTechMatches(eligibleData);
         setServiceRecord(shData);
+        setDispatchLocation(dispatchLocData);
+        setPartRequests(reqsData);
         hasLoadedRef.current = true;
         return;
       }
@@ -255,6 +276,8 @@ function AdminRepair() {
       if (mockRepair) {
         setEta(mockRepair.parts?.eta ?? "");
         const mockSh = s.service.find((x) => x.repairId === id || x.repairId === mockRepair.id);
+        const reqsData = await getRepairPartRequests(mockRepair.id).catch(() => []);
+        setPartRequests(reqsData);
         if (mockSh) {
           setServiceRecord({
             id: mockSh.id,
@@ -294,7 +317,7 @@ function AdminRepair() {
     } finally {
       setLoading(false);
     }
-  }, [id, s.repairs, s.service]);
+  }, [id, s.repairs, s.service, s.serviceCentrePartRequests, s.serviceCentreParts]);
 
   useEffect(() => {
     void loadData();
@@ -503,6 +526,8 @@ function AdminRepair() {
           eta: eta.trim(),
           note: "Parts ETA updated by Service Centre",
         });
+      } else {
+        actions.updatePartsEta(jobNumber, eta.trim(), "admin");
       }
       toast.success("Parts ETA updated; farmer notified.");
       await loadData();
@@ -598,8 +623,13 @@ function AdminRepair() {
           <h1 className="text-3xl font-bold">
             {equipmentMake} {equipmentModel}
           </h1>
-          <p className="text-sm text-muted-foreground">
-            {farmerName} · {location}
+          <p className="text-sm text-muted-foreground flex flex-wrap items-center gap-1.5 mt-0.5">
+            <span>{farmerName} · {location}</span>
+            {dispatchLocation && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                <MapPin className="h-3 w-3" /> Exact GPS saved ({formatGpsAccuracy(dispatchLocation.accuracy)})
+              </span>
+            )}
           </p>
         </div>
         <StatusPill r={{ status, testing: isTesting }} audience="staff" />
@@ -952,40 +982,182 @@ function AdminRepair() {
               <h2 className="mb-2 flex items-center gap-2 text-lg font-bold">
                 <PackageSearch className="h-5 w-5 text-warning-foreground" /> Parts blocker
               </h2>
-              <div className="grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <Label>Part</Label>
-                  <p className="font-semibold">{partsHold.part || "Spare part"}</p>
+
+              {partsHold.items && partsHold.items.length > 0 ? (
+                <div className="space-y-2 rounded-xl border border-warning/30 bg-warning/5 p-3 mb-3">
+                  <Label className="text-xs font-bold text-foreground">
+                    Required Blocking Parts ({partsHold.items.length})
+                  </Label>
+                  <div className="space-y-1.5">
+                    {partsHold.items.map((it: any, idx: number) => {
+                      const isDone = it.status === "HANDED_OFF" || it.status === "RESOLVED";
+                      return (
+                        <div
+                          key={idx}
+                          className="flex items-center justify-between text-xs rounded-lg bg-background/80 p-2.5 border border-border/60"
+                        >
+                          <div>
+                            <p className="font-semibold text-foreground">
+                              {it.part} {it.quantity ? `(Qty: ${it.quantity})` : ""}
+                            </p>
+                            <p className="text-[11px] text-muted-foreground">{it.reason}</p>
+                          </div>
+                          <div className="text-right">
+                            <span
+                              className={cn(
+                                "inline-block rounded-full px-2 py-0.5 text-[10px] font-bold",
+                                isDone
+                                  ? "bg-success/20 text-success"
+                                  : "bg-warning/20 text-warning-foreground",
+                              )}
+                            >
+                              {isDone ? "Handed Off" : "Awaiting Handoff"}
+                            </span>
+                            {it.eta && (
+                              <p className="text-[10px] text-muted-foreground mt-0.5">
+                                ETA: {formatEtaDateTime(it.eta)}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div>
-                  <Label>Blocked for</Label>
-                  <p className="font-semibold">{ago(new Date(partsHold.since || statusSince).getTime())}</p>
+              ) : (
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <Label>Part</Label>
+                    <p className="font-semibold">{partsHold.part || "Spare part"}</p>
+                  </div>
+                  <div>
+                    <Label>Blocked for</Label>
+                    <p className="font-semibold">{ago(new Date(partsHold.since || statusSince).getTime())}</p>
+                  </div>
+                  <div className="col-span-2">
+                    <Label>Reason</Label>
+                    <p>{partsHold.reason || "Waiting for delivery"}</p>
+                  </div>
+                  {partsHold.note && (
+                    <p className="col-span-2 italic text-muted-foreground">"{partsHold.note}"</p>
+                  )}
                 </div>
-                <div className="col-span-2">
-                  <Label>Reason</Label>
-                  <p>{partsHold.reason || "Waiting for delivery"}</p>
-                </div>
-                {partsHold.note && (
-                  <p className="col-span-2 italic text-muted-foreground">"{partsHold.note}"</p>
-                )}
-              </div>
+              )}
+
               <div className="mt-3 flex gap-2">
-                <input
-                  className={input}
-                  placeholder="e.g. Tomorrow, 9:30 AM"
-                  value={eta}
-                  onChange={(ev) => setEta(ev.target.value)}
-                />
+                <div className="flex-1">
+                  <DateTimePicker value={eta} onChange={(val) => setEta(val)} />
+                </div>
                 <button
-                  disabled={updatingEta}
+                  disabled={updatingEta || !eta.trim()}
                   onClick={() => void handleUpdateEta()}
-                  className={cn(btn.amber, "shrink-0")}
+                  className={cn(btn.amber, "shrink-0 h-11 px-4")}
                 >
                   {updatingEta ? "Updating…" : "Update ETA"}
                 </button>
               </div>
             </Card>
           )}
+
+          {/* Service Centre Parts Requests */}
+          <Card>
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+              <div className="flex items-center gap-2">
+                <Package className="h-5 w-5 text-primary" />
+                <h2 className="text-lg font-bold">Service Centre Parts Requests</h2>
+              </div>
+              <Link
+                to="/admin/parts-desk"
+                className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
+              >
+                Open Parts Desk →
+              </Link>
+            </div>
+
+            <p className="text-xs text-muted-foreground mb-3">
+              Spare parts requested by technician from Nagpur Service Centre depot stock.
+            </p>
+
+            {partRequests.length === 0 ? (
+              <p className="py-2 text-xs text-muted-foreground italic">
+                No parts requested from Service Centre for this repair.
+              </p>
+            ) : (
+              <div className="space-y-2.5">
+                {partRequests.map((req) => (
+                  <div
+                    key={req.id}
+                    className="flex flex-col gap-2 rounded-xl border border-border/70 bg-muted/40 p-3 text-xs sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="space-y-0.5 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold text-foreground">
+                          {req.part?.name || "Spare part"} (Qty: {req.quantity})
+                        </span>
+                        <span
+                          className={cn(
+                            "rounded-full px-2 py-0.5 text-[10px] font-bold",
+                            req.status === "PENDING"
+                              ? "bg-warning/20 text-warning-foreground"
+                              : req.status === "HANDED_OFF"
+                                ? "bg-success/20 text-success"
+                                : "bg-muted text-muted-foreground",
+                          )}
+                        >
+                          {req.status === "PENDING"
+                            ? "Awaiting Handoff"
+                            : req.status === "HANDED_OFF"
+                              ? "Handed Off"
+                              : "Cancelled"}
+                        </span>
+                      </div>
+                      <p className="font-mono text-[11px] text-muted-foreground">
+                        SKU: {req.part?.part_number || "—"} · Spec: {req.part?.spec || "Standard"}
+                        {req.part?.location ? ` · Shelf: ${req.part.location}` : ""}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        Requested by {req.requester?.full_name || "Technician"} · {fmtTime(new Date(req.created_at).getTime())}
+                        {req.handed_off_at && (
+                          <> · Handed off by {req.handed_off_by || "Admin"} ({fmtTime(new Date(req.handed_off_at).getTime())})</>
+                        )}
+                      </p>
+                      {req.notes && (
+                        <p className="text-[11px] italic text-muted-foreground">
+                          "{req.notes}"
+                        </p>
+                      )}
+                    </div>
+
+                    {req.status === "PENDING" && (
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          disabled={confirmingHandoffId === req.id}
+                          onClick={async () => {
+                            setConfirmingHandoffId(req.id);
+                            try {
+                              const res = await confirmPartHandoff(req.id);
+                              toast.success(
+                                `Confirmed handoff: ${res.quantity}x ${res.part_name}. On-hand stock updated.`,
+                              );
+                              await loadData();
+                            } catch (err: any) {
+                              toast.error(err?.message || "Failed to confirm handoff.");
+                            } finally {
+                              setConfirmingHandoffId(null);
+                            }
+                          }}
+                          className="inline-flex h-8 items-center rounded-lg bg-success px-3 text-xs font-semibold text-success-foreground hover:bg-success/90 disabled:opacity-50"
+                        >
+                          {confirmingHandoffId === req.id ? "Confirming…" : "Confirm Handoff"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
 
           {/* Quote Version Comparison */}
           {quoteVersions.length >= 2 && quoteVersions[quoteVersions.length - 2] && quoteVersions[quoteVersions.length - 1] && (
@@ -1028,9 +1200,9 @@ function AdminRepair() {
         </div>
 
         <div className="space-y-5">
-          {/* Contacts */}
+          {/* Contacts & Dispatch */}
           <Card>
-            <h2 className="mb-3 text-lg font-bold">Contacts</h2>
+            <h2 className="mb-3 text-lg font-bold">Contacts & Directions</h2>
             <div className="grid gap-2">
               {farmerPhone ? (
                 <CallButton phone={farmerPhone} label={`Farmer · ${farmerName}`} />
@@ -1042,6 +1214,11 @@ function AdminRepair() {
               ) : technicianName ? (
                 <p className="text-sm text-muted-foreground">Technician: {technicianName}</p>
               ) : null}
+              <DirectionsButton
+                dispatchLocation={dispatchLocation}
+                fallbackLocation={location}
+                label="Get directions"
+              />
             </div>
           </Card>
 

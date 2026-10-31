@@ -15,6 +15,7 @@ export interface CreateQuoteItemInput {
   quantity: number;
   unit_price: number;
   part_source?: string;
+  catalog_part_id?: string | null;
 }
 
 export interface CreateQuoteInput {
@@ -222,15 +223,24 @@ export async function getQuotesForRepair(repairRequestId: string): Promise<Quote
       }
     >) ?? [];
 
-  return quoteRows.map((q) => {
-    const items = q.quote_items || [];
-    const totals = calculateQuoteTotals(items, Number(q.labour_amount), Number(q.tax_percent));
-    return {
-      ...q,
-      quote_items: items,
-      totals,
-    };
-  });
+  return quoteRows
+    .filter(
+      (q) =>
+        !(
+          q.status === "PENDING" &&
+          (!q.quote_items || q.quote_items.length === 0) &&
+          Number(q.labour_amount || 0) === 0
+        ),
+    )
+    .map((q) => {
+      const items = q.quote_items || [];
+      const totals = calculateQuoteTotals(items, Number(q.labour_amount), Number(q.tax_percent));
+      return {
+        ...q,
+        quote_items: items,
+        totals,
+      };
+    });
 }
 
 /**
@@ -277,7 +287,10 @@ export async function getQuoteVersions(repairRequestId: string): Promise<QuoteVe
         technician: Pick<ProfileRow, "id" | "full_name" | "phone" | "village"> | null;
       }
     >) ?? [];
-  if (quoteRows.length === 0) return [];
+  const validQuoteRows = quoteRows.filter(
+    (q) => !(q.status === "PENDING" && (!q.quote_items || q.quote_items.length === 0)),
+  );
+  if (validQuoteRows.length === 0) return [];
 
   // 2. Fetch repair request to inspect persistent clarification_note
   const { data: repair } = await supabase
@@ -295,15 +308,15 @@ export async function getQuoteVersions(repairRequestId: string): Promise<QuoteVe
 
   const timeline = timelineEntries || [];
 
-  return quoteRows.map((q, idx) => {
+  return validQuoteRows.map((q, idx) => {
     const items = q.quote_items || [];
     const totals = calculateQuoteTotals(items, Number(q.labour_amount), Number(q.tax_percent));
 
     // Find farmer revision request for this version (if revised)
     let revisionRequest: QuoteRevisionInfo | null = null;
-    if (q.status === "REVISED" || idx < quoteRows.length - 1) {
+    if (q.status === "REVISED" || idx < validQuoteRows.length - 1) {
       const qTime = new Date(q.sent_at || q.created_at).getTime();
-      const nextRow = quoteRows[idx + 1];
+      const nextRow = validQuoteRows[idx + 1];
       const nextQTime = nextRow
         ? new Date(nextRow.sent_at || nextRow.created_at).getTime()
         : Infinity;
@@ -551,21 +564,111 @@ export async function createQuote(input: CreateQuoteInput): Promise<QuoteDetail>
     throw new Error("Unauthorized: You are not assigned to this repair request.");
   }
 
-  const quotableStatuses: RepairStatus[] = ["ACCEPTED", "REQUESTED", "QUOTE_REVISED"];
+  const quotableStatuses: RepairStatus[] = ["ACCEPTED", "REQUESTED", "QUOTE_REVISED", "WAITING_FOR_PARTS"];
   if (!quotableStatuses.includes(repair.status)) {
     throw new Error(`Cannot create quote: Repair ticket is in '${repair.status}' status.`);
+  }
+
+  // Prevent blanket status bypass: WAITING_FOR_PARTS is only permitted when backed by an active parts hold
+  if (repair.status === "WAITING_FOR_PARTS") {
+    const hasPartsHold = Boolean(repair.parts_hold || (repair as any).parts);
+    if (!hasPartsHold) {
+      throw new Error(
+        "Cannot create quote: Repair ticket is in WAITING_FOR_PARTS status without an active parts hold.",
+      );
+    }
   }
 
   // Prevent duplicate active quotes for the same repair
   const { data: existingPendingQuote } = await supabase
     .from("quotes")
-    .select("id")
+    .select("id, status, version, quote_items(id)")
     .eq("repair_request_id", repair.id)
     .eq("status", "PENDING")
     .maybeSingle();
 
   if (existingPendingQuote) {
-    throw new Error("A pending quote already exists for this repair request. Wait for the farmer to respond or request changes.");
+    const hasItems =
+      existingPendingQuote.quote_items && existingPendingQuote.quote_items.length > 0;
+    if (hasItems) {
+      throw new Error(
+        "Cannot create quote: A pending quote already exists for this repair. Wait for the farmer to respond or request changes.",
+      );
+    } else {
+      // Clean up orphan quote row with 0 items from a previously interrupted transaction
+      try {
+        await supabase.from("quotes").delete().eq("id", existingPendingQuote.id);
+      } catch {
+        // If deletion fails under RLS, reject the orphan quote so it does not block subsequent submissions
+        try {
+          await supabase.from("quotes").update({ status: "REJECTED" }).eq("id", existingPendingQuote.id);
+        } catch {
+          // Ignore
+        }
+      }
+    }
+  }
+
+  // 1b. Attempt atomic database formulation RPC first (when items are provided)
+  if (input.items.length > 0) {
+    try {
+      const { data: rpcData, error: rpcErr } = await (
+        supabase.rpc as unknown as (
+          name: string,
+          params: Record<string, unknown>,
+        ) => Promise<{ data: any; error: any }>
+      )("create_quote_atomic", {
+        p_repair_request_id: repair.id,
+        p_labour_description: input.labour_description.trim(),
+        p_labour_amount: input.labour_amount,
+        p_tax_percent: input.tax_percent,
+        p_estimated_completion: input.estimated_completion.trim(),
+        p_warranty_terms: input.warranty_terms?.trim() || null,
+        p_items: input.items.map((item) => ({
+          part_name: item.part_name.trim(),
+          part_spec: item.part_spec?.trim() || null,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          part_source: item.part_source?.trim() || "In van stock",
+          catalog_part_id: item.catalog_part_id || null,
+        })),
+      });
+
+      if (!rpcErr && rpcData && rpcData.id) {
+        const items = (rpcData.quote_items as QuoteItemRow[]) || [];
+        const totals =
+          rpcData.totals ||
+          calculateQuoteTotals(items, Number(rpcData.labour_amount), Number(rpcData.tax_percent));
+        return {
+          ...rpcData,
+          quote_items: items,
+          totals,
+          technician: {
+            id: profile.id,
+            full_name: (profile as any).full_name || null,
+            phone: null,
+            village: null,
+          },
+        };
+      }
+
+      if (
+        rpcErr &&
+        !rpcErr.message?.includes("function") &&
+        !rpcErr.message?.includes("does not exist") &&
+        !rpcErr.message?.includes("WAITING_FOR_PARTS")
+      ) {
+        throw new Error(rpcErr.message);
+      }
+    } catch (err: unknown) {
+      if (
+        err instanceof Error &&
+        !err.message.includes("does not exist") &&
+        !err.message.includes("function")
+      ) {
+        throw err;
+      }
+    }
   }
 
   // 2. Insert quote row (version 1, PENDING)
@@ -591,32 +694,61 @@ export async function createQuote(input: CreateQuoteInput): Promise<QuoteDetail>
     throw new Error(`Failed to create quote: ${quoteInsertError?.message}`);
   }
 
-  // 3. Batch insert quote items
-  const itemRows = input.items.map((item) => ({
-    quote_id: quote.id,
-    part_name: item.part_name.trim(),
-    part_spec: item.part_spec?.trim() || null,
-    quantity: item.quantity,
-    unit_price: item.unit_price,
-    part_source: item.part_source?.trim() || "In van stock",
-  }));
+  // 3. Batch insert quote items (if any items were quoted)
+  let insertedItems: QuoteItemRow[] = [];
+  if (input.items.length > 0) {
+    const itemRows = input.items.map((item) => ({
+      quote_id: quote.id,
+      part_name: item.part_name.trim(),
+      part_spec: item.part_spec?.trim() || null,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      part_source: item.part_source?.trim() || "In van stock",
+      catalog_part_id: item.catalog_part_id || null,
+    }));
 
-  const { data: insertedItems, error: itemsError } = await supabase
-    .from("quote_items")
-    .insert(itemRows)
-    .select();
+    const { data: dbItems, error: itemsError } = await supabase
+      .from("quote_items")
+      .insert(itemRows)
+      .select();
 
-  if (itemsError || !insertedItems) {
-    // Attempt rollback of the quote row
-    await supabase.from("quotes").delete().eq("id", quote.id);
-    throw new Error(`Failed to save quote items: ${itemsError?.message}`);
+    if (itemsError || !dbItems) {
+      // Attempt rollback of the quote row
+      try {
+        const { error: delErr } = await supabase.from("quotes").delete().eq("id", quote.id);
+        if (delErr) {
+          // If RLS prevents deletion by technician, mark the orphan quote REJECTED to prevent blocking
+          await supabase.from("quotes").update({ status: "REJECTED" }).eq("id", quote.id);
+        }
+      } catch {
+        try {
+          await supabase.from("quotes").update({ status: "REJECTED" }).eq("id", quote.id);
+        } catch {
+          // Ignore
+        }
+      }
+
+      if (
+        itemsError?.message?.includes("catalog_part_id") ||
+        itemsError?.message?.includes("schema cache")
+      ) {
+        throw new Error(
+          `Database migration required: The 'catalog_part_id' column on 'quote_items' is not found in the remote database schema cache. ` +
+          `The Phase 9.2 migration (supabase/migrations/20261029120000_phase9_2_stock_movement_sales.sql) must be applied to the remote database to record parts stock links. (${itemsError.message})`,
+        );
+      }
+      throw new Error(`Failed to save quote items: ${itemsError?.message}`);
+    }
+    insertedItems = dbItems;
   }
 
-  // 4. Update repair request status to 'QUOTE_PENDING' and clear any previous clarification note
+  // 4. Update repair request status (preserve WAITING_FOR_PARTS if already waiting for parts)
+  const newRepairStatus: RepairStatus =
+    repair.status === "WAITING_FOR_PARTS" ? "WAITING_FOR_PARTS" : "QUOTE_PENDING";
   const { data: updatedRepair, error: repairUpdateError } = await supabase
     .from("repair_requests")
     .update({
-      status: "QUOTE_PENDING",
+      status: newRepairStatus,
       clarification_note: null,
       status_since: now,
     })
@@ -644,7 +776,7 @@ export async function createQuote(input: CreateQuoteInput): Promise<QuoteDetail>
     .from("repair_timeline")
     .insert({
       repair_request_id: repair.id,
-      status: "QUOTE_PENDING",
+      status: newRepairStatus,
       note: `Quote formulated & sent (v1: ₹${totals.totalAmount.toLocaleString("en-IN")})`,
       created_by_role: profile.role,
       created_by_id: profile.id,
@@ -723,6 +855,70 @@ export async function reviseQuote(input: ReviseQuoteInput): Promise<QuoteDetail>
     throw new Error("Unauthorized: You are not assigned to this repair request.");
   }
 
+  // 2b. Attempt atomic database revision RPC first (when items are provided)
+  if (input.items.length > 0) {
+    try {
+      const { data: rpcData, error: rpcErr } = await (
+        supabase.rpc as unknown as (
+          name: string,
+          params: Record<string, unknown>,
+        ) => Promise<{ data: any; error: any }>
+      )("revise_quote_atomic", {
+        p_previous_quote_id: prevQuote.id,
+        p_repair_request_id: repair.id,
+        p_labour_description: input.labour_description.trim(),
+        p_labour_amount: input.labour_amount,
+        p_tax_percent: input.tax_percent,
+        p_estimated_completion: input.estimated_completion.trim(),
+        p_warranty_terms: input.warranty_terms?.trim() || null,
+        p_technician_explanation: input.technician_explanation?.trim() || null,
+        p_items: input.items.map((item) => ({
+          part_name: item.part_name.trim(),
+          part_spec: item.part_spec?.trim() || null,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          part_source: item.part_source?.trim() || "In van stock",
+          catalog_part_id: item.catalog_part_id || null,
+        })),
+      });
+
+      if (!rpcErr && rpcData && rpcData.id) {
+        const items = (rpcData.quote_items as QuoteItemRow[]) || [];
+        const totals =
+          rpcData.totals ||
+          calculateQuoteTotals(items, Number(rpcData.labour_amount), Number(rpcData.tax_percent));
+        return {
+          ...rpcData,
+          quote_items: items,
+          totals,
+          technician: {
+            id: profile.id,
+            full_name: (profile as any).full_name || null,
+            phone: null,
+            village: null,
+          },
+        };
+      }
+
+      if (
+        rpcErr &&
+        !rpcErr.message?.includes("function") &&
+        !rpcErr.message?.includes("does not exist") &&
+        !rpcErr.message?.includes("WAITING_FOR_PARTS")
+      ) {
+        throw new Error(rpcErr.message);
+      }
+    } catch (err: unknown) {
+      if (
+        err instanceof Error &&
+        !err.message.includes("does not exist") &&
+        !err.message.includes("function")
+      ) {
+        throw err;
+      }
+    }
+  }
+
   // 3. Mark previous quote as 'REVISED' (only if currently PENDING or REVISED)
   const { data: updatedPrevQuote, error: prevQuoteUpdateError } = await supabase
     .from("quotes")
@@ -768,39 +964,66 @@ export async function reviseQuote(input: ReviseQuoteInput): Promise<QuoteDetail>
     throw new Error(`Failed to create revised quote: ${newQuoteError?.message}`);
   }
 
-  // 5. Batch insert new quote items
-  const itemRows = input.items.map((item) => ({
-    quote_id: newQuote.id,
-    part_name: item.part_name.trim(),
-    part_spec: item.part_spec?.trim() || null,
-    quantity: item.quantity,
-    unit_price: item.unit_price,
-    part_source: item.part_source?.trim() || "In van stock",
-  }));
+  // 5. Batch insert new quote items (if any items were quoted)
+  let insertedItems: QuoteItemRow[] = [];
+  if (input.items.length > 0) {
+    const itemRows = input.items.map((item) => ({
+      quote_id: newQuote.id,
+      part_name: item.part_name.trim(),
+      part_spec: item.part_spec?.trim() || null,
+      quantity: item.quantity,
+      unit_price: item.unit_price,
+      part_source: item.part_source?.trim() || "In van stock",
+      catalog_part_id: item.catalog_part_id || null,
+    }));
 
-  const { data: insertedItems, error: itemsError } = await supabase
-    .from("quote_items")
-    .insert(itemRows)
-    .select();
+    const { data: dbItems, error: itemsError } = await supabase
+      .from("quote_items")
+      .insert(itemRows)
+      .select();
 
-  if (itemsError || !insertedItems) {
-    await supabase.from("quotes").delete().eq("id", newQuote.id);
-    await supabase.from("quotes").update({ status: prevQuote.status }).eq("id", prevQuote.id);
-    throw new Error(`Failed to save revised quote items: ${itemsError?.message}`);
+    if (itemsError || !dbItems) {
+      try {
+        const { error: delErr } = await supabase.from("quotes").delete().eq("id", newQuote.id);
+        if (delErr) {
+          await supabase.from("quotes").update({ status: "REJECTED" }).eq("id", newQuote.id);
+        }
+      } catch {
+        try {
+          await supabase.from("quotes").update({ status: "REJECTED" }).eq("id", newQuote.id);
+        } catch {
+          // Ignore
+        }
+      }
+      await supabase.from("quotes").update({ status: prevQuote.status }).eq("id", prevQuote.id);
+
+      if (
+        itemsError?.message?.includes("catalog_part_id") ||
+        itemsError?.message?.includes("schema cache")
+      ) {
+        throw new Error(
+          `Database migration required: The 'catalog_part_id' column on 'quote_items' is not found in the remote database schema cache. ` +
+          `The Phase 9.2 migration (supabase/migrations/20261029120000_phase9_2_stock_movement_sales.sql) must be applied to the remote database to record parts stock links. (${itemsError.message})`,
+        );
+      }
+      throw new Error(`Failed to save revised quote items: ${itemsError?.message}`);
+    }
+    insertedItems = dbItems;
   }
 
-  // 6. Update repair request status to 'QUOTE_PENDING'
+  // 6. Update repair request status
   // CRITICAL INVARIANT: The farmer's original clarification_note is preserved intact.
   // We DO NOT overwrite clarification_note with technician explanation.
   // The technician's response/explanation is stored separately in the repair_timeline audit event below.
+  const newRepairStatus = repair.status === "WAITING_FOR_PARTS" ? "WAITING_FOR_PARTS" : "QUOTE_PENDING";
   const { data: updatedRepair, error: repairUpdateError } = await supabase
     .from("repair_requests")
     .update({
-      status: "QUOTE_PENDING",
+      status: newRepairStatus,
       status_since: now,
     })
     .eq("id", repair.id)
-    .in("status", ["QUOTE_PENDING", "QUOTE_REVISED", "ACCEPTED"])
+    .in("status", ["QUOTE_PENDING", "QUOTE_REVISED", "ACCEPTED", "WAITING_FOR_PARTS"])
     .select()
     .maybeSingle();
 
@@ -900,8 +1123,9 @@ export async function approveQuote(quoteId: string): Promise<QuoteDetail> {
     throw new Error(`Cannot approve quote: Quote is already '${quote.status}'.`);
   }
 
-  if (repair.status !== "QUOTE_PENDING") {
-    throw new Error(`Cannot approve quote: Repair ticket is in '${repair.status}' status (must be QUOTE_PENDING).`);
+  const approvableStatuses: RepairStatus[] = ["QUOTE_PENDING", "WAITING_FOR_PARTS", "IN_PROGRESS"];
+  if (!approvableStatuses.includes(repair.status)) {
+    throw new Error(`Cannot approve quote: Repair ticket is in '${repair.status}' status (must be QUOTE_PENDING, WAITING_FOR_PARTS, or IN_PROGRESS).`);
   }
 
   const now = new Date().toISOString();
@@ -925,37 +1149,45 @@ export async function approveQuote(quoteId: string): Promise<QuoteDetail> {
     );
   }
 
-  // 5. Advance repair status to IN_PROGRESS
-  const { data: updatedRepair, error: repairError2 } = await supabase
-    .from("repair_requests")
-    .update({
-      status: "IN_PROGRESS",
-      status_since: now,
-    })
-    .eq("id", repair.id)
-    .eq("status", "QUOTE_PENDING")
-    .select()
-    .maybeSingle();
+  // 5. Advance repair status to IN_PROGRESS only if it was not WAITING_FOR_PARTS; if WAITING_FOR_PARTS, keep WAITING_FOR_PARTS
+  if (repair.status !== "WAITING_FOR_PARTS") {
+    const { data: updatedRepair, error: repairError2 } = await supabase
+      .from("repair_requests")
+      .update({
+        status: "IN_PROGRESS",
+        status_since: now,
+      })
+      .eq("id", repair.id)
+      .in("status", ["QUOTE_PENDING", "IN_PROGRESS"])
+      .select()
+      .maybeSingle();
 
-  if (repairError2 || !updatedRepair) {
-    // Rollback quote approval
-    await supabase.from("quotes").update({ status: "PENDING" }).eq("id", quote.id);
+    if (repairError2 || !updatedRepair) {
+      // Rollback quote approval
+      await supabase.from("quotes").update({ status: "PENDING" }).eq("id", quote.id);
 
-    if (repairError2) {
-      throw new Error(`Failed to advance repair status to IN_PROGRESS: ${repairError2.message}`);
+      if (repairError2) {
+        throw new Error(`Failed to advance repair status to IN_PROGRESS: ${repairError2.message}`);
+      }
+      throw new Error(
+        "This repair request status changed while approving the quote. Please refresh."
+      );
     }
-    throw new Error(
-      "This repair request status changed while approving the quote. Please refresh."
-    );
   }
 
   // 6. Record timeline audit entry
+  const timelineStatus = repair.status === "WAITING_FOR_PARTS" ? "WAITING_FOR_PARTS" : "IN_PROGRESS";
+  const timelineNote =
+    repair.status === "WAITING_FOR_PARTS"
+      ? `Quote revision v${quote.version} approved by farmer while waiting for parts.`
+      : `Quote approved & repair authorized (v${quote.version})`;
+
   const { error: timelineError } = await supabase
     .from("repair_timeline")
     .insert({
       repair_request_id: repair.id,
-      status: "IN_PROGRESS",
-      note: "Quote approved & repair authorized",
+      status: timelineStatus,
+      note: timelineNote,
       created_by_role: profile.role,
       created_by_id: profile.id,
     });
@@ -1089,8 +1321,9 @@ export async function rejectQuote(
     throw new Error(`Cannot reject quote: Quote is already '${quote.status}'.`);
   }
 
-  if (repair.status !== "QUOTE_PENDING") {
-    throw new Error(`Cannot reject quote: Repair ticket is in '${repair.status}' status (must be QUOTE_PENDING).`);
+  const rejectableStatuses: RepairStatus[] = ["QUOTE_PENDING", "WAITING_FOR_PARTS", "IN_PROGRESS"];
+  if (!rejectableStatuses.includes(repair.status)) {
+    throw new Error(`Cannot reject quote: Repair ticket is in '${repair.status}' status (must be QUOTE_PENDING, WAITING_FOR_PARTS, or IN_PROGRESS).`);
   }
 
   let selectedReason = "";
@@ -1146,16 +1379,18 @@ export async function rejectQuote(
     );
   }
 
-  // 5. Update repair request status to QUOTE_REVISED and save clarification note
+  // 5. Update repair request status to QUOTE_REVISED (or preserve WAITING_FOR_PARTS) and save clarification note
+  const nextRepairStatus: RepairStatus =
+    repair.status === "WAITING_FOR_PARTS" ? "WAITING_FOR_PARTS" : "QUOTE_REVISED";
   const { data: updatedRepair, error: repairError2 } = await supabase
     .from("repair_requests")
     .update({
-      status: "QUOTE_REVISED",
+      status: nextRepairStatus,
       clarification_note: clarificationToSave,
       status_since: now,
     })
     .eq("id", repair.id)
-    .eq("status", "QUOTE_PENDING")
+    .in("status", rejectableStatuses)
     .select()
     .maybeSingle();
 
@@ -1176,7 +1411,7 @@ export async function rejectQuote(
     .from("repair_timeline")
     .insert({
       repair_request_id: repair.id,
-      status: "QUOTE_REVISED",
+      status: nextRepairStatus,
       note: `Quote revision requested: "${notifSummary}"`,
       created_by_role: profile.role,
       created_by_id: profile.id,

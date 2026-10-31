@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock,
+  MapPin,
   Loader2,
   PackageSearch,
   ShieldCheck,
@@ -25,8 +26,11 @@ import {
   requestCancellation,
   CANCELLATION_REASONS,
   getRepairRequestById,
+  getRepairDispatchLocation,
+  type RepairDispatchLocation,
   type RepairRequestDetail,
 } from "@/lib/services/repair-requests";
+import { formatGpsAccuracy } from "@/lib/location";
 import { useAuth } from "@/lib/auth";
 import { QuoteComparison } from "@/components/quote-comparison";
 import { RepairChat } from "@/components/repair-chat";
@@ -47,10 +51,10 @@ import {
   type ScoredTechnicianMatch,
   type VerifiedTechnicianWithProfile,
 } from "@/lib/services/technicians";
-import { ago, fmtTime, inr, quoteTotals, type Quote, type Technician } from "@/lib/tb-store";
+import { ago, fmtTime, inr, quoteTotals, useTB, actions, type Quote, type Technician } from "@/lib/tb-store";
 import { meta } from "@/lib/seo";
 import { cn } from "@/lib/utils";
-import { useRepairTicketRealtime } from "@/hooks/use-repair-realtime";
+import { useRepairTicketRealtime, isUuid } from "@/hooks/use-repair-realtime";
 
 interface RepairHubSearch {
   from?: "equipment" | undefined;
@@ -111,6 +115,7 @@ function RepairHub() {
       : { to: "/farmer", label: "Home" };
   const navigate = useNavigate();
   const { profile } = useAuth();
+  const tb = useTB();
   const [r, setR] = useState<RepairRequestDetail | null>(null);
   const [quotes, setQuotes] = useState<QuoteDetail[]>([]);
   const [quoteVersions, setQuoteVersions] = useState<QuoteVersionDetail[]>([]);
@@ -132,6 +137,7 @@ function RepairHub() {
   const [submittingCancellation, setSubmittingCancellation] = useState(false);
   const [cancellationError, setCancellationError] = useState<string | null>(null);
   const [assigningTechId, setAssigningTechId] = useState<string | null>(null);
+  const [dispatchLocation, setDispatchLocation] = useState<RepairDispatchLocation | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -140,14 +146,87 @@ function RepairHub() {
       }
       setError(null);
 
-      const repairData = await getRepairRequestById(id);
+      let repairData = await getRepairRequestById(id).catch(() => null);
+      if (!repairData) {
+        // Fallback to demo store if it's a demo ticket (e.g. TB-5653 or in-memory ticket)
+        const demo = tb.repairs.find((x) => x.id === id || (x as any).jobNumber === id);
+        if (demo) {
+          const eq = tb.equipment.find((e) => e.id === demo.equipmentId);
+          const tech = tb.technicians.find((t) => t.id === demo.technicianId);
+          const farmer = tb.farmers.find((f) => f.id === demo.farmerId);
+          repairData = {
+            id: demo.id,
+            job_number: demo.id,
+            farmer_id: demo.farmerId,
+            technician_id: demo.technicianId || null,
+            equipment_id: demo.equipmentId,
+            status: demo.status,
+            is_testing: Boolean(demo.testing),
+            description: demo.description,
+            symptoms: demo.symptoms,
+            location: demo.location,
+            created_at: new Date(demo.createdAt).toISOString(),
+            updated_at: new Date(demo.statusSince || demo.createdAt).toISOString(),
+            clarification_note: demo.clarification || null,
+            parts_hold: demo.parts || null,
+            completion_details: demo.completion || null,
+            cancellation_reason: (demo as any).cancellation?.reason || null,
+            cancellation_note: (demo as any).cancellation?.note || null,
+            cancellation_requested_at: (demo as any).cancellation?.requestedAt
+              ? new Date((demo as any).cancellation.requestedAt).toISOString()
+              : null,
+            equipment: eq
+              ? {
+                  id: eq.id,
+                  farmer_id: eq.farmerId,
+                  make: eq.make,
+                  model: eq.model,
+                  year: eq.year,
+                  serial_number: eq.serial,
+                  operating_hours: eq.hours,
+                  photo_url: eq.photo || null,
+                  status: eq.status,
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                }
+              : null,
+            farmer: farmer
+              ? {
+                  id: farmer.id,
+                  full_name: farmer.name,
+                  phone: farmer.phone,
+                  village: farmer.village,
+                }
+              : null,
+            technician: tech
+              ? {
+                  id: tech.id,
+                  full_name: tech.name,
+                  phone: tech.phone,
+                  village: tech.workshop,
+                }
+              : null,
+            repair_timeline: (demo.timeline || []).map((t, idx) => ({
+              id: `tl-${idx}`,
+              repair_request_id: demo.id,
+              status: t.status,
+              note: t.note || null,
+              created_at: new Date(t.at).toISOString(),
+              created_by_role: t.by,
+              created_by_id: null,
+              created_by: null,
+            })),
+          } as any;
+        }
+      }
+
       if (!repairData) {
         setR(null);
         return;
       }
       setR(repairData);
 
-      const [quotesData, notesData, assignedTechData, eligibleTechsData, versionsData] = await Promise.all([
+      const [quotesData, notesData, assignedTechData, eligibleTechsData, versionsData, dispatchLocData] = await Promise.all([
         getQuotesForRepair(repairData.id).catch(() => []),
         getRepairNotes(repairData.id).catch(() => []),
         repairData.technician_id
@@ -157,6 +236,7 @@ function RepairHub() {
           ? getEligibleTechnicians(repairData.id).catch(() => [])
           : Promise.resolve([]),
         getQuoteVersions(repairData.id).catch(() => []),
+        getRepairDispatchLocation(repairData.id).catch(() => null),
       ]);
 
       setQuotes(quotesData);
@@ -164,6 +244,7 @@ function RepairHub() {
       setNotes(notesData);
       setAssignedTech(assignedTechData);
       setEligibleTechs(eligibleTechsData);
+      setDispatchLocation(dispatchLocData);
       hasLoadedRef.current = true;
     } catch (err: any) {
       console.error("[TerraByte] Failed to load repair details:", err);
@@ -173,11 +254,11 @@ function RepairHub() {
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, tb.repairs, tb.equipment, tb.technicians, tb.farmers]);
 
   useEffect(() => {
     void loadData();
-  }, [loadData]);
+  }, [loadData, tb.repairs, tb.serviceCentrePartRequests]);
 
   // Scoped Supabase Realtime synchronization with debounced coalescing
   useRepairTicketRealtime({
@@ -246,16 +327,107 @@ function RepairHub() {
   const partsHold = (r.parts_hold as any) || null;
   const completion = (r.completion_details as any) || null;
 
-  const pendingQuote = quotes.find((q) => q.status === "PENDING");
-  const approvedQuote = quotes.find((q) => q.status === "APPROVED");
-  const activeQuote = pendingQuote || approvedQuote || quotes[quotes.length - 1];
-  const viewQuote = activeQuote ? toQuoteView(activeQuote) : null;
+  const demoRepair = tb.repairs.find(
+    (x) =>
+      x.id === id ||
+      (x as any).jobNumber === id ||
+      (r && (x.id === r.job_number || x.id === r.id))
+  );
+
+  const demoQuoteDetail: QuoteDetail | null = demoRepair?.quote
+    ? {
+        id: `demo-quote-${demoRepair.id}`,
+        repair_request_id: r.id,
+        technician_id: r.technician_id || "demo-tech",
+        version: demoRepair.quote.version || 1,
+        status: (() => {
+          if (!demoRepair.quote.sentAt) return "PENDING";
+          if (r.status === "QUOTE_PENDING" || r.status === "QUOTE_REVISED") return "PENDING";
+          if (r.status === "WAITING_FOR_PARTS") {
+            const tl = [
+              ...(r.repair_timeline || []).map((t) => ({
+                at: new Date(t.created_at).getTime(),
+                note: t.note || "",
+              })),
+              ...(demoRepair.timeline || []).map((t) => ({
+                at: t.at,
+                note: t.note || "",
+              })),
+            ];
+            let lastApprovalIdx = -1;
+            let lastRevisionIdx = -1;
+            for (let i = 0; i < tl.length; i++) {
+              const note = (tl[i]?.note || "").toLowerCase();
+              if (note.includes("approved")) lastApprovalIdx = i;
+              if (
+                note.includes("revised quote") ||
+                note.includes("quote formulated") ||
+                note.includes("quote sent") ||
+                note.includes("parts requested")
+              ) {
+                lastRevisionIdx = i;
+              }
+            }
+            if (lastApprovalIdx === -1) return "PENDING";
+            if (lastRevisionIdx >= lastApprovalIdx) return "PENDING";
+            const lastApprovalAt = tl[lastApprovalIdx]?.at || 0;
+            if (demoRepair.quote.sentAt >= lastApprovalAt) return "PENDING";
+            return "APPROVED";
+          }
+          return r.status === "IN_PROGRESS" || r.status === "COMPLETED" ? "APPROVED" : "PENDING";
+        })(),
+        labour_description: demoRepair.quote.labourDesc || "Standard Labour",
+        labour_amount: demoRepair.quote.labour,
+        tax_percent: demoRepair.quote.taxPct,
+        estimated_completion: demoRepair.quote.eta,
+        warranty_terms: demoRepair.quote.warranty,
+        sent_at: new Date(demoRepair.quote.sentAt).toISOString(),
+        quote_items: (demoRepair.quote.parts || []).map((p, idx) => ({
+          id: `demo-item-${idx}`,
+          quote_id: `demo-quote-${demoRepair.id}`,
+          part_name: p.name,
+          part_spec: p.spec,
+          quantity: p.qty,
+          unit_price: p.price,
+          part_source: p.source,
+          catalog_part_id: (p as any).catalogPartId || null,
+          created_at: new Date().toISOString(),
+        })),
+        totals: (() => {
+          const t = quoteTotals(demoRepair.quote);
+          return {
+            partsTotal: t.parts,
+            labourAmount: t.labour,
+            taxAmount: t.tax,
+            totalAmount: t.total,
+          };
+        })(),
+        created_at: new Date(demoRepair.quote.sentAt).toISOString(),
+        updated_at: new Date(demoRepair.quote.sentAt).toISOString(),
+      }
+    : null;
+
+  const allQuotes = quotes.length > 0 ? quotes : demoQuoteDetail ? [demoQuoteDetail] : [];
+  const pendingQuote = allQuotes.find((q) => q.status === "PENDING");
+  const approvedQuote = allQuotes.find((q) => q.status === "APPROVED");
+  const activeQuote = pendingQuote || approvedQuote || allQuotes[allQuotes.length - 1];
+  const viewQuote = activeQuote ? toQuoteView(activeQuote) : demoRepair?.quote || null;
+
+  const isAwaitingDecision = Boolean(
+    pendingQuote ||
+      r.status === "QUOTE_PENDING" ||
+      (r.status === "WAITING_FOR_PARTS" && Boolean(pendingQuote))
+  );
 
   const handleApproveQuote = async () => {
     if (!pendingQuote || actionInProgress) return;
     setActionInProgress(true);
     try {
-      await approveQuote(pendingQuote.id);
+      if (pendingQuote.id.startsWith("demo-") || !isUuid(pendingQuote.id)) {
+        actions.approveQuote(r.job_number || r.id);
+      } else {
+        await approveQuote(pendingQuote.id);
+      }
       toast.success("Repair authorized. Technician notified.");
       await loadData();
     } catch (err: any) {
@@ -271,11 +443,18 @@ function RepairHub() {
 
     setActionInProgress(true);
     try {
-      await rejectQuote(pendingQuote.id, {
-        reason: revisionReason,
-        explanation: revisionReason === "Other" ? otherExplanation.trim() : undefined,
-        photo: photoUrl.trim() || undefined,
-      });
+      if (pendingQuote.id.startsWith("demo-") || !isUuid(pendingQuote.id)) {
+        actions.declineQuote(
+          r.job_number || r.id,
+          revisionReason === "Other" ? otherExplanation.trim() : revisionReason
+        );
+      } else {
+        await rejectQuote(pendingQuote.id, {
+          reason: revisionReason,
+          explanation: revisionReason === "Other" ? otherExplanation.trim() : undefined,
+          photo: photoUrl.trim() || undefined,
+        });
+      }
       setDeclining(false);
       setOtherExplanation("");
       setPhotoUrl("");
@@ -371,9 +550,22 @@ function RepairHub() {
     <div className="space-y-5">
       <ContextualBack to={backTarget.to} label={backTarget.label} />
       <div>
-        <p className="font-mono text-sm text-muted-foreground">
-          {r.job_number || r.id} · reported {ago(new Date(r.created_at).getTime())} ago
-        </p>
+        <div className="flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground">
+          <span className="font-mono">{r.job_number || r.id}</span>
+          <span>·</span>
+          <span>reported {ago(new Date(r.created_at).getTime())} ago</span>
+          {r.location ? (
+            <>
+              <span>·</span>
+              <span className="font-medium text-foreground">{r.location}</span>
+            </>
+          ) : null}
+          {dispatchLocation && (
+            <span className="inline-flex items-center gap-1 rounded-md bg-success/15 px-2 py-0.5 text-xs font-semibold text-success">
+              <MapPin className="h-3 w-3" /> Exact GPS saved ({formatGpsAccuracy(dispatchLocation.accuracy)})
+            </span>
+          )}
+        </div>
         <h1 className="text-3xl font-bold">
           {e?.make || "Equipment"} {e?.model || ""}
         </h1>
@@ -470,8 +662,25 @@ function RepairHub() {
           </div>
           <div className="grid gap-4 p-5 sm:grid-cols-2">
             <div>
-              <Label>Missing part</Label>
-              <p className="text-lg font-bold">{partsHold?.part || "Spare part"}</p>
+              <Label>Missing part{partsHold?.items && partsHold.items.length > 1 ? "s" : ""}</Label>
+              {partsHold?.items && partsHold.items.length > 1 ? (
+                <ul className="mt-1 space-y-1.5 text-sm font-semibold">
+                  {partsHold.items.map((item: any, idx: number) => (
+                    <li key={idx} className="flex items-center justify-between rounded-lg bg-muted/40 px-2.5 py-1.5">
+                      <span>
+                        {item.part || item.name} {item.quantity ? `(Qty: ${item.quantity})` : ""}
+                      </span>
+                      {item.eta && (
+                        <span className="text-xs font-normal text-muted-foreground">
+                          {formatEtaDateTime(item.eta)}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-lg font-bold">{partsHold?.part || "Spare part"}</p>
+              )}
             </div>
             <div>
               <Label>Expected arrival</Label>
@@ -562,13 +771,18 @@ function RepairHub() {
         </Card>
       )}
 
-      {r.status === "QUOTE_PENDING" && viewQuote && (
+      {viewQuote && isAwaitingDecision && (
         <section className="rounded-2xl border-2 border-accent bg-card p-5">
-          <h2 className="text-2xl font-bold">
-            {viewQuote.version > 1
-              ? `Revised quote ready for your review (v${viewQuote.version})`
-              : "Review your repair quote"}
-          </h2>
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <h2 className="text-2xl font-bold">
+              {viewQuote.version > 1
+                ? `Revised quote ready for your review (v${viewQuote.version})`
+                : "Review your repair quote"}
+            </h2>
+            <span className="rounded-full bg-accent/15 px-3 py-1 text-xs font-semibold text-accent border border-accent/30">
+              Awaiting your approval
+            </span>
+          </div>
           <p className="mb-4 mt-1 flex items-center gap-2 rounded-xl bg-primary/10 p-3 text-sm font-semibold text-primary">
             <ShieldCheck className="h-5 w-5 shrink-0" /> No work or charges start until you approve
             this quote.
@@ -681,6 +895,49 @@ function RepairHub() {
                 </button>
               </div>
             </div>
+          )}
+        </section>
+      )}
+
+      {viewQuote && !isAwaitingDecision && (
+        <section className="rounded-2xl border border-border bg-card p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold">
+              {viewQuote.version > 1
+                ? `Approved repair quote (v${viewQuote.version})`
+                : "Approved repair quote"}
+            </h2>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+              <CheckCircle2 className="h-3.5 w-3.5" /> Approved
+            </span>
+          </div>
+          <p className="flex items-center gap-2 rounded-xl bg-emerald-500/10 p-3 text-xs font-medium text-emerald-800 dark:text-emerald-300">
+            <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-600" />
+            Repair authorized under these terms. No unexpected charges without your approval.
+          </p>
+          {quoteVersions.length >= 2 && quoteVersions[quoteVersions.length - 2] && quoteVersions[quoteVersions.length - 1] && (
+            <div className="mb-2">
+              <QuoteComparison
+                v1={quoteVersions[quoteVersions.length - 2]}
+                v2={quoteVersions[quoteVersions.length - 1]}
+              />
+            </div>
+          )}
+          <QuoteTable q={viewQuote} />
+          {quoteVersions.length > 1 && (
+            <details className="mt-3 text-xs text-muted-foreground">
+              <summary className="cursor-pointer font-medium hover:text-foreground">
+                View previous revisions ({quoteVersions.length - 1})
+              </summary>
+              <div className="mt-3 space-y-3 pt-2">
+                {quoteVersions.slice(0, -1).map((v) => (
+                  <div key={v.id} className="rounded-lg border border-border/60 bg-muted/20 p-3">
+                    <p className="font-semibold text-foreground">Version {v.version}</p>
+                    <QuoteTable q={toQuoteView(v)} />
+                  </div>
+                ))}
+              </div>
+            </details>
           )}
         </section>
       )}
@@ -876,13 +1133,6 @@ function RepairHub() {
           }
         />
       </Card>
-
-      {approvedQuote && ["IN_PROGRESS", "WAITING_FOR_PARTS"].includes(r.status) && (
-        <Card>
-          <h2 className="mb-3 text-lg font-bold">Approved quote</h2>
-          <QuoteTable q={toQuoteView(approvedQuote)} />
-        </Card>
-      )}
 
       {r.status !== "REQUESTED" && r.status !== "COMPLETED" && (
         <AssessmentCard r={{ assessment: assessmentObj } as any} compact />

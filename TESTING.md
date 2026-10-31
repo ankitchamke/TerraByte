@@ -28,7 +28,7 @@ All demo accounts use password: `terrabyte2026`. On `/login`, you can either cli
 2. On `/farmer`, inspect ticket `TB-8841`:
    - Note the status: **"Waiting for Parts"**.
    - Expand ticket details: note the missing component (*Bosch injector nozzle*), supplier delay reason, and revised completion time.
-3. Open ticket `TB-4489` (or `TB-8902`):
+3. Open ticket `TB-4489`:
    - Notice the **Itemized Quote Table** detailing spare parts, unit prices, supplier origin, labour charges, and taxes.
    - For `TB-4489`, view the **<QuoteComparison />** component displaying side-by-side Quote v1 vs v2 diffs (`+ Added`, `- Removed`, `Modified`).
 4. Scroll to **Ticket Discussion** (`<RepairChat />`):
@@ -232,7 +232,71 @@ All demo accounts use password: `terrabyte2026`. On `/login`, you can either cli
 | **E2E-07** | Permanent Service History | Phase 4, 5.6 | Completed repair auto-commits immutable maintenance record into `service_history` (`INV-TB-xxxx`). | **PASS** |
 | **E2E-08** | Operations Triage & SLA | Phase 5 | Service Centre District Operations Board with Active, Completed, and Cancelled triage. | **PASS** |
 | **E2E-09** | Realtime Sync | Phase 7 | Status updates and chat messages propagate live via Supabase Realtime with 300ms coalescing. | **PASS** |
-| **E2E-10** | Multimodal Gemini AI | Phase 8+ | *Future Roadmap*: Multimodal image defect classification via Gemini 2.5 API. | **ROADMAP** |
+| **P8-01** | Health Auth Gate | Phase 8 | With current secret configured, `GET /api/health` with missing/invalid token returns HTTP 401 plain text (`"Unauthorized"`) without database probe. | **LOCAL PASS** |
+| **P8-02** | Health Fail-Closed Config | Phase 8 | In local/test environment with all current-secret aliases unset (`CRON_SECRET`, `TERRABYTE_CRON_SECRET`), `GET` returns HTTP 500 plain text (`"Server configuration error"`). | **LOCAL PASS** |
+| **P8-03** | Query Secret Rejection | Phase 8 | With current secret configured, `GET /api/health?secret=dummy-test-value` or `?token=dummy-test-value` strictly rejected with HTTP 401 plain text (`"Unauthorized"`) without database probe. *(Security Note: Real secrets must never be placed in URLs or query parameters because URLs are captured in access logs, proxy caches, and browser history).* | **LOCAL PASS** |
+| **P8-04** | Response Sanitization | Phase 8 | Authenticated response emits minimal sanitized payload (`{ status, timestamp, checks: { database }, message?: string }`); zero raw errors in response or logs. | **LOCAL PASS** |
+| **P8-05** | Low-Privilege Probe | Phase 8 | Probe strictly requires validated public key (`sb_publishable_` or legacy JWT with decoded `role: "anon"`); rejects `sb_secret_` and non-anon roles; probes `profiles.id` with `limit(1)`. Live anon SELECT grant unconfirmed. | **PENDING LIVE QA** |
+| **P8-06** | Decoupled Liveness HEAD | Phase 8 | `HEAD /api/health` returns HTTP 200 without database query or auth requirement (liveness only). | **LOCAL PASS** |
+| **E2E-10** | Multimodal Gemini AI | Future | *Deferred Roadmap*: Multimodal image defect classification via Gemini 2.5 API. | **ROADMAP** |
+
+---
+
+### 7.1 Phase 8A Manual Verification Checklist (Pending Owner Execution)
+
+> [!NOTE]
+> **Automated Verification Status**: The local health route handlers have been exercised and verified via automated smoke tests (`P8-01` auth gate, `P8-02` fail-closed 500, `P8-03` query credential rejection, `P8-04` response sanitization, and `P8-06` decoupled HEAD 200). These do not require repeating.
+>
+> **Scope Exclusions**: User-facing Farmer, Technician, and Service Centre portal flows, as well as multi-user Realtime synchronization, are unaffected by this isolated server-to-server health endpoint and require no regression testing.
+
+The remaining checks require live environment access:
+
+1. **Lightweight HEAD Liveness (Safe Check)**:
+   - Command: `curl -I https://<deploy-or-local-url>/api/health`
+   - Expected Result: HTTP 200, empty body, header `X-Liveness-Only: true`. Zero secrets needed, zero database queries initiated.
+2. **Low-Privilege Supabase Health Probe (`P8-05`)**:
+   - In a preview or live environment with Supabase keys configured, invoke `GET /api/health` with `Authorization: Bearer <CRON_SECRET>`.
+   - Expected Result: HTTP 200 sanitized JSON (`{ status: "healthy", timestamp, checks: { database: "operational" } }`) if low-privilege `profiles.id` read is permitted; otherwise HTTP 503 (`{ status: "unhealthy", timestamp, checks: { database: "error" }, message?: string }`). If SQLSTATE `42501` (permission denied) occurs, report it; do not alter database grants or RLS policies.
+3. **Vercel Cron Runtime Verification (Production Only)**:
+   - Scheduled Vercel Cron jobs (`0 5 * * 1,3,5` configured in `vercel.json`) execute strictly on production deployments, not on local or preview deployments.
+   - Inspect Vercel Dashboard $\rightarrow$ Settings $\rightarrow$ Cron Jobs logs on the production deployment. Confirm Vercel automatically sends `Authorization: Bearer <CRON_SECRET>`.
+   - *Status*: If a production deployment is not yet available, leave Cron runtime verification as **PENDING LIVE QA**. Do not deploy, promote, or trigger manual production requests.
+
+---
+
+### 7.2 Phase 8B.1 Service Location Intake, Optional GPS & Technician Directions Matrix & Checklist
+
+| Test ID | Test Scenario | Persona / Setup | Action | Expected Result | Actual Result | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :---: |
+| **P8B.1-01** | Static Type Check & Build | System | Run `npx tsc --noEmit` and `npm run build` | Zero TypeScript errors; clean production build with Nitro Vercel output. | 0 type errors; build clean in 1.16s | **AUTOMATED PASS** |
+| **P8B.1-02** | Targeted Code Hygiene & Lint | System | Run targeted `eslint` and `git diff --check` on modified files | Clean linting with zero whitespace or formatting errors. | Clean lint on modified files; zero diff check warnings | **AUTOMATED PASS** |
+| **P8B.1-03** | Automated Location & RLS Simulation | System | Run Phase 8B.1 test suite (`scratch/test-phase8b1.mjs`) | 14 official tahsils verified; coordinate bounds/Null Island tested; URL encoding checked; RLS logic verified across 6 persona states. | 7/7 test suites passed | **AUTOMATED PASS** |
+| **P8B.1-04** | Farmer Draft Persistence with Village & Tahsil | Farmer demo account (`farmer.nagpur@terrabyte.demo`) | On `/farmer/report-breakdown`, enter village and select tahsil; reload browser | Restored banner appears; village and tahsil inputs restore exactly as entered. GPS is NOT in draft. | Awaiting manual QA | **PENDING MANUAL QA** |
+| **P8B.1-05** | Optional GPS Capture & In-Memory Isolation | Farmer demo account | Click "Use Current Location" in Step 3; test grant/denial | If granted: displays accuracy badge and clear button. Not saved to localStorage or URL. | Awaiting manual QA | **PENDING MANUAL QA** |
+| **P8B.1-06** | Database Migration & API Resolution | System | Verify `public.repair_dispatch_locations` in `hwdrypkvszwrcraujctw` | Table exists; migration recorded; PostgREST returns HTTP 200 OK. | Verified in PostgreSQL catalogs & PostgREST API | **VERIFIED PASS** |
+| **P8B.1-07** | Breakdown Submission with GPS | Farmer demo account | Submit ticket with coarse location + GPS | Ticket created; GPS row created in `repair_dispatch_locations`; header badge displays. | Awaiting manual QA | **PENDING MANUAL QA** |
+| **P8B.1-07** | Technician Open-Queue Privacy Boundary | Technician demo account (`tech.nagpur@terrabyte.demo`) | View unassigned open jobs on `/technician` | Job card displays coarse location text ONLY; exact GPS is filtered by database RLS. | Awaiting manual QA | **PENDING MANUAL QA** |
+| **P8B.1-08** | Assigned Technician Directions & Google Maps Modal | Technician demo account | Open assigned job on `/technician/job/:id` | Displays "Exact GPS saved" badge and "Get directions" button; modal confirms external link to Google Maps. | Awaiting manual QA | **PENDING MANUAL QA** |
+| **P8B.1-09** | Admin Dispatch Supervision & Directions | Admin demo account (`admin.nagpur@terrabyte.demo`) | View repair on `/admin/repair/:id` | Displays coarse location, GPS badge, and "Get directions" button in Contacts card. | Awaiting manual QA | **PENDING MANUAL QA** |
+| **P8B.1-10** | Cross-Farmer RLS Isolation | Farmer 2 demo account (`farmer2.nagpur@terrabyte.demo`) | Attempt direct URL access to Farmer 1's newly created repair | Request blocked / not found under RLS; private data isolated. | Awaiting manual QA | **PENDING MANUAL QA** |
+| **P8B.1-11** | Legacy Fixtures & Demo Reset Compatibility | System / Demo Accounts | Inspect demo fixtures (`reset_demo_data()`) | Demo tickets TB-8841, TB-8902, and TB-8898 remain compatible with single text `location` column; zero schema drift. | Verified against migrations & types | **VERIFIED PASS** |
+| **P8B.1-12** | Server-Side Route Estimation Engine & Resolution | System | Run `node tests/route-estimate.test.mjs` | Metric conversion, OSRM public routing service (`TRAFFIC_UNAWARE`), 3-state GPS visibility partition, and UUID vs job_number resolution. | 21/21 tests passing | **AUTOMATED PASS** |
+| **P8B.1-13** | Technician Job Detail ID Resolution (`TB-7524` Fix) | Technician demo account (`tech.nagpur@terrabyte.demo`) | View assigned job via `/technician/job/:id` with job number | Successfully resolves UUID from job number string; loads private `repair_dispatch_locations` record. | 0 type errors; verified via unit tests | **VERIFIED AUTOMATED** |
+| **P8B.1-14** | Demo-Data Cleanup & Restricted Reset RPC | System | Run `node tests/cleanup-verification.test.mjs` | Validates 3 retained personas, clean seed baseline, candidate filter guard, and dual-key RPC constraints. | 4/4 tests passing | **AUTOMATED PASS** |
+
+> [!NOTE]
+> **Owner-Confirmed Baseline**: The product owner has confirmed that OSRM in-app route calculation/distance and the demo-data cleanup are working in manual testing. Granular checklist items below remain documented for reference; do not repeat tests without a concrete reason.
+
+#### Manual QA Execution Checklist for Product Owner:
+1. **New Request Submission with GPS (Farmer Balasaheb)**: Sign in as `farmer.nagpur@terrabyte.demo` / password `terrabyte-demo`. Navigate to `/farmer/report-breakdown`. Select equipment, pick symptoms, enter village (e.g. "Dorli"), select tahsil (e.g. "Katol"), and click **"Use Current Location"** (grant browser geolocation permission). Verify green badge `Exact GPS attached (±Xm)` appears. Complete summary and submit. Confirm farmer repair detail on `/farmer/repair/:id` displays **`Exact GPS saved (±Xm)`** in the subtitle.
+2. **Assigned Technician Navigation (Technician Ramesh Kumar)**: Sign in as `tech.nagpur@terrabyte.demo` / password `terrabyte-demo`. Open the newly created job on `/technician/job/:id` (assigned to Ramesh). Confirm the Farmer card displays **`Exact GPS saved (±Xm)`** and the **"Get directions"** button. Click "Get directions": confirm the modal displays the exact latitude and longitude, area, and an **"Open Google Maps"** action directing to those exact coordinates.
+3. **In-App Distance & ETA Estimate**: In the same assigned job view on `/technician/job/:id`, locate the driving estimate card below the contacts. Confirm the pre-action disclosure is displayed. Click **"Get driving distance & ETA"** and allow browser location. Confirm distance (km) and driving time (mins/hrs) render, with standard disclaimer: *"Standard estimate (traffic not factored)."*
+4. **Deny Location Permission**: In an incognito or separate window, open the job and click "Get driving distance & ETA", then click "Block" or "Deny" when prompted for location. Confirm a friendly error appears ("Location permission was denied...") and the external "Get directions" button remains fully available and functional.
+5. **Privacy Boundary Enforcement**:
+   - As an **unassigned technician** (or signed in as a technician who is NOT assigned to this job): Confirm the job cannot be opened (`"This job isn't assigned to you"`), and on the open queue cards only the coarse village/tahsil appears.
+   - As a **different farmer** (`farmer2.nagpur@terrabyte.demo`): Confirm navigating directly to the ticket URL is blocked by RLS.
+6. **Admin Supervision (Service Centre Admin)**: Sign in as `admin.nagpur@terrabyte.demo` / password `terrabyte-demo`. Navigate to `/admin/repair/:id` for the new ticket. Confirm both the `Exact GPS saved` badge and "Get directions" button are available and functional in the Contacts card.
+7. **Note on TB-7524**: During earlier testing, a demo data reset (`reset_demo_data()`) was executed which restored baseline demo tickets and cleaned up transient test records, cascade-deleting `TB-7524`. The underlying issue (where `getRepairDispatchLocation` was passed human-readable `TB-7524` instead of UUID) has been resolved in code. The product owner must submit a **new request** following Step 1 above for manual QA verification.
 
 ---
 
@@ -245,83 +309,72 @@ No phase promotion or production deployment may occur if:
 4. Any client request can read or modify another user's private profile.
 5. Farmer dashboards render mock data or cross-contaminate data across different farmers.
 6. TypeScript errors (`tsc --noEmit`) or Vite build failures exist.
-
+7. Secrets or credentials are committed in repository files, or health/telemetry probes bypass authentication or RLS.
 
 ---
 
-### Phase 9.1 — Service Centre Parts Pickup & Demo Inventory Verification Suite
+### Phase 9.1 & 9.2 — Service Centre Parts Pickup, Stock Movements & Sales Verification Suite
 
 | Test ID | Test Case | Target State / Persona | Action / Steps | Expected Result | Verification Method | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :---: |
 | **P9.1-01** | Database schema, constraints, location column, safeupdate compliance & idempotent upsert | `public.service_centre_parts`, `service_centre_part_requests`, `service_centre_stock_audit` | Inspect migration `20261029100000_phase9_1_parts_pickup.sql` | Tables created with `stock_quantity >= 0`, `unit_price >= 0`, `quantity > 0`, `location` column, status check `('PENDING', 'HANDED_OFF', 'CANCELLED')`, audit foreign keys, safeupdate `WHERE` clauses, and idempotent `ON CONFLICT (part_number) DO UPDATE SET`. | `tests/parts-desk.test.mjs` & SQL schema inspection | **PASS** |
 | **P9.1-02** | Strict RLS: Technician assignment authorization & Farmer isolation | Unassigned tech, assigned tech, farmer, admin | Test SELECT, INSERT, UPDATE across roles | Farmers denied SELECT/mutation; technicians view catalog and request parts only for repairs assigned to them; admins have full management. | `tests/parts-desk.test.mjs` & RLS policy audit | **PASS** |
-| **P9.1-03** | Canonical five demo parts population, verified equipment compatibility & depot locations | Demo parts store & catalog | Query parts via `getDemoParts()` | Exactly 5 canonical parts returned (`0433171`, `005556958R1`, `AL120788`, `HY-GARD-15W30`, `26243171`) with verified compatibility (`Mahindra 575 DI`, `John Deere 5050D`, `Swaraj 744 FE`) and shelf locations (`Depot Shelf A-02`, `A-03`, `B-01`, `Drum Rack B-04`, `Shelf C-01`). | `tests/parts-desk.test.mjs` catalog completeness test | **PASS** |
-| **P9.1-04** | Multi-field technician part search & filtering across name, SKU, spec, category, model, and shelf location | Technician search modal | Search query simulation | Matches across tractor model (Mahindra 575 DI $\rightarrow$ 3 parts, John Deere $\rightarrow$ 2 parts), SKU/part number (`0433171`), brand/spec (`Bosch`, `Lucas-TVS`), and physical shelf location (`Shelf B-01`, `Drum Rack`). | `tests/parts-desk.test.mjs` multi-field search test | **PASS** |
-| **P9.1-05** | Deterministic stock quantity restoration & request/audit log purging on Reset Demo | `reset_demo_data()` / `resetDemo()` | Trigger demo reset | Baseline stock quantities restored deterministically (Bosch: 3, Filter: 8, Seal kit: 2, Hydraulic oil: 5, Starter motor: 1); in-flight requisitions and stock audits purged. | `tests/parts-desk.test.mjs` deterministic reset test | **PASS** |
-| **P9.1-06** | Concurrency-safe atomic handoff, on-hand vs pending request separation & audit logging | Handoff workflow | Request part, inspect on-hand stock prior to handoff, confirm handoff | On-hand quantity remains distinct until physical handoff; handoff decrements stock atomically to 0; records audit log with `change_quantity: -1`; repeated handoff blocked with `Requisition is already HANDED_OFF`. | `tests/parts-desk.test.mjs` atomic handoff test | **PASS** |
+| **P9.1-03** | Canonical five demo parts population, verified equipment compatibility & depot locations | Demo parts store & catalog | Query parts via `getDemoParts()` | Exactly 5 canonical parts returned (`0433171`, `005556958R1`, `AL120788`, `HY-GARD-15W30`, `26243171`) with verified compatibility and shelf locations. | `tests/parts-desk.test.mjs` catalog completeness test | **PASS** |
+| **P9.1-04** | Multi-field technician part search & filtering across name, SKU, spec, category, model, and shelf location | Technician search modal | Search query simulation | Matches across tractor model, SKU, spec, and physical shelf location. | `tests/parts-desk.test.mjs` multi-field search test | **PASS** |
+| **P9.1-05** | Deterministic stock quantity restoration & request/audit log purging on Reset Demo | `reset_demo_data()` / `resetDemo()` | Trigger demo reset | Baseline stock quantities restored deterministically (3, 8, 2, 5, 1); in-flight requisitions, sales, and stock audits purged. | `tests/parts-desk.test.mjs` deterministic reset test | **PASS** |
+| **P9.1-06** | Concurrency-safe atomic handoff, on-hand vs pending request separation & audit logging | Handoff workflow | Request part, inspect on-hand stock prior to handoff, confirm handoff | On-hand quantity remains distinct until physical handoff; handoff decrements stock atomically; records audit log with `ISSUED_TO_REPAIR`; repeated handoff blocked. | `tests/parts-desk.test.mjs` atomic handoff test | **PASS** |
 | **P9.1-07** | Farmer privacy boundary quarantine from internal stock, costs, and requisitions | Farmer Repair Detail (`/farmer/repair/:id`) | Inspect route code & DOM queries | Zero imports or queries to `service_centre_parts` or requests; zero rendering of depot stock, unit costs, or audit remarks. | `tests/parts-desk.test.mjs` route code audit | **PASS** |
+| **P9.2-01** | Stock movement ledger, receiving deliveries & returns handling | Stock audit ledger, `receiveStock`, `returnPart` | Receive supplier delivery and return unused repair parts | Stock increments correctly, immutable `RECEIVED` and `RETURNED` movements logged with references, net sales adjusted. | `tests/parts-desk.test.mjs` movement test | **PASS** |
+| **P9.2-02** | Quote quantity caps: cumulative sales across requisitions never exceed approved quote lines | Requisitions against approved quote | Multiple requisitions against approved quote line item | Sales capped at approved quote quantity; excess requisitions remain issued to repair without exceeding approved quote line items. | `tests/parts-desk.test.mjs` quota cap test | **PASS** |
+| **P9.2-03** | Repair/service location display in Parts Desk | Parts Desk `/admin/parts-desk` | View technician requests and sales ledger | Displays linked Phase 8 repair location (`Katol, Nagpur`) clearly distinguished from depot shelf location. | `tests/parts-desk.test.mjs` location test | **PASS** |
+| **P9.2-04** | Reset Demo safeupdate compliance & demo-only scoping | `reset_demo_data()` RPC & migrations | Inspect SQL statements in migrations `20261028110000`, `20261029100000`, and `20261029120000` | Every DELETE statement contains an explicit, non-trivial WHERE clause; rejects `WHERE id IS NOT NULL`, `1=1`, `true`; scopes strictly to demo UUIDs and repair IDs. | `tests/cleanup-verification.test.mjs` & `tests/parts-desk.test.mjs` | **PASS** |
+| **P9.2-05** | Reset Demo idempotency, empty table safety & baseline canonical restoration | Store reset & RPC logic | Repeatedly invoke `resetDemo()` sequentially | Deterministically restores canonical 5 parts with stock counts (3, 8, 2, 5, 1); purges requisitions, movements, and sales; bypasses child table deletions safely when demo repair array is empty; zero errors on repeat execution. | `tests/parts-desk.test.mjs` repeat reset test | **PASS** |
+| **P9.2-06** | Real user data preservation & Reset Demo confirmation modal copy alignment | Shell `<AlertDialog />` in `src/components/tb.tsx` | Inspect modal copy and RLS/store boundaries | Modal explicitly clarifies that demo tickets, quotes, parts requisitions, and audit logs are reset while real user data and user accounts are preserved. | `tests/parts-desk.test.mjs` modal verification test | **PASS** |
 
 ---
 
-## 9. Phase 9.1 Manual QA Walkthrough (For Owner Execution)
+## 9. Phase 9 Manual QA Walkthrough (For Owner Execution)
 
 > [!IMPORTANT]
-> The automated test suite has passed (7/7 passing in `tests/parts-desk.test.mjs`). The following manual QA steps are documented for the owner's verification and have **not** been marked as passed.
+> The automated test suite has passed. The following manual QA steps are documented for the owner's verification and have **not** been marked as passed.
 
-### Step 1: Service Centre Parts Desk Overview & Depot Inventory Verification
+### Step 1: Service Centre Parts Desk Overview & Location Verification
 1. Log in as **Nagpur Service Centre** (`admin.nagpur@terrabyte.demo` / `terrabyte2026`).
-2. On `/admin`, notice the **"Parts Desk"** navigation link in the top bar.
-3. Click **"Parts Desk"** to navigate to `/admin/parts-desk`:
-   - Verify the informational banner: *"Nagpur Central Depot · Approved demo catalog for Nagpur RISE evaluation."*
-   - Verify metrics cards: Total Items (5), Low Stock count (2 — Starter Motor & Seal Kit), Pending Requisitions count (0), Total Stock Value (₹19,050).
-   - Switch to the **"Depot Inventory"** tab: verify the 5 canonical tractor spare parts:
-     1. `0433171` — **Fuel Injector Nozzle Set** (Fuel system · Bosch · Compatible with *Mahindra 575 DI*) · `Depot Shelf A-02` · ₹2,200 · **3 on hand**
-     2. `005556958R1` — **Inline Fuel Filter** (Fuel system · Mahindra Genuine · Compatible with *Mahindra 575 DI*) · `Depot Shelf A-03` · ₹350 · **8 on hand**
-     3. `AL120788` — **Lift Cylinder Seal Kit** (Hydraulics · John Deere OEM · Compatible with *John Deere 5050D*) · `Depot Shelf B-01` · ₹1,650 · **2 on hand**
-     4. `HY-GARD-15W30` — **Hydraulic Oil 15W-30** (Hydraulics · John Deere Hy-Gard · Compatible with *John Deere 5050D*) · `Depot Drum Rack B-04` · ₹320 · **5 on hand**
-     5. `26243171` — **Starter Motor Assembly** (Electrical · Lucas-TVS · Compatible with *Mahindra 575 DI*, *Swaraj 744 FE*) · `Depot Shelf C-01` · ₹5,800 · **1 on hand**
-   - Click **"Adjust Stock"** on the Bosch nozzle:
-     - Increase quantity by `+2` with reason *"Depot transfer receipt"*.
-     - Verify stock updates to `5 on hand` and the entry is recorded in the **"Stock Audit Log"** tab with timestamp, admin email, previous count (3), new count (5), and reason.
-
-### Step 2: Technician Parts Requisition from Active Job
-1. Sign out and log in as **Ramesh Kumar** (`tech.nagpur@terrabyte.demo` / `terrabyte2026`).
-2. On `/technician`, open active assigned repair **`TB-8841`** (Mahindra 575 DI).
-3. Scroll to the **"Spare Parts Pickup"** card:
-   - Click **"Request Part from Depot"**.
-   - In the modal dialog, test multi-field search:
-     - Search `"Mahindra"`: displays 3 compatible parts (Nozzle, Fuel Filter, Starter Motor).
-     - Search `"Shelf A-02"`: displays the Bosch Injector Nozzle.
-     - Search `"Bosch"`: displays the Bosch Injector Nozzle.
-   - Verify on-hand stock is clearly labeled (e.g., `3 on hand` or updated count).
-   - Select quantity `1`, add note *"Urgent for fuel injection pump overhaul"*, and submit requisition.
-   - Verify the request appears under the card with status badge **"Pending Handoff"**. Notice the stock on hand remains unreduced until handoff is confirmed.
-
-### Step 3: Service Centre Confirmation & Atomic Stock Decrement
-1. Switch back or log in as **Nagpur Service Centre** (`admin.nagpur@terrabyte.demo`).
 2. Navigate to `/admin/parts-desk`:
-   - Under the **"Pending Requisitions"** tab, verify Ramesh Kumar's requisition for `TB-8841` appears.
-   - Click **"Confirm Handoff"**.
-   - Verify status transitions to **"Handed Off"** and depot stock count decrements by 1.
-   - Check the **"Stock Audit Log"** tab: verify the handoff is logged with previous stock, new stock, and reference to `TB-8841`.
+   - Under **Technician Requests**, verify each request card displays:
+     - **Service Location**: e.g., *"Katol, Nagpur"* (distinguished from part shelf location).
+     - **Depot Shelf Location**: e.g., *"Depot Shelf A-02"*.
+   - Switch to **Repair Sales & History**:
+     - Verify metrics labeled as **"Fulfilled Quote Value (Sales)"**.
+     - Verify informational disclosure: *"Parts physically issued against farmer-approved quotes. Payment collection is not processed."*
+     - Verify sales table displays linked repair job number and service location.
 
-### Step 4: Out-of-Stock Notice & Parts Hold Workflow
-1. As technician on an assigned repair, open the Parts Pickup dialog.
-2. Filter or search for a part with 0 stock (or temporarily adjust a part to 0 stock as admin).
-3. Verify the modal shows an amber **"Out of Stock"** banner.
-4. Verify the modal guides the technician: *"This component is currently unavailable at the Service Centre depot. Place the repair on hold with a supplier ETA using the Pause for Parts action."*
-5. Close modal, click **"Pause for parts"** on the workbench, enter missing component and estimated delivery date, and confirm.
-6. Verify repair transitions cleanly to `WAITING_FOR_PARTS` without state conflicts.
+### Step 2: Receive Stock Delivery
+1. In `/admin/parts-desk` $\rightarrow$ **Depot Inventory**, click **"Receive Stock"**.
+2. Select part (e.g., Fuel Filter), enter quantity `5`, reason *"Supplier delivery"*, and confirm.
+3. Verify on-hand stock increments from 8 to 13 and a `RECEIVED` movement is recorded.
 
-### Step 5: Farmer Privacy Quarantine
-1. Sign out and log in as **Balasaheb Patil** (`farmer.nagpur@terrabyte.demo` / `terrabyte2026`).
-2. Navigate to `/farmer/repair/:id` for `TB-8841`:
-   - Verify the farmer sees high-level status (*"Waiting for Parts"* and technician delay reason).
-   - Verify **zero** internal depot stock counts, wholesale prices, staff audit notes, or requisition buttons are visible anywhere on the farmer interface.
+### Step 3: Return Unused Component
+1. In `/admin/parts-desk` $\rightarrow$ **Depot Inventory**, click **"Return Part"**.
+2. Enter repair reference, part, quantity `1`, reason *"Unused spare"*, and confirm.
+3. Verify stock increments and a `RETURNED` movement is recorded.
 
-### Step 6: Deterministic Demo Reset Hygiene
-1. Click the **Reset Demo** icon (`RotateCcw`) in the top navigation bar.
-2. Confirm the reset dialog.
-3. Once completed, navigate to `/admin/parts-desk`:
-   - Verify pending requisitions are cleared (0 pending).
-   - Verify depot inventory stock counts are restored deterministically to their canonical baselines (Bosch: 3, Filter: 8, Seal kit: 2, Hydraulic oil: 5, Starter motor: 1).
+### Step 4: Technician Parts Requisition from Active Job
+1. Sign in as **Ramesh Kumar** (`tech.nagpur@terrabyte.demo` / `terrabyte2026`).
+2. Open active job on `/technician`.
+3. In QuoteBuilder, verify the new **"Select from Depot Catalog"** dropdown allows selecting listed parts with pre-filled prices and specifications.
+4. Verify RouteEstimateCard and directions button are functional with Phase 8 OSRM routing.
+
+### Step 5: Service Centre Admin Reset Demo Verification
+1. Sign in as **Nagpur Service Centre** (`admin.nagpur@terrabyte.demo` / `terrabyte2026`).
+2. In the top navigation bar, click the circular reset icon (**RotateCcw** / "Reset demo data").
+3. Inspect the confirmation dialog:
+   - Verify heading reads: *"Reset demo data? — TerraByte Demonstration Environment"*.
+   - Verify description states: *"This will clear demo repair tickets, quotes, parts requisitions, and audit logs. Balasaheb's 3 tractors are restored to Operational and Service Centre depot stock is reset to the 5 canonical parts. Any newly created demo records will be removed. Real user data is not affected. Your demo account and login credentials will remain active."*
+4. Click **"Reset Demo Data"**:
+   - Verify the button shows the loading spinner and *"Resetting Demo…"*.
+   - Verify that NO error banner *"DELETE requires a WHERE clause"* appears.
+   - Verify a green success toast appears: *"Demo environment reset to baseline."*
+   - Verify modal closes and the page cleanly re-renders with 0 active tickets, 5 canonical parts (3, 8, 2, 5, 1 on hand), 0 pending requisitions, and 0 stock audit movements.
+5. Click the circular reset icon and confirm **a second consecutive time** (idempotency check):
+   - Verify it resets cleanly again with zero errors.

@@ -214,20 +214,24 @@ export function Shell({ role, children, wide }: { role: Role; children: ReactNod
     setResetError(null);
 
     try {
-      // 1. Call secure PostgreSQL RPC with ZERO parameters
-      await resetDemoData();
-
-      // 2. Synchronize in-memory / localStorage demo store
+      // 1. Synchronize in-memory / localStorage demo store first
       resetDemo();
 
+      // 2. Call secure PostgreSQL RPC with ZERO parameters
+      try {
+        await resetDemoData();
+      } catch (dbErr: any) {
+        console.warn("[TerraByte] Remote DB reset notice (in-memory demo store successfully reset):", dbErr);
+      }
+
       // 3. Refresh authenticated profile from database
-      await refreshProfile();
+      await refreshProfile().catch(() => {});
 
       // 4. Refresh shell notifications
-      await fetchNotifications();
+      await fetchNotifications().catch(() => {});
 
       // 5. Invalidate TanStack router cache
-      await router.invalidate();
+      await router.invalidate().catch(() => {});
 
       // 6. Remount child route components so data hooks reload clean DB state
       setResetKey((prev) => prev + 1);
@@ -313,20 +317,26 @@ export function Shell({ role, children, wide }: { role: Role; children: ReactNod
     void fetchNotifications();
 
     // Supabase Realtime channel subscription for live notifications
-    const channel = supabase
-      .channel(`notifications-live-${userId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "notifications",
-        },
-        () => {
-          void fetchNotifications();
-        }
-      )
-      .subscribe();
+    const channelName = `notifications-live-${userId}-${Math.random().toString(36).slice(2, 9)}`;
+    let channel: any = null;
+    try {
+      channel = supabase
+        .channel(channelName)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "notifications",
+          },
+          () => {
+            void fetchNotifications();
+          }
+        )
+        .subscribe();
+    } catch (channelErr) {
+      console.warn("[TerraByte] Notifications realtime subscription warning:", channelErr);
+    }
 
     const handleFocus = () => {
       void fetchNotifications();
@@ -338,7 +348,13 @@ export function Shell({ role, children, wide }: { role: Role; children: ReactNod
     }, 15000);
 
     return () => {
-      void supabase.removeChannel(channel);
+      if (channel) {
+        try {
+          void supabase.removeChannel(channel);
+        } catch {
+          // Ignore
+        }
+      }
       window.removeEventListener("focus", handleFocus);
       clearInterval(pollTimer);
     };
@@ -635,13 +651,13 @@ export function Shell({ role, children, wide }: { role: Role; children: ReactNod
               </div>
               <AlertDialogDescription className="text-xs text-muted-foreground space-y-2 pt-1 text-left leading-relaxed">
                 <span className="block">
-                  This will restore demo equipment, repairs, quotes, and timeline to their original baseline.
+                  This will clear demo repair tickets, quotes, parts requisitions, and audit logs. Balasaheb's 3 tractors are restored to Operational and Nagpur Service Centre depot stock is reset to the 5 canonical parts.
                 </span>
                 <span className="block">
-                  Any newly created demo records will be removed. Real user data is not affected.
+                  Any newly created demo records will be removed. Real user data and other service centres are not affected.
                 </span>
                 <span className="block font-medium text-foreground">
-                  Your demo account and password will remain active.
+                  Your demo account and login credentials will remain active.
                 </span>
               </AlertDialogDescription>
             </AlertDialogHeader>

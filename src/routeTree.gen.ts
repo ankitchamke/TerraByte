@@ -20,7 +20,10 @@ import { Route as ServiceCentreRouteImport } from './routes/service-centre'
 import { Route as TechnicianRouteImport } from './routes/technician'
 import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
+import { Route as AdminPartsDeskRouteImport } from './routes/admin/parts-desk'
 import { Route as AdminTechniciansRouteImport } from './routes/admin/technicians'
+import { Route as ApiHealthRouteImport } from './routes/api/health'
+import { Route as ApiRouteEstimateRouteImport } from './routes/api/route-estimate'
 import { Route as AuthConfirmRouteImport } from './routes/auth/confirm'
 import { Route as AuthResetPasswordRouteImport } from './routes/auth/reset-password'
 import { Route as FarmerIndexRouteImport } from './routes/farmer/index'
@@ -91,10 +94,25 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminPartsDeskRoute = AdminPartsDeskRouteImport.update({
+  id: '/parts-desk',
+  path: '/parts-desk',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminTechniciansRoute = AdminTechniciansRouteImport.update({
   id: '/technicians',
   path: '/technicians',
   getParentRoute: () => AdminRoute,
+} as any)
+const ApiHealthRoute = ApiHealthRouteImport.update({
+  id: '/api/health',
+  path: '/api/health',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRouteEstimateRoute = ApiRouteEstimateRouteImport.update({
+  id: '/api/route-estimate',
+  path: '/api/route-estimate',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const AuthConfirmRoute = AuthConfirmRouteImport.update({
   id: '/auth/confirm',
@@ -173,7 +191,10 @@ export interface FileRoutesByFullPath {
   '/service-centre': typeof ServiceCentreRoute
   '/technician': typeof TechnicianRouteWithChildren
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/admin/parts-desk': typeof AdminPartsDeskRoute
   '/admin/technicians': typeof AdminTechniciansRoute
+  '/api/health': typeof ApiHealthRoute
+  '/api/route-estimate': typeof ApiRouteEstimateRoute
   '/auth/confirm': typeof AuthConfirmRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/farmer/report-breakdown': typeof FarmerReportBreakdownRoute
@@ -197,7 +218,10 @@ export interface FileRoutesByTo {
   '/profile': typeof ProfileRoute
   '/service-centre': typeof ServiceCentreRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/admin/parts-desk': typeof AdminPartsDeskRoute
   '/admin/technicians': typeof AdminTechniciansRoute
+  '/api/health': typeof ApiHealthRoute
+  '/api/route-estimate': typeof ApiRouteEstimateRoute
   '/auth/confirm': typeof AuthConfirmRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/farmer/report-breakdown': typeof FarmerReportBreakdownRoute
@@ -225,7 +249,10 @@ export interface FileRoutesById {
   '/service-centre': typeof ServiceCentreRoute
   '/technician': typeof TechnicianRouteWithChildren
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/admin/parts-desk': typeof AdminPartsDeskRoute
   '/admin/technicians': typeof AdminTechniciansRoute
+  '/api/health': typeof ApiHealthRoute
+  '/api/route-estimate': typeof ApiRouteEstimateRoute
   '/auth/confirm': typeof AuthConfirmRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/farmer/report-breakdown': typeof FarmerReportBreakdownRoute
@@ -254,7 +281,10 @@ export interface FileRouteTypes {
     | '/service-centre'
     | '/technician'
     | '/.well-known/oauth-protected-resource'
+    | '/admin/parts-desk'
     | '/admin/technicians'
+    | '/api/health'
+    | '/api/route-estimate'
     | '/auth/confirm'
     | '/auth/reset-password'
     | '/farmer/report-breakdown'
@@ -278,7 +308,10 @@ export interface FileRouteTypes {
     | '/profile'
     | '/service-centre'
     | '/.well-known/oauth-protected-resource'
+    | '/admin/parts-desk'
     | '/admin/technicians'
+    | '/api/health'
+    | '/api/route-estimate'
     | '/auth/confirm'
     | '/auth/reset-password'
     | '/farmer/report-breakdown'
@@ -305,7 +338,10 @@ export interface FileRouteTypes {
     | '/service-centre'
     | '/technician'
     | '/.well-known/oauth-protected-resource'
+    | '/admin/parts-desk'
     | '/admin/technicians'
+    | '/api/health'
+    | '/api/route-estimate'
     | '/auth/confirm'
     | '/auth/reset-password'
     | '/farmer/report-breakdown'
@@ -333,6 +369,8 @@ export interface RootRouteChildren {
   ServiceCentreRoute: typeof ServiceCentreRoute
   TechnicianRoute: typeof TechnicianRouteWithChildren
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  ApiHealthRoute: typeof ApiHealthRoute
+  ApiRouteEstimateRoute: typeof ApiRouteEstimateRoute
   AuthConfirmRoute: typeof AuthConfirmRoute
   AuthResetPasswordRoute: typeof AuthResetPasswordRoute
   RegisterFarmerRoute: typeof RegisterFarmerRoute
@@ -418,12 +456,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/parts-desk': {
+      id: '/admin/parts-desk'
+      path: '/parts-desk'
+      fullPath: '/admin/parts-desk'
+      preLoaderRoute: typeof AdminPartsDeskRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/technicians': {
       id: '/admin/technicians'
       path: '/technicians'
       fullPath: '/admin/technicians'
       preLoaderRoute: typeof AdminTechniciansRouteImport
       parentRoute: typeof AdminRoute
+    }
+    '/api/health': {
+      id: '/api/health'
+      path: '/api/health'
+      fullPath: '/api/health'
+      preLoaderRoute: typeof ApiHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/route-estimate': {
+      id: '/api/route-estimate'
+      path: '/api/route-estimate'
+      fullPath: '/api/route-estimate'
+      preLoaderRoute: typeof ApiRouteEstimateRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/auth/confirm': {
       id: '/auth/confirm'
@@ -520,12 +579,14 @@ declare module '@tanstack/react-router' {
 }
 
 interface AdminRouteChildren {
+  AdminPartsDeskRoute: typeof AdminPartsDeskRoute
   AdminTechniciansRoute: typeof AdminTechniciansRoute
   AdminIndexRoute: typeof AdminIndexRoute
   AdminRepairIdRoute: typeof AdminRepairIdRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
+  AdminPartsDeskRoute: AdminPartsDeskRoute,
   AdminTechniciansRoute: AdminTechniciansRoute,
   AdminIndexRoute: AdminIndexRoute,
   AdminRepairIdRoute: AdminRepairIdRoute,
@@ -580,6 +641,8 @@ const rootRouteChildren: RootRouteChildren = {
   TechnicianRoute: TechnicianRouteWithChildren,
   Char91DotwellKnownChar93OauthProtectedResourceRoute:
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
+  ApiHealthRoute: ApiHealthRoute,
+  ApiRouteEstimateRoute: ApiRouteEstimateRoute,
   AuthConfirmRoute: AuthConfirmRoute,
   AuthResetPasswordRoute: AuthResetPasswordRoute,
   RegisterFarmerRoute: RegisterFarmerRoute,

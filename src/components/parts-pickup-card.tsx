@@ -7,7 +7,8 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Card, Label } from "@/components/tb";
+import { Card, DateTimePicker, Label } from "@/components/tb";
+import { useRepairTicketRealtime } from "@/hooks/use-repair-realtime";
 import {
   Dialog,
   DialogContent,
@@ -24,13 +25,14 @@ import {
   type ServiceCentrePart,
   type ServiceCentrePartRequestDetail,
 } from "@/lib/services/parts-desk";
-import { fmtTime, inr } from "@/lib/tb-store";
+import { fmtTime, inr, useTB } from "@/lib/tb-store";
 import { cn } from "@/lib/utils";
 
 interface PartsPickupCardProps {
   repairId: string;
   repairStatus: string;
   isAssigned: boolean;
+  partRequests?: ServiceCentrePartRequestDetail[];
   onOpenHoldWithPart?: (partName: string) => void;
   onUpdate?: () => Promise<void>;
 }
@@ -39,19 +41,24 @@ export function PartsPickupCard({
   repairId,
   repairStatus,
   isAssigned,
+  partRequests: propPartRequests,
   onOpenHoldWithPart,
   onUpdate,
 }: PartsPickupCardProps) {
-  const [requests, setRequests] = useState<ServiceCentrePartRequestDetail[]>([]);
+  const tb = useTB();
+  const [internalRequests, setInternalRequests] = useState<ServiceCentrePartRequestDetail[]>([]);
   const [catalog, setCatalog] = useState<ServiceCentrePart[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [search, setSearch] = useState("");
 
+  const requests = propPartRequests !== undefined ? propPartRequests : internalRequests;
+
   // Request form state
   const [selectedPart, setSelectedPart] = useState<ServiceCentrePart | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [notes, setNotes] = useState("");
+  const [eta, setEta] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
 
@@ -63,7 +70,7 @@ export function PartsPickupCard({
         getRepairPartRequests(repairId).catch(() => []),
         getServiceCentreParts().catch(() => []),
       ]);
-      setRequests(reqsData);
+      setInternalRequests(reqsData);
       setCatalog(partsData);
     } catch (err: unknown) {
       console.error("[TerraByte] Failed to load parts pickup requests:", err);
@@ -74,7 +81,22 @@ export function PartsPickupCard({
 
   useEffect(() => {
     loadRequests();
-  }, [loadRequests]);
+  }, [loadRequests, tb.serviceCentrePartRequests, tb.serviceCentreParts, tb.repairs]);
+
+  // Scoped Realtime updates
+  useRepairTicketRealtime({
+    repairId,
+    onUpdate: async () => {
+      await loadRequests();
+      if (onUpdate) {
+        try {
+          await onUpdate();
+        } catch {
+          // Non-fatal
+        }
+      }
+    },
+  });
 
   const filteredCatalog = useMemo(() => {
     if (!search.trim()) return catalog;
@@ -101,6 +123,7 @@ export function PartsPickupCard({
         partId: selectedPart.id,
         quantity,
         notes: notes.trim() || undefined,
+        eta: eta.trim() || undefined,
       });
       toast.success(
         `Pickup requested: ${quantity}x ${selectedPart.name}. Service Centre notified.`,
@@ -109,6 +132,7 @@ export function PartsPickupCard({
       setSelectedPart(null);
       setQuantity(1);
       setNotes("");
+      setEta("");
       await loadRequests();
       if (onUpdate) await onUpdate();
     } catch (err: unknown) {
@@ -136,7 +160,7 @@ export function PartsPickupCard({
 
   const canRequest =
     isAssigned &&
-    ["IN_PROGRESS", "WAITING_FOR_PARTS", "ACCEPTED", "QUOTE_REVISED"].includes(
+    ["IN_PROGRESS", "WAITING_FOR_PARTS", "ACCEPTED", "QUOTE_REVISED", "QUOTE_PENDING"].includes(
       repairStatus,
     );
 
@@ -358,14 +382,16 @@ export function PartsPickupCard({
             </div>
 
             {/* Selected Part Form */}
-            {selectedPart && selectedPart.stock_quantity > 0 && (
+            {selectedPart && (
               <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 space-y-3">
                 <div className="flex justify-between items-center text-xs">
                   <span className="font-semibold text-foreground">
                     Selected: <b>{selectedPart.name}</b>
                   </span>
                   <span className="font-mono text-muted-foreground">
-                    Max: {selectedPart.stock_quantity}
+                    {selectedPart.stock_quantity > 0
+                      ? `Max: ${selectedPart.stock_quantity}`
+                      : "Depot Sourcing"}
                   </span>
                 </div>
 
@@ -375,14 +401,16 @@ export function PartsPickupCard({
                     <input
                       type="number"
                       min="1"
-                      max={selectedPart.stock_quantity}
+                      max={selectedPart.stock_quantity > 0 ? selectedPart.stock_quantity : 99}
                       value={quantity}
                       onChange={(e) =>
                         setQuantity(
-                          Math.min(
-                            selectedPart.stock_quantity,
-                            Math.max(1, parseInt(e.target.value) || 1),
-                          ),
+                          selectedPart.stock_quantity > 0
+                            ? Math.min(
+                                selectedPart.stock_quantity,
+                                Math.max(1, parseInt(e.target.value) || 1),
+                              )
+                            : Math.max(1, parseInt(e.target.value) || 1),
                         )
                       }
                       className="h-8 w-full rounded-lg border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
@@ -397,12 +425,20 @@ export function PartsPickupCard({
                 </div>
 
                 <div>
+                  <Label className="text-[11px]">Expected Arrival Time (Optional)</Label>
+                  <DateTimePicker value={eta} onChange={setEta} />
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    If arrival time is not yet known, leave empty to display "ETA pending".
+                  </p>
+                </div>
+
+                <div>
                   <Label className="text-[11px]">Pickup Notes (Optional)</Label>
                   <input
                     type="text"
                     value={notes}
                     onChange={(e) => setNotes(e.target.value)}
-                    placeholder="e.g. Picking up with van this afternoon"
+                    placeholder="e.g. Sourcing from regional depot / pickup with van"
                     className="h-8 w-full rounded-lg border border-border bg-background px-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
                   />
                 </div>
@@ -424,7 +460,6 @@ export function PartsPickupCard({
               disabled={
                 submitting ||
                 !selectedPart ||
-                selectedPart.stock_quantity === 0 ||
                 quantity <= 0
               }
               onClick={handleRequestPart}

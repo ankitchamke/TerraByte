@@ -70,7 +70,7 @@ flowchart TD
 4. **Step 3: Breakdown Location & Problem Description**:
    - **Coarse Service Location**: Village text (prefilled from farmer profile if available) and selection from the 14 official Nagpur District Tahsils (`src/lib/location.ts`).
    - **Optional Precise GPS Capture**: Farmer can click "Use Current Location" to capture device GPS coordinates (`navigator.geolocation.getCurrentPosition`). Shows accuracy indicator (`±Xm`) and feedback. GPS coordinates remain in-memory only and are strictly excluded from browser `localStorage` drafts, URL query strings, and public queues.
-   - **Problem Description**: Enters description via keyboard or 1-tap **voice typing** (Web Speech API with Indian English support).
+   - **Problem Description**: Enters description via keyboard or 1-tap **voice typing** (Groq-hosted Whisper Large V3 with automatic language detection for Hindi, Marathi, and English, preserving original script without translation).
 5. **Step 4: Field Photos**:
    - Attaches field photo evidence via camera/gallery input.
 6. **Step 5: Assistive Preliminary Assessment & Breakdown Logging**:

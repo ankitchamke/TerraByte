@@ -24,6 +24,7 @@ import { Route as AdminPartsDeskRouteImport } from './routes/admin/parts-desk'
 import { Route as AdminTechniciansRouteImport } from './routes/admin/technicians'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ApiRouteEstimateRouteImport } from './routes/api/route-estimate'
+import { Route as ApiTranscribeRouteImport } from './routes/api/transcribe'
 import { Route as AuthConfirmRouteImport } from './routes/auth/confirm'
 import { Route as AuthResetPasswordRouteImport } from './routes/auth/reset-password'
 import { Route as FarmerIndexRouteImport } from './routes/farmer/index'
@@ -114,6 +115,11 @@ const ApiRouteEstimateRoute = ApiRouteEstimateRouteImport.update({
   path: '/api/route-estimate',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiTranscribeRoute = ApiTranscribeRouteImport.update({
+  id: '/api/transcribe',
+  path: '/api/transcribe',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthConfirmRoute = AuthConfirmRouteImport.update({
   id: '/auth/confirm',
   path: '/auth/confirm',
@@ -195,6 +201,7 @@ export interface FileRoutesByFullPath {
   '/admin/technicians': typeof AdminTechniciansRoute
   '/api/health': typeof ApiHealthRoute
   '/api/route-estimate': typeof ApiRouteEstimateRoute
+  '/api/transcribe': typeof ApiTranscribeRoute
   '/auth/confirm': typeof AuthConfirmRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/farmer/report-breakdown': typeof FarmerReportBreakdownRoute
@@ -222,6 +229,7 @@ export interface FileRoutesByTo {
   '/admin/technicians': typeof AdminTechniciansRoute
   '/api/health': typeof ApiHealthRoute
   '/api/route-estimate': typeof ApiRouteEstimateRoute
+  '/api/transcribe': typeof ApiTranscribeRoute
   '/auth/confirm': typeof AuthConfirmRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/farmer/report-breakdown': typeof FarmerReportBreakdownRoute
@@ -253,6 +261,7 @@ export interface FileRoutesById {
   '/admin/technicians': typeof AdminTechniciansRoute
   '/api/health': typeof ApiHealthRoute
   '/api/route-estimate': typeof ApiRouteEstimateRoute
+  '/api/transcribe': typeof ApiTranscribeRoute
   '/auth/confirm': typeof AuthConfirmRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
   '/farmer/report-breakdown': typeof FarmerReportBreakdownRoute
@@ -285,6 +294,7 @@ export interface FileRouteTypes {
     | '/admin/technicians'
     | '/api/health'
     | '/api/route-estimate'
+    | '/api/transcribe'
     | '/auth/confirm'
     | '/auth/reset-password'
     | '/farmer/report-breakdown'
@@ -312,6 +322,7 @@ export interface FileRouteTypes {
     | '/admin/technicians'
     | '/api/health'
     | '/api/route-estimate'
+    | '/api/transcribe'
     | '/auth/confirm'
     | '/auth/reset-password'
     | '/farmer/report-breakdown'
@@ -342,6 +353,7 @@ export interface FileRouteTypes {
     | '/admin/technicians'
     | '/api/health'
     | '/api/route-estimate'
+    | '/api/transcribe'
     | '/auth/confirm'
     | '/auth/reset-password'
     | '/farmer/report-breakdown'
@@ -371,6 +383,7 @@ export interface RootRouteChildren {
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   ApiHealthRoute: typeof ApiHealthRoute
   ApiRouteEstimateRoute: typeof ApiRouteEstimateRoute
+  ApiTranscribeRoute: typeof ApiTranscribeRoute
   AuthConfirmRoute: typeof AuthConfirmRoute
   AuthResetPasswordRoute: typeof AuthResetPasswordRoute
   RegisterFarmerRoute: typeof RegisterFarmerRoute
@@ -482,6 +495,13 @@ declare module '@tanstack/react-router' {
       path: '/api/route-estimate'
       fullPath: '/api/route-estimate'
       preLoaderRoute: typeof ApiRouteEstimateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/transcribe': {
+      id: '/api/transcribe'
+      path: '/api/transcribe'
+      fullPath: '/api/transcribe'
+      preLoaderRoute: typeof ApiTranscribeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth/confirm': {
@@ -643,6 +663,7 @@ const rootRouteChildren: RootRouteChildren = {
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
   ApiHealthRoute: ApiHealthRoute,
   ApiRouteEstimateRoute: ApiRouteEstimateRoute,
+  ApiTranscribeRoute: ApiTranscribeRoute,
   AuthConfirmRoute: AuthConfirmRoute,
   AuthResetPasswordRoute: AuthResetPasswordRoute,
   RegisterFarmerRoute: RegisterFarmerRoute,

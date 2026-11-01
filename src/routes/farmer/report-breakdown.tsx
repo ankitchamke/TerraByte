@@ -9,8 +9,11 @@ import {
   MapPin,
   Mic,
   Plus,
+  RotateCcw,
   Sparkles,
+  Square,
   Tractor,
+  TriangleAlert,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -18,6 +21,18 @@ import { toast } from "sonner";
 import { btn, Card, input, Label, useOnline } from "@/components/tb";
 import { assess, SYMPTOMS } from "@/lib/assessment";
 import { useAuth } from "@/lib/auth";
+import { supabase } from "@/integrations/supabase/client";
+import {
+  detectSupportedAudioFormat,
+  formatRecordingTime,
+  appendTranscriptToDescription,
+  getMicrophoneErrorMessage,
+  getMicrophoneStream,
+  createAudioActivityTracker,
+  validateRecordingSignal,
+  type AudioActivityTracker,
+  type VoiceRecordingState,
+} from "@/lib/audio-recorder";
 import {
   formatCoarseLocation,
   formatGpsAccuracy,
@@ -71,9 +86,45 @@ function Report() {
     tahsil: "",
   });
   const [restored, setRestored] = useState(false);
-  const [listening, setListening] = useState(false);
+  const [voiceState, setVoiceState] = useState<VoiceRecordingState>("IDLE");
+  const [recordSeconds, setRecordSeconds] = useState(0);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [audioLevel, setAudioLevel] = useState(0);
   const [submitting, setSubmitting] = useState(false);
-  const recRef = useRef<{ stop: () => void } | null>(null);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const audioTrackerRef = useRef<AudioActivityTracker | null>(null);
+  const meterTimerRef = useRef<NodeJS.Timeout | number | null>(null);
+  const timerRef = useRef<NodeJS.Timeout | number | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const cancelRequestedRef = useRef(false);
+  const isTranscribingRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  // Clean up media streams, activity trackers, and timers on unmount
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (timerRef.current) {
+        clearInterval(timerRef.current as any);
+        timerRef.current = null;
+      }
+      if (meterTimerRef.current) {
+        clearInterval(meterTimerRef.current as any);
+        meterTimerRef.current = null;
+      }
+      if (audioTrackerRef.current) {
+        audioTrackerRef.current.cleanup();
+        audioTrackerRef.current = null;
+      }
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+        mediaStreamRef.current = null;
+      }
+    };
+  }, []);
 
   // In-memory one-time GPS capture (Never persisted to localStorage)
   interface CapturedGps {
@@ -258,29 +309,236 @@ function Report() {
         : [...d.symptoms, sym],
     });
 
-  const voice = () => {
-    const W = window as unknown as {
-      SpeechRecognition?: new () => any;
-      webkitSpeechRecognition?: new () => any;
-    };
-    const SR = W.SpeechRecognition ?? W.webkitSpeechRecognition;
-    if (!SR) {
-      toast("Voice typing isn't supported on this browser — use your keyboard's mic button.");
+  const cleanupMedia = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current as any);
+      timerRef.current = null;
+    }
+    if (meterTimerRef.current) {
+      clearInterval(meterTimerRef.current as any);
+      meterTimerRef.current = null;
+    }
+    if (audioTrackerRef.current) {
+      audioTrackerRef.current.cleanup();
+      audioTrackerRef.current = null;
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    }
+    mediaRecorderRef.current = null;
+    if (mountedRef.current) {
+      setAudioLevel(0);
+    }
+  };
+
+  const startVoiceRecording = async () => {
+    if (voiceState === "TRANSCRIBING") return;
+    if (
+      typeof window === "undefined" ||
+      !navigator?.mediaDevices?.getUserMedia ||
+      typeof MediaRecorder === "undefined"
+    ) {
+      toast.error(
+        "Voice recording is not supported on this browser. Please use keyboard typing.",
+      );
       return;
     }
-    if (listening) {
-      recRef.current?.stop();
-      return;
+
+    cleanupMedia();
+    cancelRequestedRef.current = false;
+    audioChunksRef.current = [];
+    setVoiceError(null);
+
+    try {
+      const stream = await getMicrophoneStream();
+
+      if (!mountedRef.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+
+      mediaStreamRef.current = stream;
+
+      // Initialize real-time Web Audio API signal activity tracker
+      const tracker = createAudioActivityTracker(stream);
+      audioTrackerRef.current = tracker;
+
+      // Sample microphone level at 10 Hz for live activity meter
+      if (tracker) {
+        meterTimerRef.current = setInterval(() => {
+          if (audioTrackerRef.current && mountedRef.current) {
+            setAudioLevel(audioTrackerRef.current.getCurrentLevel());
+          }
+        }, 100);
+      }
+
+      const format = detectSupportedAudioFormat();
+      const options = format.mimeType ? { mimeType: format.mimeType } : undefined;
+      const recorder = new MediaRecorder(stream, options);
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onerror = () => {
+        if (!mountedRef.current) return;
+        cleanupMedia();
+        setVoiceState("ERROR");
+        setVoiceError("Recording interrupted. Please try again or type below.");
+      };
+
+      recorder.onstop = async () => {
+        if (!mountedRef.current || cancelRequestedRef.current) {
+          cleanupMedia();
+          audioChunksRef.current = [];
+          return;
+        }
+
+        if (isTranscribingRef.current) return;
+
+        // 1. Snapshot activity stats from tracker before stopping audio context
+        const stats = audioTrackerRef.current?.getStats() ?? null;
+
+        // 2. Collect chunks and assemble Blob
+        const chunks = audioChunksRef.current;
+        audioChunksRef.current = [];
+
+        const audioBlob = new Blob(chunks, {
+          type: format.mimeType || "audio/webm",
+        });
+
+        // 3. Clean up tracks and audio context now that data is collected
+        cleanupMedia();
+
+        // 4. Validate recording: duration, container size, and actual signal activity
+        const validation = validateRecordingSignal({
+          durationSeconds: recordSeconds,
+          blobSize: audioBlob.size,
+          activityStats: stats,
+        });
+
+        if (!validation.valid) {
+          setVoiceState("IDLE");
+          toast.error(
+            validation.error ||
+              "No voice was detected. Please check your microphone and speak clearly.",
+          );
+          return;
+        }
+
+        isTranscribingRef.current = true;
+        setVoiceState("TRANSCRIBING");
+
+        try {
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
+
+          if (!session?.access_token) {
+            throw new Error("You must be signed in to transcribe audio.");
+          }
+
+          const formData = new FormData();
+          formData.append("file", audioBlob, `breakdown-voice.${format.extension}`);
+
+          const response = await fetch("/api/transcribe", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: formData,
+          });
+
+          const data = await response.json().catch(() => ({}));
+
+          if (!response.ok) {
+            throw new Error(data?.error || "Voice transcription failed.");
+          }
+
+          const transcript = typeof data.text === "string" ? data.text.trim() : "";
+          if (!transcript) {
+            toast.info("No recognizable words heard. Please try again or type below.");
+            setVoiceState("IDLE");
+          } else {
+            setD((prev) => ({
+              ...prev,
+              description: appendTranscriptToDescription(prev.description, transcript),
+            }));
+            setVoiceState("SUCCESS");
+            toast.success("Voice transcribed! Review and edit your text below.");
+            setTimeout(() => {
+              if (mountedRef.current) setVoiceState("IDLE");
+            }, 3500);
+          }
+        } catch (err: unknown) {
+          if (!mountedRef.current) return;
+          const msg = err instanceof Error ? err.message : "Voice transcription failed.";
+          setVoiceState("ERROR");
+          setVoiceError(msg);
+          toast.error(msg);
+        } finally {
+          isTranscribingRef.current = false;
+        }
+      };
+
+      mediaRecorderRef.current = recorder;
+      // Start recording without timeslice to produce a coherent continuous audio container
+      recorder.start();
+
+      setVoiceState("RECORDING");
+      setRecordSeconds(0);
+
+      timerRef.current = setInterval(() => {
+        setRecordSeconds((sec) => {
+          if (sec >= 59) {
+            // Auto-stop at 60 seconds
+            stopVoiceRecording();
+            return 60;
+          }
+          return sec + 1;
+        });
+      }, 1000);
+    } catch (err: unknown) {
+      cleanupMedia();
+      const msg = getMicrophoneErrorMessage(err);
+      setVoiceState("ERROR");
+      setVoiceError(msg);
+      toast.error(msg);
     }
-    const rec = new SR();
-    rec.lang = "en-IN";
-    rec.interimResults = false;
-    rec.onresult = (e: any) =>
-      up({ description: (d.description + " " + e.results[0][0].transcript).trim() });
-    rec.onend = () => setListening(false);
-    recRef.current = rec;
-    rec.start();
-    setListening(true);
+  };
+
+  const stopVoiceRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch {
+        cleanupMedia();
+        setVoiceState("IDLE");
+      }
+    } else {
+      cleanupMedia();
+      setVoiceState("IDLE");
+    }
+  };
+
+  const cancelVoiceRecording = () => {
+    cancelRequestedRef.current = true;
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch {
+        // ignore
+      }
+    }
+    cleanupMedia();
+    audioChunksRef.current = [];
+    setVoiceState("IDLE");
+    setVoiceError(null);
+    setRecordSeconds(0);
+    toast.info("Voice recording cancelled.");
   };
 
   const submit = async () => {
@@ -619,8 +877,132 @@ function Report() {
             </div>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-3">
             <Label>Problem Description</Label>
+
+            {/* Voice Transcription Controls (Groq Whisper Large V3) */}
+            <div className="space-y-2">
+              {(voiceState === "IDLE" || voiceState === "SUCCESS") && (
+                <button
+                  type="button"
+                  onClick={startVoiceRecording}
+                  className={cn(
+                    btn.ghost,
+                    "w-full flex items-center justify-center gap-2 border-2 border-border/70 hover:border-primary/50 text-foreground py-2.5 rounded-xl transition-colors",
+                  )}
+                >
+                  <Mic className="h-5 w-5 text-primary shrink-0" />
+                  <span className="font-semibold text-sm">
+                    {voiceState === "SUCCESS"
+                      ? "Record more voice (Hindi / Marathi / English)"
+                      : "Speak in Hindi, Marathi, or English"}
+                  </span>
+                </button>
+              )}
+
+              {voiceState === "RECORDING" && (
+                <div className="rounded-xl border-2 border-destructive/40 bg-destructive/10 p-3 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="inline-flex items-center gap-2 text-sm font-semibold text-destructive">
+                      <span className="h-2.5 w-2.5 rounded-full bg-destructive animate-ping" />
+                      Recording Voice ({formatRecordingTime(recordSeconds)} / 1:00)
+                    </span>
+                    <span className="text-xs text-muted-foreground font-mono">
+                      Whisper Large V3
+                    </span>
+                  </div>
+
+                  {/* Live Microphone Signal Activity Meter */}
+                  <div className="space-y-1 py-0.5">
+                    <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                      <span>Mic Activity</span>
+                      <span
+                        className={
+                          audioLevel > 0.02
+                            ? "text-success font-semibold"
+                            : "text-muted-foreground"
+                        }
+                      >
+                        {audioLevel > 0.02 ? "Voice Signal Detected" : "Listening for voice…"}
+                      </span>
+                    </div>
+                    <div className="h-2 w-full bg-background/80 rounded-full overflow-hidden border border-border/50">
+                      <div
+                        className={cn(
+                          "h-full transition-all duration-75 rounded-full",
+                          audioLevel > 0.02 ? "bg-success" : "bg-muted-foreground/30",
+                        )}
+                        style={{
+                          width: `${Math.min(100, Math.max(3, Math.round(audioLevel * 220)))}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-muted-foreground">
+                    Speak clearly in Hindi, Marathi, or English. Tap Stop when finished.
+                  </p>
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={stopVoiceRecording}
+                      className={cn(
+                        btn.urgent,
+                        "flex-1 flex items-center justify-center gap-2 text-sm py-2",
+                      )}
+                    >
+                      <Square className="h-4 w-4 fill-current" /> Stop & Transcribe
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelVoiceRecording}
+                      className={cn(
+                        btn.ghost,
+                        "flex items-center justify-center gap-1.5 text-sm py-2 px-3 border border-border hover:bg-muted",
+                      )}
+                    >
+                      <X className="h-4 w-4" /> Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {voiceState === "TRANSCRIBING" && (
+                <div className="rounded-xl border-2 border-primary/30 bg-primary/5 p-3 flex items-center justify-center gap-2.5 text-sm font-medium text-foreground">
+                  <Loader2 className="h-5 w-5 animate-spin text-primary shrink-0" />
+                  <span>Transcribing voice with Whisper Large V3…</span>
+                </div>
+              )}
+
+              {voiceState === "ERROR" && voiceError && (
+                <div className="rounded-xl border-2 border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive space-y-2">
+                  <div className="flex items-start gap-2">
+                    <TriangleAlert className="h-4 w-4 shrink-0 mt-0.5" />
+                    <p className="leading-relaxed flex-1 font-medium">{voiceError}</p>
+                  </div>
+                  <div className="flex items-center gap-2 justify-end pt-1">
+                    <button
+                      type="button"
+                      onClick={startVoiceRecording}
+                      className="font-semibold underline text-foreground hover:text-primary flex items-center gap-1"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" /> Retry Voice
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setVoiceState("IDLE");
+                        setVoiceError(null);
+                      }}
+                      className="text-muted-foreground hover:text-foreground underline ml-3"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <textarea
               rows={5}
               maxLength={1000}
@@ -629,12 +1011,8 @@ function Report() {
               value={d.description}
               onChange={(e) => up({ description: e.target.value })}
             />
-            <button onClick={voice} className={cn(listening ? btn.urgent : btn.ghost, "w-full")}>
-              <Mic className="h-5 w-5" />
-              {listening ? "Listening… tap to stop" : "Speak instead of typing"}
-            </button>
-            <p className="text-sm text-muted-foreground">
-              Optional, but it helps the technician come prepared.
+            <p className="text-xs text-muted-foreground">
+              Review and edit your description before continuing. Keyboard typing is always available.
             </p>
           </div>
         </div>

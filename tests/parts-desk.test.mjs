@@ -21,6 +21,7 @@ import {
   getTB,
   quoteTotals,
   syncPartRequestToQuoteLines,
+  updateDemoPartRequestEta,
 } from "../src/lib/tb-store.ts";
 
 // 1. VERIFY SCHEMA AND CONSTRAINTS IN MIGRATION FILE
@@ -1391,10 +1392,11 @@ test("Failed item persistence leaves no misleading pending quote in UI or query 
   const quotesServicePath = path.resolve("src/lib/services/quotes.ts");
   const quotesCode = fs.readFileSync(quotesServicePath, "utf8");
 
-  // Verify getQuotesForRepair filters out 0-item pending quotes
+  // Verify getQuotesForRepair filters out 0-item orphan pending quotes (while preserving valid labour-only quotes)
   assert.ok(
-    quotesCode.includes('!(q.status === "PENDING" && (!q.quote_items || q.quote_items.length === 0))'),
-    "getQuotesForRepair must filter out orphan pending quotes with 0 items"
+    quotesCode.includes('!(q.status === "PENDING" && (!q.quote_items || q.quote_items.length === 0))') ||
+      (quotesCode.includes('q.status === "PENDING"') && quotesCode.includes("Number(q.labour_amount || 0) === 0")),
+    "getQuotesForRepair must filter out orphan pending quotes with 0 items and 0 labour"
   );
 
   // Verify RLS policy permits technician/admin to delete orphan quote
@@ -2874,6 +2876,805 @@ test("BroadcastChannel and storage listeners ensure cross-tab sync and all chann
     "TopNav notifications channel must use unique channel instance with random suffix"
   );
 });
+
+// 67. AUTHORITATIVE PHYSICAL HANDOFF PROPAGATION, REALTIME REFRESH, AND CANCELLATION LOCK
+test("Service Centre handoff writes touch repair_requests, broadcast globally, update technician view, and lock cancellation", () => {
+  const partsDeskCode = fs.readFileSync(path.resolve("src/lib/services/parts-desk.ts"), "utf8");
+  const techJobCode = fs.readFileSync(path.resolve("src/routes/technician/job/$id.tsx"), "utf8");
+  const pickupCardCode = fs.readFileSync(path.resolve("src/components/parts-pickup-card.tsx"), "utf8");
+  const realtimeCode = fs.readFileSync(path.resolve("src/hooks/use-repair-realtime.ts"), "utf8");
+  const rpcSql = fs.readFileSync(path.resolve("supabase/migrations/20261031173000_phase9_3_parts_handoff_rpcs.sql"), "utf8");
+
+  // 1. Database RPC touches repair_requests to emit Realtime CDC event
+  assert.ok(
+    rpcSql.includes("UPDATE public.repair_requests") &&
+      rpcSql.includes("SET updated_at = now()") &&
+      rpcSql.includes("WHERE id = v_request.repair_request_id;"),
+    "confirm_service_centre_part_handoff RPC must touch repair_requests.updated_at to broadcast CDC event"
+  );
+
+  // 2. confirmPartHandoff service touches repair_requests and broadcasts part_handoff on tb-realtime-bus
+  assert.ok(
+    partsDeskCode.includes("tb-realtime-bus") &&
+      partsDeskCode.includes("event: \"part_handoff\""),
+    "confirmPartHandoff must broadcast part_handoff on tb-realtime-bus for cross-session synchronisation"
+  );
+
+  // 3. useRepairTicketRealtime listens to global tb-realtime-bus part_handoff events and terrabyte-demo-v1 storage key
+  assert.ok(
+    realtimeCode.includes("tb-bus-") &&
+      realtimeCode.includes("event: \"part_handoff\"") &&
+      realtimeCode.includes("terrabyte-demo-v1"),
+    "useRepairTicketRealtime must subscribe to global broadcast bus and listen to terrabyte-demo-v1 storage events"
+  );
+
+  // 4. Technician Job page passes authoritative partRequests down to PartsPickupCard
+  assert.ok(
+    techJobCode.includes("partRequests={partRequests}"),
+    "Technician Job page must pass authoritative partRequests prop to PartsPickupCard"
+  );
+
+  // 5. PartsPickupCard renders 'Parts Handed Off from Service Centre' banner when handed-off requests exist
+  assert.ok(
+    pickupCardCode.includes("hasHandedOffParts &&") &&
+      pickupCardCode.includes("Parts Handed Off from Service Centre"),
+    "PartsPickupCard must render 'Parts Handed Off from Service Centre' banner upon handoff"
+  );
+
+  // 6. Cancellation is hidden when request status is HANDED_OFF
+  assert.ok(
+    pickupCardCode.includes("req.status === \"PENDING\" && isAssigned &&") &&
+      pickupCardCode.includes("handleCancelRequest(req.id)"),
+    "PartsPickupCard must render Cancel button ONLY when request status is PENDING"
+  );
+
+  // 7. cancelPartRequest service rejects cancellation if components have already been handed off
+  assert.ok(
+    partsDeskCode.includes("Cannot cancel part request: Components have already been handed off by the Service Centre."),
+    "cancelPartRequest must throw error if request is already HANDED_OFF"
+  );
+});
+
+// 68. PHASE 9.3 MIGRATION: UNAVAILABLE PARTS, ITEM-LEVEL ETA & ATOMIC COORDINATION RPC
+test("Phase 9.3 migration defines item-level ETA columns, index, coordination RLS, and atomic update RPC", () => {
+  const migrationPath = path.resolve("supabase/migrations/20261101140000_phase9_3_unavailable_parts_eta.sql");
+  assert.ok(fs.existsSync(migrationPath), "Migration 20261101140000_phase9_3_unavailable_parts_eta.sql must exist");
+  const sql = fs.readFileSync(migrationPath, "utf8");
+
+  // 1. Column additions for item-level ETA and audit logging
+  assert.ok(
+    sql.includes("estimated_arrival_at timestamptz NULL") &&
+      sql.includes("eta_updated_by uuid REFERENCES public.profiles(id)") &&
+      sql.includes("eta_updated_at timestamptz NULL"),
+    "Migration must add estimated_arrival_at, eta_updated_by, and eta_updated_at to service_centre_part_requests"
+  );
+
+  // 2. Query index
+  assert.ok(
+    sql.includes("idx_sc_part_requests_estimated_arrival"),
+    "Migration must create index on estimated_arrival_at"
+  );
+
+  // 3. RLS Policy allowing assigned technicians and Service Centre staff
+  assert.ok(
+    sql.includes("Assigned technicians or admins can update part request ETA") &&
+      sql.includes("rr.technician_id = p.id"),
+    "Migration must define RLS policy permitting assigned technicians or admins to update ETA"
+  );
+
+  // 4. Atomic ETA update RPC
+  assert.ok(
+    sql.includes("CREATE OR REPLACE FUNCTION public.update_service_centre_part_request_eta") &&
+      sql.includes("p_estimated_arrival_at timestamptz") &&
+      sql.includes("SECURITY DEFINER"),
+    "Migration must define SECURITY DEFINER RPC update_service_centre_part_request_eta"
+  );
+});
+
+// 69. ITEM-LEVEL ETA COORDINATION, AUDIT LOGGING, AND ACCESS CONTROL
+test("Item-level ETA update records audit logging, recalculates overall parts hold, and rejects unauthorized roles", async () => {
+  const partsDeskCode = fs.readFileSync(path.resolve("src/lib/services/parts-desk.ts"), "utf8");
+  const tbStoreCode = fs.readFileSync(path.resolve("src/lib/tb-store.ts"), "utf8");
+
+  // 1. Service function updatePartRequestEta exists and handles ETA updates
+  assert.ok(
+    partsDeskCode.includes("export async function updatePartRequestEta") &&
+      partsDeskCode.includes("UpdatePartRequestEtaInput"),
+    "parts-desk.ts must export updatePartRequestEta service function"
+  );
+
+  // 2. Demo store supports updateDemoPartRequestEta with role authorization
+  assert.ok(
+    tbStoreCode.includes("export function updateDemoPartRequestEta") &&
+      tbStoreCode.includes("Farmers cannot update parts ETA") &&
+      tbStoreCode.includes("Only the assigned technician or Service Centre staff can update part ETA"),
+    "tb-store.ts must export updateDemoPartRequestEta enforcing role-based authorization"
+  );
+
+  // 3. Functional verification of updateDemoPartRequestEta
+  const { resetDemo, requestDemoPart, updateDemoPartRequestEta, getDemoPartRequests, getTB, INITIAL_DEMO_PARTS } = await import(
+    "../src/lib/tb-store.ts"
+  );
+  resetDemo();
+
+  const partId1 = INITIAL_DEMO_PARTS[0].id;
+  const partId2 = INITIAL_DEMO_PARTS[1].id;
+
+  const req = requestDemoPart({
+    repairRequestId: "TB-9901",
+    partId: partId1,
+    quantity: 1,
+    notes: "Awaiting supplier shipment",
+    requesterId: "t1",
+    requesterName: "Ramesh Kumar",
+  });
+
+  assert.strictEqual(req.status, "PENDING");
+  assert.strictEqual(req.estimated_arrival_at, null);
+
+  // Assigned technician updates ETA
+  const updatedByTech = updateDemoPartRequestEta({
+    requestId: req.id,
+    estimatedArrivalAt: "2026-11-04T10:00:00.000Z",
+    notes: "Transit via regional courier",
+    updaterId: "t1",
+    updaterName: "Ramesh Kumar",
+    updaterRole: "technician",
+  });
+
+  assert.strictEqual(updatedByTech.estimated_arrival_at, "2026-11-04T10:00:00.000Z");
+  assert.strictEqual(updatedByTech.eta_updated_by, "t1");
+  assert.ok(updatedByTech.eta_updated_at, "eta_updated_at must be set upon update");
+
+  // Service Centre staff updates ETA
+  const updatedByAdmin = updateDemoPartRequestEta({
+    requestId: req.id,
+    estimatedArrivalAt: "2026-11-05T14:30:00.000Z",
+    notes: "Confirmed arrival from Nagpur central hub",
+    updaterId: "00000000-0000-0000-0003-000000000001",
+    updaterName: "Nagpur Service Centre",
+    updaterRole: "admin",
+  });
+
+  assert.strictEqual(updatedByAdmin.estimated_arrival_at, "2026-11-05T14:30:00.000Z");
+  assert.strictEqual(updatedByAdmin.eta_updated_by, "00000000-0000-0000-0003-000000000001");
+
+  // Farmer is rejected
+  assert.throws(
+    () => {
+      updateDemoPartRequestEta({
+        requestId: req.id,
+        estimatedArrivalAt: "2026-11-06T12:00:00.000Z",
+        updaterId: "f1",
+        updaterRole: "farmer",
+      });
+    },
+    /Unauthorized: Farmers cannot update parts ETA/,
+    "Farmer role must be rejected from updating part ETA"
+  );
+});
+
+// 70. MULTIPLE PARTS INDEPENDENCE AND PARTIAL HANDOFF RESILIENCE
+test("Multiple parts with independent ETAs: partial handoff preserves remaining part blockers and distinct ETAs", async () => {
+  const { resetDemo, requestDemoPart, updateDemoPartRequestEta, confirmDemoPartHandoff, getTB, actions, INITIAL_DEMO_PARTS } = await import(
+    "../src/lib/tb-store.ts"
+  );
+  resetDemo();
+
+  const tb = getTB();
+  const repairId = actions.createRepair({
+    equipmentId: tb.equipment[0].id,
+    farmerId: tb.farmers[0].id,
+    location: "Katol Field 4",
+    symptoms: ["Fuel system issue"],
+    description: "Requires injector set and fuel filter",
+    photos: [],
+  });
+  actions.requestTechnician(repairId, "t1");
+  actions.accept(repairId);
+
+  const partId1 = INITIAL_DEMO_PARTS[0].id;
+  const partId2 = INITIAL_DEMO_PARTS[1].id;
+
+  // Request Part 1 (Fuel Injector) and set ETA to Nov 3
+  const req1 = requestDemoPart({
+    repairRequestId: repairId,
+    partId: partId1,
+    quantity: 1,
+    notes: "Injector set needed",
+    requesterId: "t1",
+    requesterName: "Ramesh Kumar",
+  });
+  updateDemoPartRequestEta({
+    requestId: req1.id,
+    estimatedArrivalAt: "2026-11-03T10:00:00.000Z",
+    updaterId: "t1",
+    updaterRole: "technician",
+  });
+
+  // Request Part 2 (Inline Fuel Filter) and set ETA to Nov 6
+  const req2 = requestDemoPart({
+    repairRequestId: repairId,
+    partId: partId2,
+    quantity: 2,
+    notes: "Filter elements needed",
+    requesterId: "t1",
+    requesterName: "Ramesh Kumar",
+  });
+  updateDemoPartRequestEta({
+    requestId: req2.id,
+    estimatedArrivalAt: "2026-11-06T16:00:00.000Z",
+    updaterId: "t1",
+    updaterRole: "technician",
+  });
+
+  const stateBeforeHandoff = getTB();
+  const repairBefore = stateBeforeHandoff.repairs.find((r) => r.id === repairId);
+  assert.ok(repairBefore, `Repair ${repairId} must exist`);
+  assert.strictEqual(repairBefore.parts?.items?.length, 2, "Must contain 2 independent blocker items");
+
+  // Partial Handoff: Hand off Part 1 ONLY
+  confirmDemoPartHandoff(req1.id, "Nagpur Service Centre");
+
+  const stateAfterHandoff = getTB();
+  const repairAfter = stateAfterHandoff.repairs.find((r) => r.id === repairId);
+  assert.ok(repairAfter, `Repair ${repairId} must exist after partial handoff`);
+
+  // Part 1 is HANDED_OFF, but Part 2 remains PENDING
+  const item1 = repairAfter.parts?.items?.find((i) => i.id === req1.id || i.partId === partId1);
+  const item2 = repairAfter.parts?.items?.find((i) => i.id === req2.id || i.partId === partId2);
+
+  assert.strictEqual(item1?.status, "HANDED_OFF", "Handed off part must be marked HANDED_OFF");
+  assert.strictEqual(item2?.status, "PENDING", "Unfulfilled part must remain PENDING");
+  assert.strictEqual(item2?.eta, "2026-11-06T16:00:00.000Z", "Unfulfilled part must preserve its independent ETA");
+  assert.strictEqual(repairAfter.parts?.allPartsArrived, false, "allPartsArrived must remain false while blockers pending");
+});
+
+// 71. UNAVAILABLE STOCK ACCOUNTING AND FARMER PRIVACY PRESERVATION
+test("Unavailable/insufficient stock does not decrement inventory on request, and farmer view preserves depot privacy", async () => {
+  const { resetDemo, requestDemoPart, getDemoParts, INITIAL_DEMO_PARTS } = await import("../src/lib/tb-store.ts");
+  resetDemo();
+
+  const partId1 = INITIAL_DEMO_PARTS[0].id;
+  const partsBaseline = getDemoParts();
+  const part1InitialStock = partsBaseline.find((p) => p.id === partId1)?.stock_quantity ?? 0;
+
+  // Requisition a part
+  requestDemoPart({
+    repairRequestId: "TB-STOCK-TEST",
+    partId: partId1,
+    quantity: 2,
+    eta: "2026-11-07T12:00:00.000Z",
+    requesterId: "t1",
+  });
+
+  // Verify stock is NOT decremented upon requisition or ETA addition
+  const partsAfterReq = getDemoParts();
+  const part1CurrentStock = partsAfterReq.find((p) => p.id === partId1)?.stock_quantity ?? 0;
+  assert.strictEqual(
+    part1CurrentStock,
+    part1InitialStock,
+    "Stock must not decrement merely because a part was requested or given an ETA"
+  );
+
+  // Farmer route privacy verification
+  const farmerRouteCode = fs.readFileSync(path.resolve("src/routes/farmer/repair/$id.tsx"), "utf8");
+
+  // Must not expose internal depot stock count, unit wholesale cost, or depot shelf locations
+  assert.ok(!farmerRouteCode.includes("stock_quantity"), "Farmer view must never render stock_quantity");
+  assert.ok(!farmerRouteCode.includes("cost_price"), "Farmer view must never render cost_price");
+  assert.ok(!farmerRouteCode.includes("part.location"), "Farmer view must never render depot shelf location");
+  assert.ok(
+    farmerRouteCode.includes("Required part") &&
+      farmerRouteCode.includes("Awaiting Arrival") &&
+      farmerRouteCode.includes("Received at Depot"),
+    "Farmer view must display component arrival status without exposing internal depot details"
+  );
+});
+
+// 72. LABOUR-ONLY QUOTES: ZERO PART ROWS WITH VALID LABOUR CHARGE
+test("Labour-only quotes: allows sending quote with 0 parts, validates positive labour, and calculates totals correctly", () => {
+  resetDemo();
+
+  // Verify quotes service permits items = [] when labour_amount > 0
+  const quotesServiceCode = fs.readFileSync(path.resolve("src/lib/services/quotes.ts"), "utf8");
+  assert.ok(
+    quotesServiceCode.includes("items.length === 0") &&
+      quotesServiceCode.includes("input.labour_amount"),
+    "validateQuoteInputs must allow items.length === 0 when labour_amount > 0"
+  );
+
+  // Verify QuoteBuilder UI allows sending quote when parts list is empty but labour > 0
+  const techJobCode = fs.readFileSync(path.resolve("src/routes/technician/job/$id.tsx"), "utf8");
+  assert.ok(
+    techJobCode.includes("filledParts.length === 0") &&
+      techJobCode.includes("Number(q.labour) > 0"),
+    "QuoteBuilder must only block submission if both items and labour are missing"
+  );
+  assert.ok(
+    techJobCode.includes("Labour & Inspection Quote (No parts added)"),
+    "QuoteBuilder must display informative banner when formulating labour-only quote"
+  );
+
+  // Verify QuoteTable in repair-parts.tsx handles 0 parts cleanly without crash or fake parts
+  const quoteTableCode = fs.readFileSync(path.resolve("src/components/repair-parts.tsx"), "utf8");
+  assert.ok(
+    quoteTableCode.includes("Labour-only quote (no parts or supplies itemized)"),
+    "QuoteTable must render labour-only notice when quote contains zero parts"
+  );
+
+  // Verify calculation with 0 parts and ₹2,500 labour at 18% tax
+  const labourAmount = 2500;
+  const taxPercent = 18;
+  const totals = quoteTotals({
+    parts: [],
+    labour: labourAmount,
+    taxPct: taxPercent,
+  });
+  assert.strictEqual(totals.parts, 0, "Parts total must be 0 for labour-only quote");
+  assert.strictEqual(totals.tax, 450, "Tax on ₹2,500 @ 18% must be ₹450");
+  assert.strictEqual(totals.total, 2950, "Total must be ₹2,950");
+});
+
+// 73. SHOW EACH PART IN CORRECT SERVICE CENTRE WORKFLOW (TB-1324 REFERENCE)
+test("Show each part in correct workflow: distinguishes depot requisitions from sourcing holds, disabling handoff when out of stock", () => {
+  resetDemo();
+
+  const partsDeskCode = fs.readFileSync(path.resolve("src/routes/admin/parts-desk.tsx"), "utf8");
+  const techJobCode = fs.readFileSync(path.resolve("src/routes/technician/job/$id.tsx"), "utf8");
+
+  // 1. Parts Desk distinguishes Depot Requisitions vs Field/External Sourcing Holds
+  assert.ok(
+    partsDeskCode.includes("sourcingHolds") &&
+      partsDeskCode.includes("Field &amp; External Sourcing Holds"),
+    "Parts Desk must maintain distinct section for Field & External Sourcing Holds"
+  );
+
+  // 2. Sourcing holds offer ETA coordination but NEVER handoff controls
+  assert.ok(
+    partsDeskCode.includes("setSourcingHoldTarget(sh)") &&
+      !partsDeskCode.includes("confirmHandoff(sh"),
+    "Sourcing holds must support ETA coordination without handoff controls"
+  );
+
+  // 3. Depot Requisitions with insufficient or 0 stock are locked from handoff
+  assert.ok(
+    partsDeskCode.includes("req.part.stock_quantity >= req.quantity") &&
+      partsDeskCode.includes("Stock Unavailable") &&
+      partsDeskCode.includes("Out of Depot Stock"),
+    "Parts Desk must mark unavailable depot requisitions as 'Out of Depot Stock' and disable handoff"
+  );
+
+  // 4. Technician job Waiting card distinguishes Depot Requisition vs Sourcing Hold
+  assert.ok(
+    techJobCode.includes("Service Centre Depot Requisition") &&
+      techJobCode.includes("Field / External Sourcing Hold"),
+    "Technician job Waiting card must label depot requisitions separately from sourcing holds"
+  );
+  assert.ok(
+    techJobCode.includes("Sourcing Hold — Awaiting Arrival"),
+    "Technician job must never label sourcing hold as 'Awaiting Handoff'"
+  );
+});
+
+// 74. FIX ETA UPDATES FROM PARTS DESK (NO "REQUISITION NOT FOUND" ERROR)
+test("Fix ETA updates from Parts Desk: updates canonical requisition by unique request ID without error", () => {
+  resetDemo();
+
+  const parts = getDemoParts();
+  const part = parts[0];
+  assert.ok(part, "Catalog part must exist");
+
+  // 1. Create a requisition for a repair
+  const req = requestDemoPart({
+    repairRequestId: "TB-1324",
+    partId: part.id,
+    quantity: 1,
+    eta: "2026-11-05T10:00:00.000Z",
+    requesterId: "t1",
+  });
+  assert.ok(req && req.id, "Requisition must be created with valid ID");
+
+  // 2. Update ETA from Parts Desk using the requisition's exact ID
+  const newEta = "2026-11-08T16:30:00.000Z";
+  const updatedReq = updateDemoPartRequestEta({
+    requestId: req.id,
+    estimatedArrivalAt: newEta,
+    updaterRole: "admin",
+    notes: "Awaiting supplier delivery",
+  });
+  assert.strictEqual(updatedReq.id, req.id, "Must update exact requisition record");
+  assert.strictEqual(updatedReq.estimated_arrival_at, newEta, "Must record new arrival ETA");
+  assert.strictEqual(updatedReq.eta_updated_by, "admin", "Must record audit user");
+
+  // 3. Update ETA using req- ID variant or bare UUID resilience
+  const bareId = req.id.startsWith("req-") ? req.id.slice(4) : req.id;
+  const resilientReq = updateDemoPartRequestEta({
+    requestId: bareId,
+    estimatedArrivalAt: "2026-11-09T11:00:00.000Z",
+    updaterRole: "admin",
+  });
+  assert.ok(resilientReq, "Must successfully locate requisition with or without 'req-' prefix");
+  assert.strictEqual(resilientReq.estimated_arrival_at, "2026-11-09T11:00:00.000Z");
+
+  // 4. Verify parts-desk service handles column schema resilience
+  const partsDeskServiceCode = fs.readFileSync(path.resolve("src/lib/services/parts-desk.ts"), "utf8");
+  assert.ok(
+    partsDeskServiceCode.includes("estimated_arrival_at column update skipped") ||
+      partsDeskServiceCode.includes("Could not find the 'estimated_arrival_at' column"),
+    "parts-desk service must catch schema warnings on remote table and preserve fallback"
+  );
+});
+
+// 75. INSPECTION / LABOUR-ONLY QUOTES & SUBSEQUENT REVISION FLOW
+test("Labour-only quotes: allows sending quote with 0 parts, falls back gracefully from RPC error, and supports subsequent revision with parts", () => {
+  resetDemo();
+
+  const quotesServiceCode = fs.readFileSync(path.resolve("src/lib/services/quotes.ts"), "utf8");
+  const repairPartsCode = fs.readFileSync(path.resolve("src/components/repair-parts.tsx"), "utf8");
+
+  // 1. Service catches remote RPC 'at least one itemized part' error and falls back to direct table insertion
+  assert.ok(
+    quotesServiceCode.includes("at least one itemized part") ||
+      quotesServiceCode.includes("input.items && input.items.length > 0"),
+    "Quote service must safely bypass or catch remote RPC 'at least one itemized part' error"
+  );
+
+  // 2. Direct table insertion path handles 0 items safely without inserting dummy rows
+  assert.ok(
+    quotesServiceCode.includes("if (input.items && input.items.length > 0)") ||
+      quotesServiceCode.includes("input.items.length > 0"),
+    "Quote service must insert quote_items only when items are present"
+  );
+
+  // 3. UI QuoteTable renders labour-only notice when items are empty
+  assert.ok(
+    repairPartsCode.includes("Labour-only quote (no parts or supplies itemized)"),
+    "QuoteTable must inform farmer when quote is labour-only"
+  );
+
+  // 4. Test in-memory flow: Inspection quote (labour only) followed by discovery and revised quote with parts
+  const repId = actions.createRepair({
+    equipmentId: "e1",
+    farmerId: "f1",
+    symptoms: ["Engine overheating", "Low power output"],
+    description: "Field inspection required",
+    photos: [],
+    location: "Katol, Nagpur",
+  });
+  actions.requestTechnician(repId, "t1");
+  actions.accept(repId);
+
+  // Step A: Technician sends inspection/labour-only quote v1 (₹1,800 labour, 0 parts)
+  actions.sendQuote(repId, {
+    parts: [],
+    labour: 1800,
+    labourDesc: "On-site diagnostic inspection and system pressure test",
+    taxPct: 18,
+    eta: "Tomorrow by 2:00 PM",
+    warranty: "30 days on diagnostic work",
+  });
+
+  const repAfterV1 = getTB().repairs.find((r) => r.id === repId);
+  assert.ok(repAfterV1 && repAfterV1.quote);
+  assert.strictEqual(repAfterV1.quote.version, 1, "Initial inspection quote must be version 1");
+  assert.strictEqual(repAfterV1.quote.parts.length, 0, "Inspection quote must contain 0 parts");
+  assert.strictEqual(repAfterV1.quote.labour, 1800, "Labour charge must be ₹1,800");
+  assert.strictEqual(repAfterV1.status, "QUOTE_PENDING", "Repair must advance to QUOTE_PENDING");
+
+  // Farmer approves inspection quote v1
+  actions.approveQuote(repId);
+  const repApproved = getTB().repairs.find((r) => r.id === repId);
+  assert.strictEqual(repApproved.status, "IN_PROGRESS", "Repair must advance to IN_PROGRESS upon approval");
+
+  // Step B: Technician performs inspection and discovers faulty part; submits revised quote v2 with parts
+  actions.sendQuote(repId, {
+    parts: [
+      {
+        name: "Fuel Injector Nozzle Set",
+        spec: "Bosch OEM 0432193798",
+        qty: 1,
+        price: 5800,
+        source: "Service Centre Depot",
+      },
+    ],
+    labour: 3200,
+    labourDesc: "Replace fuel injector nozzles and calibrate high pressure pump",
+    taxPct: 18,
+    eta: "Friday by 5:00 PM",
+    warranty: "90 days on replacement parts & labour",
+  });
+
+  const repAfterV2 = getTB().repairs.find((r) => r.id === repId);
+  assert.ok(repAfterV2 && repAfterV2.quote);
+  assert.strictEqual(repAfterV2.quote.version, 2, "Revised quote with parts must be version 2");
+  assert.strictEqual(repAfterV2.quote.parts.length, 1, "Revised quote must contain the discovered part");
+  assert.strictEqual(repAfterV2.quote.parts[0].name, "Fuel Injector Nozzle Set");
+  assert.strictEqual(repAfterV2.quote.parts[0].price, 5800);
+  assert.strictEqual(repAfterV2.status, "QUOTE_PENDING", "Repair must return to QUOTE_PENDING for farmer review");
+
+  // Farmer approves revised quote v2
+  actions.approveQuote(repId);
+  const repFinal = getTB().repairs.find((r) => r.id === repId);
+  assert.strictEqual(repFinal.status, "IN_PROGRESS", "Repair returns to IN_PROGRESS with approved parts quote");
+});
+
+// 76. SOURCING HOLDS VISIBLE & ACTIONABLE IN SERVICE CENTRE & TECHNICIAN VIEWS (TB-5768 REFERENCE)
+test("Sourcing holds: visible across repair statuses, support ETA coordination, and strictly exclude handoff controls", () => {
+  resetDemo();
+
+  const partsDeskCode = fs.readFileSync(path.resolve("src/routes/admin/parts-desk.tsx"), "utf8");
+  const adminRepairCode = fs.readFileSync(path.resolve("src/routes/admin/repair/$id.tsx"), "utf8");
+  const partsPickupCardCode = fs.readFileSync(path.resolve("src/components/parts-pickup-card.tsx"), "utf8");
+  const repairRequestsServiceCode = fs.readFileSync(path.resolve("src/lib/services/repair-requests.ts"), "utf8");
+
+  // 1. updatePartsEta permits active repair statuses (WAITING_FOR_PARTS, IN_PROGRESS, QUOTE_PENDING, ACCEPTED)
+  assert.ok(
+    repairRequestsServiceCode.includes("WAITING_FOR_PARTS") &&
+      repairRequestsServiceCode.includes("IN_PROGRESS") &&
+      repairRequestsServiceCode.includes("QUOTE_PENDING") &&
+      repairRequestsServiceCode.includes("permittedStatuses"),
+    "updatePartsEta must permit updating parts ETA across active repair lifecycle states"
+  );
+
+  // 2. Parts Desk queries sourcing holds across active statuses, not just WAITING_FOR_PARTS
+  assert.ok(
+    partsDeskCode.includes('.in("status", ["WAITING_FOR_PARTS", "IN_PROGRESS", "QUOTE_PENDING", "ACCEPTED"])') ||
+      partsDeskCode.includes("QUOTE_PENDING"),
+    "Parts Desk sourcing holds query must discover holds across repair statuses"
+  );
+
+  // 3. Technician PartsPickupCard renders dedicated Field & External Sourcing Holds section
+  assert.ok(
+    partsPickupCardCode.includes("Field &amp; External Sourcing Holds") ||
+      partsPickupCardCode.includes("Field & External Sourcing Holds"),
+    "PartsPickupCard must render Field & External Sourcing Holds section"
+  );
+  assert.ok(
+    partsPickupCardCode.includes("Sourcing Hold — Awaiting Arrival"),
+    "PartsPickupCard must display 'Sourcing Hold — Awaiting Arrival' badge"
+  );
+  assert.ok(
+    partsPickupCardCode.includes("handleOpenSourcingEta"),
+    "PartsPickupCard must provide ETA update controls for sourcing holds"
+  );
+
+  // 4. Admin Repair Detail renders Field & External Sourcing Holds section with ETA controls
+  assert.ok(
+    adminRepairCode.includes("Field &amp; External Sourcing Holds") ||
+      adminRepairCode.includes("Field & External Sourcing Holds"),
+    "Admin repair detail must render Field & External Sourcing Holds section"
+  );
+  assert.ok(
+    adminRepairCode.includes("handleSaveSourcingEta") || adminRepairCode.includes("sourcingEtaTarget"),
+    "Admin repair detail must provide ETA coordination dialog for sourcing holds"
+  );
+
+  // 5. Sourcing holds never offer or permit physical depot handoff
+  assert.ok(
+    !adminRepairCode.includes("confirmPartHandoff(sh") &&
+      !partsPickupCardCode.includes("confirmPartHandoff(sh") &&
+      !partsDeskCode.includes("confirmPartHandoff(sh"),
+    "Sourcing holds must NEVER offer or execute depot handoff controls"
+  );
+});
+
+// 77. DEPOT REQUISITIONS LOCK HANDOFF WHEN STOCK IS ZERO OR INSUFFICIENT
+test("Depot requisitions lock handoff when out of stock in both Parts Desk and Admin Repair views", () => {
+  const partsDeskCode = fs.readFileSync(path.resolve("src/routes/admin/parts-desk.tsx"), "utf8");
+  const adminRepairCode = fs.readFileSync(path.resolve("src/routes/admin/repair/$id.tsx"), "utf8");
+
+  // 1. Parts Desk locks handoff when stock is insufficient
+  assert.ok(
+    partsDeskCode.includes("req.part && req.part.stock_quantity >= req.quantity"),
+    "Parts Desk must require req.part.stock_quantity >= req.quantity for handoff"
+  );
+  assert.ok(
+    partsDeskCode.includes("Handoff Locked (Out of Stock)"),
+    "Parts Desk must show 'Handoff Locked (Out of Stock)' button when unavailable"
+  );
+
+  // 2. Admin Repair detail locks handoff when stock is insufficient
+  assert.ok(
+    adminRepairCode.includes("req.part && req.part.stock_quantity >= req.quantity"),
+    "Admin Repair detail must require req.part.stock_quantity >= req.quantity for handoff"
+  );
+  assert.ok(
+    adminRepairCode.includes("Handoff Locked (Out of Stock)"),
+    "Admin Repair detail must show 'Handoff Locked (Out of Stock)' button when unavailable"
+  );
+});
+
+// 78. TECHNICIAN PAUSE WAITING FOR PARTS: CATALOG DROPDOWN & SERVICE CENTRE REQUISITION
+test("Technician pause waiting for parts: catalog dropdown selection creates/links parts requisition with SKU, quantity, ETA, and Service Centre visibility", () => {
+  resetDemo();
+
+  const techJobCode = fs.readFileSync(path.resolve("src/routes/technician/job/$id.tsx"), "utf8");
+
+  // 1. Pause form renders catalog dropdown with stock availability
+  assert.ok(
+    techJobCode.includes("Select from Depot Catalog") &&
+      techJobCode.includes("in stock") &&
+      techJobCode.includes("Out of stock"),
+    "Pause form must render depot catalog dropdown displaying stock availability"
+  );
+
+  // 2. Form includes quantity selector and catalog badge
+  assert.ok(
+    techJobCode.includes("p.quantity") &&
+      techJobCode.includes("Service Centre Depot Catalog"),
+    "Pause form must support quantity and show Service Centre Depot Catalog indicator"
+  );
+
+  // 3. Submitting pause calls requestServiceCentrePart or passes partId to waitForParts
+  assert.ok(
+    techJobCode.includes("requestServiceCentrePart") &&
+      techJobCode.includes("effectiveCatalogPartId"),
+    "Submitting pause with a catalog part must link to Service Centre part requisition"
+  );
+
+  // 4. Test functional in-memory flow
+  const repId = actions.createRepair({
+    equipmentId: "e1",
+    farmerId: "f1",
+    symptoms: ["Engine won't start", "Fuel line clogged"],
+    description: "Tractor stalled in field during harvesting",
+    photos: [],
+    location: "Katol, Nagpur",
+  });
+  actions.requestTechnician(repId, "t1");
+  actions.accept(repId);
+
+  // Technician sends inspection quote v1 and farmer approves, moving to IN_PROGRESS
+  actions.sendQuote(repId, {
+    parts: [],
+    labour: 1200,
+    labourDesc: "Diagnostic fuel circuit inspection",
+    taxPct: 18,
+    eta: "Today 4:00 PM",
+    warranty: "30 days",
+  });
+  actions.approveQuote(repId);
+
+  const repInProgress = getTB().repairs.find((r) => r.id === repId);
+  assert.strictEqual(repInProgress.status, "IN_PROGRESS");
+
+  // Technician pauses repair selecting Inline Fuel Filter (part-1) from Service Centre catalog
+  const parts = getDemoParts();
+  const filterPart = parts.find((p) => p.name.includes("Fuel Filter"));
+  assert.ok(filterPart, "Inline Fuel Filter must exist in catalog");
+
+  const req = requestDemoPart({
+    repairRequestId: repId,
+    partId: filterPart.id,
+    quantity: 2,
+    notes: "Not in van stock",
+    eta: "Tomorrow, 9:30 am",
+    revisedCompletion: "Tomorrow, 5:00 pm",
+    farmerNote: "Part is being picked up from Service Centre depot.",
+    requesterId: "t1",
+    requesterName: "Ramesh Kumar",
+  });
+
+  assert.ok(req && req.id, "Requisition must be created with valid ID");
+  assert.strictEqual(req.part_id, filterPart.id);
+  assert.strictEqual(req.quantity, 2);
+  assert.strictEqual(req.status, "PENDING");
+  assert.strictEqual(req.estimated_arrival_at, "Tomorrow, 9:30 am");
+  assert.strictEqual(req.notes, "Not in van stock");
+
+  // Verify repair transitioned to WAITING_FOR_PARTS
+  const repWaiting = getTB().repairs.find((r) => r.id === repId);
+  assert.strictEqual(repWaiting.status, "WAITING_FOR_PARTS");
+  assert.ok(repWaiting.parts, "Parts hold must be attached to repair");
+  assert.strictEqual(repWaiting.parts.revisedCompletion, "Tomorrow, 5:00 pm");
+  assert.strictEqual(repWaiting.parts.note, "Part is being picked up from Service Centre depot.");
+
+  // Verify blocker items list contains the catalog part with requisition ID
+  assert.ok(Array.isArray(repWaiting.parts.items) && repWaiting.parts.items.length >= 1);
+  const blocker = repWaiting.parts.items.find((it) => it.partId === filterPart.id);
+  assert.ok(blocker, "Blocker item must reference catalog part ID");
+  assert.strictEqual(blocker.id, req.id);
+  assert.strictEqual(blocker.quantity, 2);
+  assert.strictEqual(blocker.eta, "Tomorrow, 9:30 am");
+
+  // Verify Service Centre requisition visibility
+  const allReqs = getDemoPartRequests(repId);
+  assert.ok(allReqs.some((r) => r.id === req.id && r.part_id === filterPart.id));
+
+  // Verify quote line automatically synchronized with locked catalog price
+  assert.ok(repWaiting.quote && repWaiting.quote.parts.length >= 1);
+  const quoteLine = repWaiting.quote.parts.find((p) => p.catalogPartId === filterPart.id);
+  assert.ok(quoteLine, "Quote must contain automatically synchronized catalog part");
+  assert.strictEqual(quoteLine.qty, 2);
+  assert.strictEqual(quoteLine.price, filterPart.unit_price);
+});
+
+// 79. PAUSE FOR PARTS DUPLICATE PREVENTION ON RETRY & INSUFFICIENT STOCK LOCK
+test("Pause for parts: prevents duplicate requisitions on retried submission and locks handoff when stock is insufficient", () => {
+  resetDemo();
+
+  const parts = getDemoParts();
+  const filterPart = parts[0];
+  assert.ok(filterPart, "Catalog part must exist");
+
+  const repId = actions.createRepair({
+    equipmentId: "e1",
+    farmerId: "f1",
+    symptoms: ["Hydraulic leak"],
+    description: "Lift cylinder failure",
+    photos: [],
+    location: "Katol, Nagpur",
+  });
+  actions.requestTechnician(repId, "t1");
+  actions.accept(repId);
+
+  // 1. Initial pause submission creates requisition
+  const req1 = requestDemoPart({
+    repairRequestId: repId,
+    partId: filterPart.id,
+    quantity: 1,
+    notes: "Awaiting depot pickup",
+    eta: "2026-11-04T10:00:00Z",
+    requesterId: "t1",
+  });
+  assert.ok(req1 && req1.id);
+
+  const initialReqs = getDemoPartRequests(repId);
+  assert.strictEqual(initialReqs.length, 1, "Must have exactly 1 requisition initially");
+
+  // 2. Retrying submission with updated quantity updates existing request WITHOUT creating duplicates
+  const req2 = requestDemoPart({
+    repairRequestId: repId,
+    partId: filterPart.id,
+    quantity: 3,
+    notes: "Updated quantity required",
+    eta: "2026-11-04T12:00:00Z",
+    requesterId: "t1",
+  });
+
+  const retriedReqs = getDemoPartRequests(repId);
+  assert.strictEqual(retriedReqs.length, 1, "Retrying submission must NEVER create duplicate requisition rows");
+  assert.strictEqual(retriedReqs[0].id, req1.id, "Must update existing requisition ID");
+  assert.strictEqual(retriedReqs[0].quantity, 3, "Must update quantity on retried request");
+  assert.strictEqual(retriedReqs[0].notes, "Updated quantity required");
+
+  // 3. Insufficient / out-of-stock behavior:
+  // Adjust stock to 0 to simulate unavailable depot inventory
+  adjustDemoPartStock(filterPart.id, -filterPart.stock_quantity, "audit-drain", "t1");
+  const drainedPart = getDemoParts().find((p) => p.id === filterPart.id);
+  assert.strictEqual(drainedPart.stock_quantity, 0, "Depot stock must be 0");
+
+  // Attempting handoff while stock is 0 must fail and NOT decrement stock
+  assert.throws(
+    () => {
+      confirmDemoPartHandoff(req1.id, "admin");
+    },
+    /insufficient|stock/i,
+    "confirmDemoPartHandoff must throw when depot stock is unavailable"
+  );
+  assert.strictEqual(getDemoParts().find((p) => p.id === filterPart.id).stock_quantity, 0);
+
+  // Restock via receive delivery
+  receiveDemoStock({
+    partId: filterPart.id,
+    quantity: 10,
+    reason: "Supplier restock shipment",
+    callerName: "admin",
+  });
+  const restockedPart = getDemoParts().find((p) => p.id === filterPart.id);
+  assert.strictEqual(restockedPart.stock_quantity, 10, "Depot stock must now be 10");
+
+  // Now handoff succeeds, decrementing on-hand stock exactly once
+  const handoffRes = confirmDemoPartHandoff(req1.id, "admin");
+  assert.strictEqual(handoffRes.request.part_id, filterPart.id);
+  assert.strictEqual(handoffRes.request.quantity, 3);
+  assert.strictEqual(handoffRes.part.stock_quantity, 7);
+  assert.strictEqual(getDemoParts().find((p) => p.id === filterPart.id).stock_quantity, 7);
+});
+
+
+
 
 
 

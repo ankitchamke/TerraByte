@@ -47,6 +47,7 @@ import { useRepairTicketRealtime } from "@/hooks/use-repair-realtime";
 import {
   confirmPartHandoff,
   getRepairPartRequests,
+  updatePartRequestEta,
   type ServiceCentrePartRequestDetail,
 } from "@/lib/services/parts-desk";
 import {
@@ -227,6 +228,17 @@ function AdminRepair() {
   const [partRequests, setPartRequests] = useState<ServiceCentrePartRequestDetail[]>([]);
   const [confirmingHandoffId, setConfirmingHandoffId] = useState<string | null>(null);
 
+  // Coordinate Part ETA state
+  const [partEtaTarget, setPartEtaTarget] = useState<ServiceCentrePartRequestDetail | null>(null);
+  const [partNewEta, setPartNewEta] = useState("");
+  const [partEtaNotes, setPartEtaNotes] = useState("");
+  const [updatingPartEta, setUpdatingPartEta] = useState(false);
+
+  // Coordinate Sourcing Hold ETA state
+  const [sourcingEtaTarget, setSourcingEtaTarget] = useState<any | null>(null);
+  const [sourcingNewEta, setSourcingNewEta] = useState("");
+  const [updatingSourcingEta, setUpdatingSourcingEta] = useState(false);
+
   const hasLoadedRef = useRef(false);
 
   const loadData = useCallback(async () => {
@@ -328,6 +340,31 @@ function AdminRepair() {
     repairId: dbRepair?.id || id,
     onUpdate: loadData,
   });
+
+  const handleOpenPartEta = (req: ServiceCentrePartRequestDetail) => {
+    setPartEtaTarget(req);
+    setPartNewEta(req.estimated_arrival_at || "");
+    setPartEtaNotes(req.notes || "");
+  };
+
+  const handleSavePartEta = async () => {
+    if (!partEtaTarget) return;
+    setUpdatingPartEta(true);
+    try {
+      await updatePartRequestEta(partEtaTarget.id, {
+        estimatedArrivalAt: partNewEta.trim() || null,
+        notes: partEtaNotes.trim() || undefined,
+      });
+      toast.success(`Arrival ETA updated for ${partEtaTarget.part?.name || "spare part"}.`);
+      setPartEtaTarget(null);
+      await loadData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to update ETA.";
+      toast.error(msg);
+    } finally {
+      setUpdatingPartEta(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -438,6 +475,34 @@ function AdminRepair() {
     ? (r.parts_hold as Record<string, any> | null)
     : (mockR?.parts as any);
 
+  // Field & External Sourcing Holds (blocker items with no matching depot requisition row)
+  const rawHoldItems: any[] = !partsHold
+    ? []
+    : Array.isArray(partsHold.items)
+      ? partsHold.items
+      : partsHold.part
+        ? [
+            {
+              id: partsHold.part,
+              part: partsHold.part,
+              reason: partsHold.reason,
+              eta: partsHold.eta,
+              status: "PENDING",
+            },
+          ]
+        : [];
+  const sourcingHolds = rawHoldItems.filter((it: any) => {
+    const isDone = it.status === "HANDED_OFF" || it.status === "RESOLVED";
+    if (isDone) return false;
+    const isDepotReq = (partRequests || []).some(
+      (pr) =>
+        pr.id === it.id ||
+        (it.partId && pr.part_id === it.partId) ||
+        (pr.part?.name && it.part && pr.part.name.trim().toLowerCase() === it.part.trim().toLowerCase()),
+    );
+    return !isDepotReq;
+  });
+
   // Safeguarded preliminary assessment
   const rawAssessment = (r.assessment as any) || {};
   const assessmentObj: Assessment = {
@@ -535,6 +600,32 @@ function AdminRepair() {
       toast.error(err?.message || "Failed to update parts ETA");
     } finally {
       setUpdatingEta(false);
+    }
+  };
+
+  // Handle Sourcing Hold ETA Update
+  const handleSaveSourcingEta = async () => {
+    if (!sourcingEtaTarget) return;
+    setUpdatingSourcingEta(true);
+    try {
+      if (isReal) {
+        await updatePartsEta(r.id, {
+          itemId: sourcingEtaTarget.id,
+          partName: sourcingEtaTarget.part,
+          eta: sourcingNewEta.trim() || "ETA pending",
+          note: "Sourcing hold ETA updated by Service Centre",
+        });
+      } else {
+        actions.updatePartsEta(jobNumber, sourcingNewEta.trim() || "ETA pending", "admin", sourcingEtaTarget.id);
+      }
+      toast.success(`Arrival ETA updated for ${sourcingEtaTarget.part}.`);
+      setSourcingEtaTarget(null);
+      await loadData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to update sourcing hold ETA.";
+      toast.error(msg);
+    } finally {
+      setUpdatingSourcingEta(false);
     }
   };
 
@@ -991,27 +1082,58 @@ function AdminRepair() {
                   <div className="space-y-1.5">
                     {partsHold.items.map((it: any, idx: number) => {
                       const isDone = it.status === "HANDED_OFF" || it.status === "RESOLVED";
+                      const matchingReq = (partRequests || []).find(
+                        (pr) =>
+                          pr.id === it.id ||
+                          pr.part_id === it.partId ||
+                          pr.part?.name?.trim().toLowerCase() === it.part.trim().toLowerCase(),
+                      );
+                      const isDepotReq = Boolean(matchingReq);
+                      const isOutOfStock = matchingReq && matchingReq.part && matchingReq.part.stock_quantity === 0;
+                      const isInsufficient =
+                        matchingReq &&
+                        matchingReq.part &&
+                        matchingReq.part.stock_quantity > 0 &&
+                        matchingReq.part.stock_quantity < matchingReq.quantity;
+
                       return (
                         <div
                           key={idx}
                           className="flex items-center justify-between text-xs rounded-lg bg-background/80 p-2.5 border border-border/60"
                         >
-                          <div>
+                          <div className="space-y-0.5">
                             <p className="font-semibold text-foreground">
                               {it.part} {it.quantity ? `(Qty: ${it.quantity})` : ""}
                             </p>
                             <p className="text-[11px] text-muted-foreground">{it.reason}</p>
+                            <span className="text-[10px] text-muted-foreground font-mono">
+                              {isDepotReq ? "Depot Requisition" : "Field / External Sourcing Hold"}
+                            </span>
                           </div>
-                          <div className="text-right">
+                          <div className="text-right space-y-1">
                             <span
                               className={cn(
                                 "inline-block rounded-full px-2 py-0.5 text-[10px] font-bold",
                                 isDone
                                   ? "bg-success/20 text-success"
-                                  : "bg-warning/20 text-warning-foreground",
+                                  : isDepotReq
+                                    ? isOutOfStock
+                                      ? "bg-destructive/15 text-destructive"
+                                      : isInsufficient
+                                        ? "bg-warning/20 text-warning-foreground"
+                                        : "bg-warning/20 text-warning-foreground"
+                                    : "bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/30",
                               )}
                             >
-                              {isDone ? "Handed Off" : "Awaiting Handoff"}
+                              {isDone
+                                ? "Handed Off"
+                                : isDepotReq
+                                  ? isOutOfStock
+                                    ? "Out of Depot Stock — Awaiting Arrival"
+                                    : isInsufficient
+                                      ? "Insufficient Stock — Awaiting Arrival"
+                                      : "Awaiting Handoff"
+                                  : "Sourcing Hold — Awaiting Arrival"}
                             </span>
                             {it.eta && (
                               <p className="text-[10px] text-muted-foreground mt-0.5">
@@ -1110,7 +1232,29 @@ function AdminRepair() {
                               ? "Handed Off"
                               : "Cancelled"}
                         </span>
+                        {req.part && req.part.stock_quantity === 0 && (
+                          <span className="rounded-full bg-destructive/15 px-2 py-0.5 text-[10px] font-bold text-destructive">
+                            Out of Depot Stock
+                          </span>
+                        )}
+                        {req.part && req.part.stock_quantity > 0 && req.part.stock_quantity < req.quantity && (
+                          <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[10px] font-bold text-warning-foreground">
+                            Insufficient Stock ({req.part.stock_quantity} available)
+                          </span>
+                        )}
                       </div>
+                      <div className="flex items-center gap-1.5 text-[11px] mt-0.5">
+                        <Clock className="h-3 w-3 text-primary shrink-0" />
+                        <span className="text-muted-foreground">Expected Arrival:</span>
+                        <span className={cn("font-medium", req.estimated_arrival_at ? "text-primary font-semibold" : "text-muted-foreground italic")}>
+                          {req.estimated_arrival_at ? formatEtaDateTime(req.estimated_arrival_at) : "ETA pending"}
+                        </span>
+                      </div>
+                      {req.eta_updated_at && (
+                        <p className="text-[10px] text-muted-foreground">
+                          ETA set {req.eta_updater?.full_name ? `by ${req.eta_updater.full_name}` : ""} on {new Date(req.eta_updated_at).toLocaleDateString()}
+                        </p>
+                      )}
                       <p className="font-mono text-[11px] text-muted-foreground">
                         SKU: {req.part?.part_number || "—"} · Spec: {req.part?.spec || "Standard"}
                         {req.part?.location ? ` · Shelf: ${req.part.location}` : ""}
@@ -1132,29 +1276,105 @@ function AdminRepair() {
                       <div className="flex items-center gap-2 shrink-0">
                         <button
                           type="button"
-                          disabled={confirmingHandoffId === req.id}
-                          onClick={async () => {
-                            setConfirmingHandoffId(req.id);
-                            try {
-                              const res = await confirmPartHandoff(req.id);
-                              toast.success(
-                                `Confirmed handoff: ${res.quantity}x ${res.part_name}. On-hand stock updated.`,
-                              );
-                              await loadData();
-                            } catch (err: any) {
-                              toast.error(err?.message || "Failed to confirm handoff.");
-                            } finally {
-                              setConfirmingHandoffId(null);
-                            }
-                          }}
-                          className="inline-flex h-8 items-center rounded-lg bg-success px-3 text-xs font-semibold text-success-foreground hover:bg-success/90 disabled:opacity-50"
+                          onClick={() => handleOpenPartEta(req)}
+                          className="inline-flex h-8 items-center rounded-lg border border-primary/30 bg-primary/5 px-2.5 text-xs font-semibold text-primary hover:bg-primary/15"
                         >
-                          {confirmingHandoffId === req.id ? "Confirming…" : "Confirm Handoff"}
+                          Update ETA
                         </button>
+                        {req.part && req.part.stock_quantity >= req.quantity ? (
+                          <button
+                            type="button"
+                            disabled={confirmingHandoffId === req.id}
+                            onClick={async () => {
+                              setConfirmingHandoffId(req.id);
+                              try {
+                                const res = await confirmPartHandoff(req.id);
+                                toast.success(
+                                  `Confirmed handoff: ${res.quantity}x ${res.part_name}. On-hand stock updated.`,
+                                );
+                                await loadData();
+                              } catch (err: any) {
+                                toast.error(err?.message || "Failed to confirm handoff.");
+                              } finally {
+                                setConfirmingHandoffId(null);
+                              }
+                            }}
+                            className="inline-flex h-8 items-center rounded-lg bg-success px-3 text-xs font-semibold text-success-foreground hover:bg-success/90 disabled:opacity-50"
+                          >
+                            {confirmingHandoffId === req.id ? "Confirming…" : "Confirm Handoff"}
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled
+                            title="Cannot hand off part: Insufficient or zero depot stock available."
+                            className="inline-flex h-8 items-center rounded-lg bg-muted px-3 text-xs font-semibold text-muted-foreground cursor-not-allowed opacity-60"
+                          >
+                            Handoff Locked (Out of Stock)
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* Field & External Sourcing Holds */}
+            {sourcingHolds.length > 0 && (
+              <div className="mt-4 pt-3 border-t border-border/60">
+                <div className="flex items-center gap-1.5 mb-2">
+                  <MapPin className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Field &amp; External Sourcing Holds ({sourcingHolds.length})
+                  </h3>
+                </div>
+                <p className="text-[11px] text-muted-foreground mb-2.5">
+                  Parts sourced externally or held in the field. Coordinate arrival ETA directly below. Handoff is locked until received into depot inventory.
+                </p>
+                <div className="space-y-2">
+                  {sourcingHolds.map((sh: any, idx: number) => (
+                    <div
+                      key={sh.id || idx}
+                      className="flex flex-col gap-2 rounded-xl border border-blue-500/20 bg-blue-500/5 p-3 text-xs sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="space-y-0.5 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-semibold text-foreground">
+                            {sh.part} {sh.quantity ? `(Qty: ${sh.quantity})` : ""}
+                          </span>
+                          <span className="rounded-full bg-blue-500/15 px-2 py-0.5 text-[10px] font-bold text-blue-700 dark:text-blue-300 border border-blue-500/30">
+                            Sourcing Hold — Awaiting Arrival
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-[11px] mt-0.5">
+                          <Clock className="h-3 w-3 text-primary shrink-0" />
+                          <span className="text-muted-foreground">Expected Arrival:</span>
+                          <span className={cn("font-medium", sh.eta ? "text-primary font-semibold" : "text-muted-foreground italic")}>
+                            {sh.eta ? formatEtaDateTime(sh.eta) : "ETA pending"}
+                          </span>
+                        </div>
+                        {sh.reason && (
+                          <p className="text-[11px] italic text-muted-foreground">
+                            "{sh.reason}"
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSourcingEtaTarget(sh);
+                            setSourcingNewEta(sh.eta || "");
+                          }}
+                          className="inline-flex h-8 items-center rounded-lg border border-primary/30 bg-primary/5 px-2.5 text-xs font-semibold text-primary hover:bg-primary/15"
+                        >
+                          Update ETA
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </Card>
@@ -1492,6 +1712,99 @@ function AdminRepair() {
               </button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* UPDATE PART ETA MODAL */}
+      <Dialog open={Boolean(partEtaTarget)} onOpenChange={(open) => !open && setPartEtaTarget(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Coordinate Expected Arrival (ETA)</DialogTitle>
+            <DialogDescription>
+              Set or update expected delivery date &amp; time for {partEtaTarget?.part?.name || "spare part"}. Updates the repair hold and farmer delay status in real time.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <div>
+              <Label className="text-xs">Expected Arrival Date &amp; Time</Label>
+              <DateTimePicker value={partNewEta} onChange={setPartNewEta} />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Set when supplier delivery or restock is expected at the Service Centre depot.
+              </p>
+            </div>
+
+            <div>
+              <Label className="text-xs">Coordination Notes (Optional)</Label>
+              <input
+                type="text"
+                value={partEtaNotes}
+                onChange={(e) => setPartEtaNotes(e.target.value)}
+                placeholder="e.g. Sourced from regional depot / courier delivery"
+                className="h-9 w-full rounded-lg border border-border bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <button
+              type="button"
+              disabled={updatingPartEta}
+              onClick={() => setPartEtaTarget(null)}
+              className="rounded-lg border border-border px-3 py-2 text-xs font-semibold hover:bg-muted"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={updatingPartEta}
+              onClick={handleSavePartEta}
+              className="rounded-lg bg-primary px-4 py-2 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {updatingPartEta ? "Saving..." : "Save ETA"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* UPDATE SOURCING HOLD ETA MODAL */}
+      <Dialog open={Boolean(sourcingEtaTarget)} onOpenChange={(open) => !open && setSourcingEtaTarget(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Coordinate Sourcing Hold Expected Arrival</DialogTitle>
+            <DialogDescription>
+              Set or update expected arrival date &amp; time for {sourcingEtaTarget?.part || "spare part"}. Updates the repair hold and farmer delay status in real time.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <div>
+              <Label className="text-xs">Expected Arrival Date &amp; Time</Label>
+              <DateTimePicker value={sourcingNewEta} onChange={setSourcingNewEta} />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Set when field or external supplier delivery is expected. Physical depot handoff is locked.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <button
+              type="button"
+              disabled={updatingSourcingEta}
+              onClick={() => setSourcingEtaTarget(null)}
+              className="rounded-lg border border-border px-3 py-2 text-xs font-semibold hover:bg-muted"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={updatingSourcingEta}
+              onClick={handleSaveSourcingEta}
+              className="rounded-lg bg-primary px-4 py-2 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {updatingSourcingEta ? "Saving..." : "Save ETA"}
+            </button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

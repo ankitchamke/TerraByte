@@ -78,6 +78,7 @@ import { PartsPickupCard } from "@/components/parts-pickup-card";
 import {
   getRepairPartRequests,
   getServiceCentreParts,
+  requestServiceCentrePart,
   syncPartRequestToQuoteLines,
   type ServiceCentrePart,
   type ServiceCentrePartRequestDetail,
@@ -871,6 +872,7 @@ function Job() {
           onUpdate={loadData}
           hasPendingQuote={Boolean(pendingQuote)}
           isQuoteApproved={Boolean(approvedQuote)}
+          partRequests={partRequests}
         />
       )}
 
@@ -880,6 +882,20 @@ function Job() {
           repairStatus={r.status}
           isAssigned={r.technician_id === profile?.id}
           partRequests={partRequests}
+          sourcingHolds={
+            (((r.parts_hold as any)?.items || demoRepair?.parts?.items || []) as any[]).filter(
+              (item: any) => {
+                const isDepot = partRequests.some(
+                  (req) =>
+                    req.id === item.id ||
+                    req.id.toLowerCase() === (item.id || "").toLowerCase() ||
+                    (item.partId && req.part_id === item.partId) ||
+                    req.part?.name?.toLowerCase() === (item.part || "").toLowerCase(),
+                );
+                return !isDepot && (item.status === "PENDING" || !item.status);
+              },
+            )
+          }
           onUpdate={loadData}
         />
       )}
@@ -1135,7 +1151,7 @@ function QuoteBuilder({
       };
     }
     return {
-      parts: [{ ...blankPart(), name: defaultPartName || "" }],
+      parts: defaultPartName ? [{ ...blankPart(), name: defaultPartName }] : [],
       labourDesc: "Inspection, repair and test run",
       labour: 800,
       taxPct: 0,
@@ -1150,18 +1166,20 @@ function QuoteBuilder({
       parts: prev.parts.map((x, k) => (k === i ? { ...x, ...p } : x)),
     }));
 
-  const t = quoteTotals({ ...q, version: 0, sentAt: 0 });
+  const filledParts = q.parts.filter((p) => p.name.trim().length > 0);
+  const t = quoteTotals({ ...q, parts: filledParts, version: 0, sentAt: 0 });
   const valid =
-    (q.parts.length === 0
+    (filledParts.length === 0
       ? Number(q.labour) > 0
-      : q.parts.every((p) => p.name.trim() && p.qty > 0 && p.price >= 0)) &&
+      : filledParts.every((p) => p.qty > 0 && p.price >= 0)) &&
     q.labourDesc.trim().length > 0 &&
     q.eta.trim().length > 0;
 
   const handleSend = async () => {
     if (!valid || submitting) return;
 
-    for (const p of q.parts) {
+    const activeParts = q.parts.filter((p) => p.name.trim().length > 0);
+    for (const p of activeParts) {
       if (p.catalogPartId && (!p.price || Number(p.price) <= 0 || isNaN(Number(p.price)))) {
         toast.error(
           `Catalog part "${p.name}" does not have a valid customer-facing selling price. Please contact Service Centre staff to verify catalog pricing.`
@@ -1179,7 +1197,7 @@ function QuoteBuilder({
         tax_percent: Number(q.taxPct),
         estimated_completion: q.eta.trim(),
         ...(q.warranty.trim() ? { warranty_terms: q.warranty.trim() } : {}),
-        items: q.parts.map((p) => ({
+        items: activeParts.map((p) => ({
           part_name: p.name.trim(),
           quantity: Number(p.qty),
           unit_price: Number(p.price),
@@ -1199,7 +1217,7 @@ function QuoteBuilder({
 
       if (isDemo) {
         actions.sendQuote(repairId, {
-          parts: q.parts,
+          parts: activeParts,
           labourDesc: q.labourDesc.trim(),
           labour: Number(q.labour),
           taxPct: Number(q.taxPct),
@@ -1347,6 +1365,14 @@ function QuoteBuilder({
         <p className="rounded-xl bg-accent/20 p-3 text-sm">
           <b>Farmer note:</b> "{clarification}"
         </p>
+      )}
+      {q.parts.length === 0 && (
+        <div className="rounded-xl border border-dashed border-primary/40 bg-primary/5 p-4 text-center space-y-1">
+          <p className="text-sm font-semibold text-foreground">Labour & Inspection Quote (No parts added)</p>
+          <p className="text-xs text-muted-foreground">
+            You can send a labour-only quote without parts, or click "Add part" below to include spare components.
+          </p>
+        </div>
       )}
       {q.parts.map((p, i) => (
         <div key={i} className="space-y-2 rounded-xl border border-border p-3">
@@ -1560,16 +1586,39 @@ function InProgress({
   const isWorkLocked = !isQuoteApproved || hasPendingParts;
   const [note, setNote] = useState("");
   const [mode, setMode] = useState<"none" | "parts" | "complete" | "test_failed">("none");
+  const [catalogParts, setCatalogParts] = useState<ServiceCentrePart[]>([]);
   const [p, setP] = useState(() => {
     const presets = getEtaPresets();
+    const defaultPart = r.quote?.parts[0];
     return {
-      part: r.quote?.parts[0]?.name ?? "",
+      part: defaultPart?.name ?? "",
+      catalogPartId: defaultPart?.catalogPartId ?? "",
+      quantity: defaultPart?.qty || 1,
       reason: "Not in van stock",
       eta: presets[1]?.iso || "",
       note: "",
       revisedCompletion: presets[2]?.iso || "",
     };
   });
+
+  useEffect(() => {
+    void getServiceCentreParts()
+      .then((parts) => {
+        setCatalogParts(parts);
+        setP((prev) => {
+          if (!prev.catalogPartId && prev.part) {
+            const match = parts.find(
+              (cp) => cp.name.trim().toLowerCase() === prev.part.trim().toLowerCase()
+            );
+            if (match) {
+              return { ...prev, catalogPartId: match.id };
+            }
+          }
+          return prev;
+        });
+      })
+      .catch(() => {});
+  }, []);
   const [failReason, setFailReason] = useState("");
   const [final, setFinal] = useState("");
   const [photo, setPhoto] = useState("");
@@ -1616,15 +1665,37 @@ function InProgress({
     if (!p.part.trim() || !p.eta.trim() || !p.reason.trim() || submitting) return;
     setSubmitting(true);
     try {
-      await waitForParts(repairId, {
-        part: p.part.trim(),
-        reason: p.reason.trim(),
-        eta: p.eta.trim(),
-        ...(p.revisedCompletion.trim() ? { revisedCompletion: p.revisedCompletion.trim() } : {}),
-        ...(p.note.trim() ? { note: p.note.trim() } : {}),
-      });
+      const effectiveCatalogPartId =
+        p.catalogPartId ||
+        catalogParts.find((cp) => cp.name.trim().toLowerCase() === p.part.trim().toLowerCase())
+          ?.id;
+
+      if (effectiveCatalogPartId) {
+        await requestServiceCentrePart({
+          repairRequestId: repairId,
+          partId: effectiveCatalogPartId,
+          quantity: p.quantity || 1,
+          notes: p.reason.trim(),
+          eta: p.eta.trim(),
+          revisedCompletion: p.revisedCompletion.trim() || undefined,
+          farmerNote: p.note.trim() || undefined,
+        });
+      } else {
+        await waitForParts(repairId, {
+          part: p.part.trim(),
+          reason: p.reason.trim(),
+          eta: p.eta.trim(),
+          quantity: p.quantity || 1,
+          ...(p.revisedCompletion.trim() ? { revisedCompletion: p.revisedCompletion.trim() } : {}),
+          ...(p.note.trim() ? { note: p.note.trim() } : {}),
+        });
+      }
       setMode("none");
-      toast.success("Repair paused. Farmer notified of the delay.");
+      toast.success(
+        effectiveCatalogPartId
+          ? `Part requisition created for ${p.part.trim()}. Repair paused for parts.`
+          : "Repair paused. Farmer notified of the delay."
+      );
       await onUpdate();
     } catch (err: any) {
       console.error("[TerraByte] Failed to pause for parts:", err);
@@ -1837,12 +1908,83 @@ function InProgress({
         <Card className="space-y-3 border-warning">
           <h3 className="text-lg font-bold">Pause: waiting for parts</h3>
           <div>
-            <Label>Part required</Label>
-            <input
-              className={input}
-              value={p.part}
-              onChange={(e) => setP({ ...p, part: e.target.value })}
-            />
+            <div className="flex items-center justify-between mb-1">
+              <Label>Part required</Label>
+              {p.catalogPartId && (
+                <span className="text-[11px] font-semibold text-primary">
+                  Service Centre Depot Catalog
+                </span>
+              )}
+            </div>
+            {catalogParts.length > 0 && (
+              <div className="mb-2">
+                <select
+                  aria-label="Select from Depot Catalog"
+                  className={cn(
+                    input,
+                    "h-10 min-h-[2.5rem] py-1.5 px-3 text-xs leading-normal cursor-pointer font-medium"
+                  )}
+                  value={p.catalogPartId || ""}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (!val) {
+                      setP({ ...p, catalogPartId: "", part: "" });
+                      return;
+                    }
+                    const found = catalogParts.find((cp) => cp.id === val || cp.part_number === val);
+                    if (found) {
+                      setP({
+                        ...p,
+                        catalogPartId: found.id,
+                        part: found.name,
+                      });
+                    }
+                  }}
+                >
+                  <option value="">-- Custom / Unlisted part --</option>
+                  {catalogParts.map((cp) => {
+                    const inStock = cp.stock_quantity > 0;
+                    return (
+                      <option key={cp.id} value={cp.id}>
+                        {cp.name} ({cp.part_number}) — ₹{cp.unit_price} [{inStock ? `${cp.stock_quantity} in stock` : "Out of stock"}]
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            )}
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+              <div className="sm:col-span-3">
+                <input
+                  className={input}
+                  placeholder="Part name"
+                  value={p.part}
+                  onChange={(e) => {
+                    const newName = e.target.value;
+                    const matched = catalogParts.find(
+                      (cp) => cp.name.trim().toLowerCase() === newName.trim().toLowerCase()
+                    );
+                    setP({
+                      ...p,
+                      part: newName,
+                      catalogPartId: matched ? matched.id : "",
+                    });
+                  }}
+                />
+              </div>
+              <div>
+                <input
+                  type="number"
+                  min={1}
+                  className={input}
+                  placeholder="Qty"
+                  value={p.quantity}
+                  onChange={(e) =>
+                    setP({ ...p, quantity: Math.max(1, parseInt(e.target.value, 10) || 1) })
+                  }
+                />
+              </div>
+            </div>
           </div>
           <div>
             <Label>Reason</Label>
@@ -1953,6 +2095,7 @@ interface WaitingProps {
   onUpdate: () => Promise<void>;
   hasPendingQuote?: boolean;
   isQuoteApproved?: boolean;
+  partRequests?: ServiceCentrePartRequestDetail[];
 }
 
 function Waiting({
@@ -1961,6 +2104,7 @@ function Waiting({
   onUpdate,
   hasPendingQuote = false,
   isQuoteApproved = false,
+  partRequests = [],
 }: WaitingProps) {
   const tb = useTB();
   const parts = r.parts || {
@@ -2036,32 +2180,63 @@ function Waiting({
       {partsItems.length > 0 ? (
         <div className="space-y-2 rounded-xl border border-warning/30 bg-warning/5 p-3">
           <Label className="text-xs font-bold text-foreground">
-            Blocking Parts Requisitions ({partsItems.length})
+            Required Blocking Components ({partsItems.length})
           </Label>
           <div className="space-y-1.5">
             {partsItems.map((item, idx) => {
               const isDone = item.status === "HANDED_OFF" || item.status === "RESOLVED";
+              const matchingReq = (partRequests || []).find(
+                (pr) =>
+                  pr.id === item.id ||
+                  pr.part_id === item.partId ||
+                  pr.part?.name?.trim().toLowerCase() === item.part.trim().toLowerCase(),
+              );
+              const isDepotReq = Boolean(matchingReq);
+              const isOutOfStock = matchingReq && matchingReq.part && matchingReq.part.stock_quantity === 0;
+              const isInsufficient =
+                matchingReq &&
+                matchingReq.part &&
+                matchingReq.part.stock_quantity > 0 &&
+                matchingReq.part.stock_quantity < matchingReq.quantity;
+
               return (
                 <div
                   key={idx}
                   className="flex items-center justify-between text-xs rounded-lg bg-background/80 p-2.5 border border-border/60"
                 >
-                  <div>
+                  <div className="space-y-0.5">
                     <p className="font-semibold text-foreground">
                       {item.part} {item.quantity ? `(Qty: ${item.quantity})` : ""}
                     </p>
                     <p className="text-[11px] text-muted-foreground">{item.reason}</p>
+                    <span className="text-[10px] text-muted-foreground font-mono">
+                      {isDepotReq ? "Service Centre Depot Requisition" : "Field / External Sourcing Hold"}
+                    </span>
                   </div>
-                  <div className="text-right">
+                  <div className="text-right space-y-1">
                     <span
                       className={cn(
                         "inline-block rounded-full px-2 py-0.5 text-[10px] font-bold",
                         isDone
                           ? "bg-success/20 text-success"
-                          : "bg-warning/20 text-warning-foreground",
+                          : isDepotReq
+                            ? isOutOfStock
+                              ? "bg-destructive/15 text-destructive"
+                              : isInsufficient
+                                ? "bg-warning/20 text-warning-foreground"
+                                : "bg-warning/20 text-warning-foreground"
+                            : "bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/30",
                       )}
                     >
-                      {isDone ? "Handed Off / Ready" : "Awaiting Handoff"}
+                      {isDone
+                        ? "Handed Off / Ready"
+                        : isDepotReq
+                          ? isOutOfStock
+                            ? "Out of Depot Stock — Awaiting Arrival"
+                            : isInsufficient
+                              ? "Insufficient Stock — Awaiting Arrival"
+                              : "Awaiting Handoff"
+                          : "Sourcing Hold — Awaiting Arrival"}
                     </span>
                     {item.eta && (
                       <p className="text-[10px] text-muted-foreground mt-0.5">

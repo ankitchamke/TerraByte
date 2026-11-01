@@ -132,6 +132,8 @@ export interface BlockerPartItem {
   revisedCompletion?: string | null | undefined;
   status: "PENDING" | "HANDED_OFF" | "RESOLVED";
   since: number | string;
+  eta_updated_by?: string | null | undefined;
+  eta_updated_at?: string | null | undefined;
 }
 export interface PartsHold {
   part: string;
@@ -231,6 +233,9 @@ export interface DemoPartRequest {
   handed_off_by?: string | null;
   handed_off_at?: string | null;
   notes?: string | null | undefined;
+  estimated_arrival_at?: string | null;
+  eta_updated_by?: string | null;
+  eta_updated_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -912,6 +917,22 @@ export const actions = {
       quantity?: number;
     },
   ) {
+    if (p.partId) {
+      try {
+        requestDemoPart({
+          repairRequestId: id,
+          partId: p.partId,
+          quantity: p.quantity || 1,
+          notes: p.reason,
+          eta: p.eta,
+          revisedCompletion: p.revisedCompletion,
+          farmerNote: p.note,
+        });
+        return;
+      } catch {
+        // Fall back to standard patchRepair if part not in catalog
+      }
+    }
     patchRepair(
       id,
       (r) => {
@@ -1362,6 +1383,8 @@ export function requestDemoPart(input: {
   quantity: number;
   notes?: string | null;
   eta?: string | null | undefined;
+  revisedCompletion?: string | null | undefined;
+  farmerNote?: string | null | undefined;
   requesterId?: string | undefined;
   requesterName?: string | undefined;
 }): DemoPartRequest {
@@ -1374,23 +1397,55 @@ export function requestDemoPart(input: {
     }
 
     const nowIso = new Date().toISOString();
-    newReq = {
-      id: "req-" + uid(),
-      repair_request_id: input.repairRequestId,
-      part_id: target.id,
-      quantity: input.quantity,
-      status: "PENDING",
-      requested_by: input.requesterId || "t1",
-      notes: input.notes?.trim() || null,
-      created_at: nowIso,
-      updated_at: nowIso,
-    };
+    const cleanJob = (input.repairRequestId || "").trim().toLowerCase();
+    const existingReqIndex = (s.serviceCentrePartRequests ?? []).findIndex(
+      (r) =>
+        (r.repair_request_id.toLowerCase() === cleanJob ||
+          (cleanJob.startsWith("tb-") && r.repair_request_id.toLowerCase() === cleanJob)) &&
+        r.part_id === target.id &&
+        r.status === "PENDING",
+    );
+
+    let updatedRequests = s.serviceCentrePartRequests ?? [];
+    const createdReq: DemoPartRequest =
+      existingReqIndex >= 0 && updatedRequests[existingReqIndex]
+        ? {
+            ...updatedRequests[existingReqIndex]!,
+            quantity: input.quantity,
+            notes: input.notes?.trim() || updatedRequests[existingReqIndex]!.notes || null,
+            estimated_arrival_at: input.eta?.trim() || updatedRequests[existingReqIndex]!.estimated_arrival_at || null,
+            eta_updated_by: input.eta?.trim() ? (input.requesterId || "t1") : (updatedRequests[existingReqIndex]!.eta_updated_by ?? null),
+            eta_updated_at: input.eta?.trim() ? nowIso : (updatedRequests[existingReqIndex]!.eta_updated_at ?? null),
+            updated_at: nowIso,
+          }
+        : {
+            id: "req-" + uid(),
+            repair_request_id: input.repairRequestId,
+            part_id: target.id,
+            quantity: input.quantity,
+            status: "PENDING",
+            requested_by: input.requesterId || "t1",
+            notes: input.notes?.trim() || null,
+            estimated_arrival_at: input.eta?.trim() || null,
+            eta_updated_by: input.eta?.trim() ? (input.requesterId || "t1") : null,
+            eta_updated_at: input.eta?.trim() ? nowIso : null,
+            created_at: nowIso,
+            updated_at: nowIso,
+          };
+
+    newReq = createdReq;
+
+    if (existingReqIndex >= 0) {
+      updatedRequests = updatedRequests.map((r, i) => (i === existingReqIndex ? createdReq : r));
+    } else {
+      updatedRequests = [createdReq, ...updatedRequests];
+    }
 
     const notifText = `New parts requisition for ${input.repairRequestId}: ${target.name} (Qty ${input.quantity})`;
 
     const etaText = input.eta?.trim() ? input.eta.trim() : "ETA pending";
     const blockerItem: BlockerPartItem = {
-      id: newReq.id,
+      id: createdReq.id,
       part: target.name,
       partId: target.id,
       quantity: input.quantity,
@@ -1398,10 +1453,11 @@ export function requestDemoPart(input: {
       eta: etaText,
       status: "PENDING",
       since: Date.now(),
+      eta_updated_by: input.eta?.trim() ? (input.requesterId || "t1") : null,
+      eta_updated_at: input.eta?.trim() ? nowIso : null,
     };
 
     let updatedRepairs = s.repairs;
-    const cleanJob = (input.repairRequestId || "").trim().toLowerCase();
     const repairIdx = s.repairs.findIndex(
       (r) =>
         r.id.toLowerCase() === cleanJob ||
@@ -1436,6 +1492,7 @@ export function requestDemoPart(input: {
       if (existingItemIndex >= 0 && existingItems[existingItemIndex]) {
         existingItems[existingItemIndex] = {
           ...existingItems[existingItemIndex]!,
+          id: createdReq.id,
           quantity: input.quantity,
           eta: etaText,
           status: "PENDING",
@@ -1458,8 +1515,8 @@ export function requestDemoPart(input: {
         part: summaryPart,
         reason: input.notes?.trim() || "Waiting for parts delivery",
         eta: etaText,
-        note: input.notes?.trim() || "",
-        revisedCompletion: etaText,
+        note: input.farmerNote?.trim() || input.notes?.trim() || "",
+        revisedCompletion: input.revisedCompletion?.trim() || etaText,
         since: currentParts?.since || Date.now(),
         items: existingItems,
         allPartsArrived: false,
@@ -1578,7 +1635,7 @@ export function requestDemoPart(input: {
     return {
       ...s,
       repairs: updatedRepairs,
-      serviceCentrePartRequests: [newReq!, ...(s.serviceCentrePartRequests ?? [])],
+      serviceCentrePartRequests: updatedRequests,
       notifications: notify(s, {
         role: "admin",
         text: notifText,
@@ -1804,6 +1861,204 @@ export function cancelDemoPartRequest(requestId: string): DemoPartRequest {
     return {
       ...s,
       serviceCentrePartRequests: reqs.map((r) => (r.id === requestId ? updatedReq! : r)),
+    };
+  });
+
+  return updatedReq!;
+}
+
+export function updateDemoPartRequestEta(input: {
+  requestId: string;
+  estimatedArrivalAt: string | null;
+  notes?: string | null | undefined;
+  updaterId?: string | undefined;
+  updaterName?: string | undefined;
+  updaterRole?: string | undefined;
+}): DemoPartRequest {
+  let updatedReq: DemoPartRequest | null = null;
+  set((s) => {
+    const reqs = s.serviceCentrePartRequests ?? [];
+    const cleanId = (input.requestId || "").trim();
+    let target = reqs.find(
+      (r) =>
+        r.id === cleanId ||
+        r.id.toLowerCase() === cleanId.toLowerCase() ||
+        (cleanId.startsWith("req-") && r.id === cleanId.slice(4)) ||
+        (!cleanId.startsWith("req-") && r.id === "req-" + cleanId),
+    );
+
+    if (!target) {
+      for (const rep of s.repairs) {
+        const item = rep.parts?.items?.find(
+          (it: any) =>
+            it.id === cleanId ||
+            (it.id && it.id.toLowerCase() === cleanId.toLowerCase()) ||
+            it.partId === cleanId,
+        );
+        if (item) {
+          const catalogParts = s.serviceCentreParts ?? INITIAL_DEMO_PARTS;
+          const cp = catalogParts.find(
+            (p) => p.id === item.partId || p.name.toLowerCase() === item.part.toLowerCase(),
+          );
+          const nowIso = new Date().toISOString();
+          target = {
+            id: cleanId,
+            repair_request_id: rep.id,
+            part_id: cp ? cp.id : (item.partId || "00000000-0000-0000-0040-000000000001"),
+            quantity: item.quantity || 1,
+            status: item.status === "HANDED_OFF" ? "HANDED_OFF" : "PENDING",
+            requested_by: rep.technicianId || "t1",
+            notes: item.reason || null,
+            estimated_arrival_at: input.estimatedArrivalAt?.trim() || null,
+            eta_updated_by: input.updaterId || "admin",
+            eta_updated_at: nowIso,
+            created_at: nowIso,
+            updated_at: nowIso,
+          };
+          break;
+        }
+      }
+    }
+
+    if (!target) throw new Error("Requisition not found.");
+    if (target.status !== "PENDING") {
+      throw new Error(`Cannot update ETA: Part request is already ${target.status}.`);
+    }
+
+    // Role check: farmer cannot update; technician must be assigned to this repair
+    const cleanJob = target.repair_request_id.trim().toLowerCase();
+    const repair = s.repairs.find(
+      (r) =>
+        r.id.toLowerCase() === cleanJob ||
+        (r as any).jobNumber?.toLowerCase() === cleanJob ||
+        (cleanJob.startsWith("tb-") && r.id.toLowerCase() === cleanJob),
+    );
+
+    if (input.updaterRole === "farmer") {
+      throw new Error("Unauthorized: Farmers cannot update parts ETA.");
+    }
+    if (
+      input.updaterRole === "technician" &&
+      repair &&
+      repair.technicianId &&
+      input.updaterId &&
+      repair.technicianId !== input.updaterId
+    ) {
+      throw new Error("Unauthorized: Only the assigned technician or Service Centre staff can update part ETA.");
+    }
+
+    const nowIso = new Date().toISOString();
+    const etaText = input.estimatedArrivalAt?.trim() ? input.estimatedArrivalAt.trim() : "ETA pending";
+
+    updatedReq = {
+      ...target,
+      estimated_arrival_at: input.estimatedArrivalAt?.trim() || null,
+      eta_updated_by: input.updaterId || "admin",
+      eta_updated_at: nowIso,
+      notes: input.notes !== undefined ? (input.notes?.trim() || null) : target.notes,
+      updated_at: nowIso,
+    };
+
+    // Find linked part name
+    const catalogParts = s.serviceCentreParts ?? INITIAL_DEMO_PARTS;
+    const catalogPart = catalogParts.find((p) => p.id === target.part_id);
+    const partName = catalogPart?.name || "Spare part";
+
+    let updatedRepairs = s.repairs;
+    if (repair) {
+      const currentParts = repair.parts;
+      const existingItems: BlockerPartItem[] = Array.isArray(currentParts?.items)
+        ? [...currentParts.items]
+        : currentParts?.part
+          ? [
+              {
+                id: target.id,
+                part: currentParts.part,
+                reason: currentParts.reason,
+                eta: currentParts.eta || "ETA pending",
+                status: "PENDING",
+                since: currentParts.since || Date.now(),
+              },
+            ]
+          : [];
+
+      const matchIdx = existingItems.findIndex(
+        (it) =>
+          it.id === target.id ||
+          (it.partId && it.partId === target.part_id) ||
+          it.part.trim().toLowerCase() === partName.trim().toLowerCase(),
+      );
+
+      if (matchIdx >= 0 && existingItems[matchIdx]) {
+        existingItems[matchIdx] = {
+          ...existingItems[matchIdx]!,
+          eta: etaText,
+          eta_updated_by: input.updaterId || "admin",
+          eta_updated_at: nowIso,
+          reason: input.notes?.trim() || existingItems[matchIdx]!.reason,
+        };
+      } else {
+        existingItems.push({
+          id: target.id,
+          part: partName,
+          partId: target.part_id,
+          quantity: target.quantity,
+          reason: input.notes?.trim() || "Waiting for parts delivery",
+          eta: etaText,
+          status: "PENDING",
+          since: Date.now(),
+          eta_updated_by: input.updaterId || "admin",
+          eta_updated_at: nowIso,
+        });
+      }
+
+      // Recompute overall ETA across pending items
+      const pendingItems = existingItems.filter((i) => i.status === "PENDING");
+      let latestEta = etaText;
+      for (const pi of pendingItems) {
+        if (pi.eta && pi.eta !== "ETA pending") {
+          latestEta = pi.eta;
+        }
+      }
+
+      const updatedPartsHold: PartsHold = {
+        part: currentParts?.part || partName,
+        reason: input.notes?.trim() || currentParts?.reason || "Waiting for parts delivery",
+        eta: latestEta,
+        note: input.notes?.trim() || currentParts?.note || "",
+        revisedCompletion: latestEta,
+        since: currentParts?.since || Date.now(),
+        items: existingItems,
+        allPartsArrived: pendingItems.length === 0,
+      };
+
+      const updatedTimeline: TimelineEntry[] = [
+        ...(repair.timeline || []),
+        {
+          status: "WAITING_FOR_PARTS",
+          at: Date.now(),
+          note: `Part ETA updated for ${partName}: ${etaText} by ${input.updaterName || "Staff"}.`,
+          by: (input.updaterRole as any) || "admin",
+        },
+      ];
+
+      updatedRepairs = s.repairs.map((r) =>
+        r.id === repair.id
+          ? {
+              ...r,
+              parts: updatedPartsHold,
+              timeline: updatedTimeline,
+            }
+          : r,
+      );
+    }
+
+    return {
+      ...s,
+      repairs: updatedRepairs,
+      serviceCentrePartRequests: reqs.some((r) => r.id === target.id)
+        ? reqs.map((r) => (r.id === target.id ? updatedReq! : r))
+        : [updatedReq!, ...reqs],
     };
   });
 

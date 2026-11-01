@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { createNotification } from "./notifications";
 import { createServiceHistoryFromRepair } from "./service-history";
+import { requestServiceCentrePart } from "./parts-desk";
 
 export type RepairRequestRow = Database["public"]["Tables"]["repair_requests"]["Row"];
 export type RepairTimelineRow = Database["public"]["Tables"]["repair_timeline"]["Row"];
@@ -1126,10 +1127,12 @@ export interface WaitForPartsInput {
 
 export interface UpdatePartsEtaInput {
   eta: string;
-  revisedCompletion?: string;
-  note?: string;
-  partId?: string | null;
-  requestId?: string | null;
+  revisedCompletion?: string | undefined;
+  note?: string | undefined;
+  partId?: string | null | undefined;
+  requestId?: string | null | undefined;
+  itemId?: string | null | undefined;
+  partName?: string | null | undefined;
 }
 
 export interface CompleteRepairInput {
@@ -1524,6 +1527,30 @@ export async function waitForParts(
     );
   }
 
+  // If a Service Centre catalog part is requested, delegate to requestServiceCentrePart for requisition,
+  // duplicate prevention, and quote integration.
+  if (input.partId) {
+    try {
+      await requestServiceCentrePart({
+        repairRequestId: repair.id,
+        partId: input.partId,
+        quantity: input.quantity || 1,
+        notes: input.reason.trim(),
+        eta: input.eta.trim(),
+        revisedCompletion: input.revisedCompletion?.trim() || undefined,
+        farmerNote: input.note?.trim() || undefined,
+      });
+      const { data: refreshedRepair } = await supabase
+        .from("repair_requests")
+        .select("*")
+        .eq("id", repair.id)
+        .single();
+      return refreshedRepair || repair;
+    } catch (err: unknown) {
+      console.warn("[TerraByte] requestServiceCentrePart in waitForParts fallback:", err);
+    }
+  }
+
   const now = new Date().toISOString();
   const existingHold = (repair.parts_hold as Record<string, unknown>) ?? {};
   const rawItems = existingHold["items"];
@@ -1681,9 +1708,15 @@ export async function updatePartsEta(
     throw new Error("Unauthorized: You are not assigned to this repair ticket.");
   }
 
-  if (repair.status !== "WAITING_FOR_PARTS") {
+  const permittedStatuses: RepairStatus[] = [
+    "WAITING_FOR_PARTS",
+    "IN_PROGRESS",
+    "QUOTE_PENDING",
+    "ACCEPTED",
+  ];
+  if (!permittedStatuses.includes(repair.status)) {
     throw new Error(
-      `Cannot update parts ETA: Ticket is in '${repair.status}' status (must be WAITING_FOR_PARTS).`,
+      `Cannot update parts ETA: Ticket is in '${repair.status}' status.`,
     );
   }
 
@@ -1691,12 +1724,13 @@ export async function updatePartsEta(
   const rawCurrentItems = currentHold["items"];
   const existingItems: any[] = Array.isArray(rawCurrentItems) ? [...rawCurrentItems] : [];
 
-  if (input.requestId || input.partId) {
-    const targetKey = (input.requestId || input.partId)!.toLowerCase();
+  if (input.requestId || input.partId || input.itemId || input.partName) {
+    const targetKey = (input.requestId || input.partId || input.itemId || input.partName)!.toLowerCase();
     const matchIdx = existingItems.findIndex(
       (it) =>
         (it.id && it.id.toLowerCase() === targetKey) ||
         (it.partId && it.partId.toLowerCase() === targetKey) ||
+        (it.part && it.part.toLowerCase() === targetKey) ||
         (it.part && it.part.toLowerCase().includes(targetKey)),
     );
     if (matchIdx >= 0) {
@@ -1727,7 +1761,7 @@ export async function updatePartsEta(
       parts_hold: updatedHold as Json,
     })
     .eq("id", repair.id)
-    .eq("status", "WAITING_FOR_PARTS");
+    .in("status", permittedStatuses);
 
   if (profile.role !== "admin") {
     updateQuery = updateQuery.eq("technician_id", profile.id);
@@ -1763,6 +1797,27 @@ export async function updatePartsEta(
     });
   } catch (notifErr) {
     console.warn("[TerraByte] Warning: Failed to send parts ETA notification:", notifErr);
+  }
+
+  // Broadcast realtime update to open tabs
+  try {
+    void supabase.channel("tb-realtime-bus").send({
+      type: "broadcast",
+      event: "part_eta_updated",
+      payload: { repairId: repair.id },
+    });
+  } catch {
+    // Non-fatal
+  }
+
+  if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
+    try {
+      const bc = new BroadcastChannel("terrabyte_demo_store_sync");
+      bc.postMessage({ type: "STORE_UPDATED", event: "part_eta_updated", repairId: repair.id });
+      bc.close();
+    } catch {
+      // Non-fatal
+    }
   }
 
   return updated;

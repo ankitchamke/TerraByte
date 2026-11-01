@@ -17,6 +17,32 @@ export interface UseRepairTicketRealtimeOptions {
   debounceMs?: number | undefined;
 }
 
+type GlobalBusListener = (msg: { event: string; payload: any }) => void;
+const globalBusListeners = new Set<GlobalBusListener>();
+let globalBusChannelInstance: any = null;
+
+function ensureGlobalBusChannel() {
+  if (globalBusChannelInstance) return;
+  try {
+    // Shared bus channel delivers cross-session broadcast signals (tb-realtime-bus / tb-bus- dispatcher)
+    globalBusChannelInstance = supabase.channel("tb-realtime-bus");
+    globalBusChannelInstance
+      .on("broadcast", { event: "part_handoff" }, (event: any) => {
+        globalBusListeners.forEach((listener) => listener({ event: "part_handoff", payload: event?.payload }));
+      })
+      .on("broadcast", { event: "part_eta_updated" }, (event: any) => {
+        globalBusListeners.forEach((listener) => listener({ event: "part_eta_updated", payload: event?.payload }));
+      })
+      .subscribe((status: string) => {
+        if (status === "CHANNEL_ERROR") {
+          console.warn("[TerraByte Realtime] Global bus channel error, polling remains active.");
+        }
+      });
+  } catch (busErr) {
+    console.warn("[TerraByte Realtime] Global bus subscription warning:", busErr);
+  }
+}
+
 /**
  * Reusable ticket-scoped Supabase Realtime synchronization hook for TerraByte.
  *
@@ -58,7 +84,6 @@ export function useRepairTicketRealtime({
     let isCancelled = false;
     let channel: any = null;
     let demoBc: BroadcastChannel | null = null;
-    let busChannel: any = null;
 
     // 1. Cross-tab synchronization for Demo Store & local state mutations
     if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
@@ -88,26 +113,25 @@ export function useRepairTicketRealtime({
     window.addEventListener("storage", handleStorage);
 
     // 2. Global Realtime Broadcast Bus (delivers signals across all sessions, tabs, and incognito windows)
-    try {
-      busChannel = supabase.channel(`tb-bus-${Math.random().toString(36).slice(2, 9)}`);
-      busChannel
-        .on("broadcast", { event: "part_handoff" }, (event: any) => {
-          const payload = event?.payload;
-          const targetRepairId = payload?.repairId ? String(payload.repairId).trim().toLowerCase() : null;
-          const currentId = repairId.trim().toLowerCase();
-          if (
-            !targetRepairId ||
-            targetRepairId === currentId ||
-            targetRepairId.endsWith(currentId) ||
-            currentId.endsWith(targetRepairId)
-          ) {
-            triggerDebounced();
-          }
-        })
-        .subscribe();
-    } catch (busErr) {
-      console.warn("[TerraByte Realtime] Global bus subscription warning:", busErr);
-    }
+    ensureGlobalBusChannel();
+    const handleBusEvent: GlobalBusListener = (msg) => {
+      if (msg.event === "part_handoff") {
+        const payload = msg.payload;
+        const targetRepairId = payload?.repairId ? String(payload.repairId).trim().toLowerCase() : null;
+        const currentId = repairId.trim().toLowerCase();
+        if (
+          !targetRepairId ||
+          targetRepairId === currentId ||
+          targetRepairId.endsWith(currentId) ||
+          currentId.endsWith(targetRepairId)
+        ) {
+          triggerDebounced();
+        }
+      } else if (msg.event === "part_eta_updated") {
+        triggerDebounced();
+      }
+    };
+    globalBusListeners.add(handleBusEvent);
 
     const setupSubscription = async () => {
       try {
@@ -233,6 +257,7 @@ export function useRepairTicketRealtime({
       }
       window.removeEventListener("focus", handleFocus);
       window.removeEventListener("storage", handleStorage);
+      globalBusListeners.delete(handleBusEvent);
       if (demoBc) {
         try {
           demoBc.close();
@@ -245,13 +270,6 @@ export function useRepairTicketRealtime({
           void supabase.removeChannel(channel);
         } catch (cleanupErr) {
           console.warn("[TerraByte Realtime] Cleanup error:", cleanupErr);
-        }
-      }
-      if (busChannel) {
-        try {
-          void supabase.removeChannel(busChannel);
-        } catch {
-          // Ignore
         }
       }
     };

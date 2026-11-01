@@ -662,14 +662,26 @@ function RepairHub() {
           </div>
           <div className="grid gap-4 p-5 sm:grid-cols-2">
             <div>
-              <Label>Missing part{partsHold?.items && partsHold.items.length > 1 ? "s" : ""}</Label>
-              {partsHold?.items && partsHold.items.length > 1 ? (
+              <Label>Required part{partsHold?.items && partsHold.items.length > 1 ? "s" : ""}</Label>
+              {partsHold?.items && partsHold.items.length > 0 ? (
                 <ul className="mt-1 space-y-1.5 text-sm font-semibold">
                   {partsHold.items.map((item: any, idx: number) => (
                     <li key={idx} className="flex items-center justify-between rounded-lg bg-muted/40 px-2.5 py-1.5">
-                      <span>
-                        {item.part || item.name} {item.quantity ? `(Qty: ${item.quantity})` : ""}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span>
+                          {item.part || item.name} {item.quantity ? `(Qty: ${item.quantity})` : ""}
+                        </span>
+                        <span
+                          className={cn(
+                            "rounded-full px-2 py-0.5 text-[10px] font-bold",
+                            item.status === "HANDED_OFF"
+                              ? "bg-success/20 text-success"
+                              : "bg-warning/20 text-warning-foreground"
+                          )}
+                        >
+                          {item.status === "HANDED_OFF" ? "Received at Depot" : "Awaiting Arrival"}
+                        </span>
+                      </div>
                       {item.eta && (
                         <span className="text-xs font-normal text-muted-foreground">
                           {formatEtaDateTime(item.eta)}

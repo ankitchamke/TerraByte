@@ -16,6 +16,7 @@ import {
   requestDemoPart,
   returnDemoPart,
   syncPartRequestToQuoteLines,
+  updateDemoPartRequestEta,
   type DemoPart,
   type DemoPartRequest,
   type DemoPartSale,
@@ -68,6 +69,10 @@ export interface InventoryMovementSummary {
 }
 
 export interface ServiceCentrePartRequestDetail extends ServiceCentrePartRequest {
+  eta_updater?: {
+    id: string;
+    full_name: string;
+  } | null | undefined;
   part?: Pick<
     ServiceCentrePart,
     "id" | "part_number" | "name" | "spec" | "category" | "stock_quantity" | "unit_price" | "location"
@@ -87,6 +92,21 @@ export interface ServiceCentrePartRequestDetail extends ServiceCentrePartRequest
   } | null;
 }
 
+export interface UpdatePartRequestEtaInput {
+  estimatedArrivalAt: string | null;
+  notes?: string | undefined;
+}
+
+export interface UpdatePartRequestEtaResult {
+  success: boolean;
+  request_id: string;
+  part_name?: string;
+  estimated_arrival_at: string | null;
+  formatted_eta: string;
+  eta_updated_by: string;
+  eta_updated_at: string;
+}
+
 export interface StockAuditLogDetail extends ServiceCentreStockAudit {
   part?: Pick<ServiceCentrePart, "part_number" | "name"> | null;
   actor?: {
@@ -100,6 +120,8 @@ export interface CreatePartRequestInput {
   quantity: number;
   notes?: string | undefined;
   eta?: string | null | undefined;
+  revisedCompletion?: string | null | undefined;
+  farmerNote?: string | null | undefined;
 }
 
 export interface AdjustStockInput {
@@ -213,6 +235,18 @@ function enrichDemoRequest(req: DemoPartRequest): ServiceCentrePartRequestDetail
     handed_off_by: req.handed_off_by ?? null,
     handed_off_at: req.handed_off_at ?? null,
     notes: req.notes ?? null,
+    estimated_arrival_at: req.estimated_arrival_at ?? null,
+    eta_updated_by: req.eta_updated_by ?? null,
+    eta_updated_at: req.eta_updated_at ?? null,
+    eta_updater: req.eta_updated_by
+      ? {
+          id: req.eta_updated_by,
+          full_name:
+            req.eta_updated_by.includes("tech") || req.eta_updated_by === "t1"
+              ? "Ramesh Kumar"
+              : "Nagpur Service Centre",
+        }
+      : null,
     created_at: req.created_at,
     updated_at: req.updated_at,
     part: part ? toServiceCentrePart(part) : null,
@@ -337,29 +371,59 @@ export async function requestServiceCentrePart(
     }
   }
 
-  // 2. Try inserting into Supabase
+  // 2. Try inserting or updating existing pending requisition in Supabase (idempotent / duplicate prevention)
   try {
-    const { data: request, error: insertError } = await supabase
+    const { data: existingPending } = await supabase
       .from("service_centre_part_requests")
-      .insert({
-        repair_request_id: repairId,
-        part_id: input.partId,
-        quantity: input.quantity,
-        status: "PENDING",
-        requested_by: profile.id,
-        notes: input.notes?.trim() || null,
-      })
-      .select()
-      .single();
+      .select("id, quantity, status, requested_by, notes, created_at")
+      .eq("repair_request_id", repairId)
+      .eq("part_id", input.partId)
+      .eq("status", "PENDING")
+      .maybeSingle();
 
-    if (insertError) {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
-      if (session) {
-        throw new Error(`Failed to submit part request: ${insertError.message}`);
+    let request = existingPending as any;
+
+    if (existingPending) {
+      const { data: updatedReq, error: updateReqErr } = await supabase
+        .from("service_centre_part_requests")
+        .update({
+          quantity: input.quantity,
+          notes: input.notes?.trim() || existingPending.notes,
+        })
+        .eq("id", existingPending.id)
+        .select()
+        .single();
+
+      if (!updateReqErr && updatedReq) {
+        request = updatedReq;
       }
-    } else if (request) {
+    } else {
+      const { data: insertedReq, error: insertError } = await supabase
+        .from("service_centre_part_requests")
+        .insert({
+          repair_request_id: repairId,
+          part_id: input.partId,
+          quantity: input.quantity,
+          status: "PENDING",
+          requested_by: profile.id,
+          notes: input.notes?.trim() || null,
+        })
+        .select()
+        .single();
+
+      if (insertError) {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession().catch(() => ({ data: { session: null } }));
+        if (session) {
+          throw new Error(`Failed to submit part request: ${insertError.message}`);
+        }
+      } else {
+        request = insertedReq;
+      }
+    }
+
+    if (request) {
       const nowIso = new Date().toISOString();
       const etaText = input.eta?.trim() ? input.eta.trim() : "ETA pending";
 
@@ -409,6 +473,7 @@ export async function requestServiceCentrePart(
         if (existingIdx >= 0) {
           currentItems[existingIdx] = {
             ...currentItems[existingIdx],
+            id: request.id,
             quantity: input.quantity,
             eta: etaText,
             status: "PENDING",
@@ -436,8 +501,8 @@ export async function requestServiceCentrePart(
               part: summaryPart,
               reason: input.notes?.trim() || "Waiting for parts delivery",
               eta: etaText,
-              note: input.notes?.trim() || "",
-              revisedCompletion: etaText,
+              note: input.farmerNote?.trim() || input.notes?.trim() || "",
+              revisedCompletion: input.revisedCompletion?.trim() || etaText,
               since: currentHold["since"] || nowIso,
               items: currentItems,
               allPartsArrived: false,
@@ -587,6 +652,8 @@ export async function requestServiceCentrePart(
     quantity: input.quantity,
     notes: input.notes ?? null,
     eta: input.eta ?? null,
+    revisedCompletion: input.revisedCompletion ?? null,
+    farmerNote: input.farmerNote ?? null,
     requesterId: profile.id,
     requesterName: profile.full_name || "Ramesh Kumar",
   });
@@ -601,6 +668,9 @@ export async function requestServiceCentrePart(
     handed_off_by: demoReq.handed_off_by ?? null,
     handed_off_at: demoReq.handed_off_at ?? null,
     notes: demoReq.notes ?? null,
+    estimated_arrival_at: demoReq.estimated_arrival_at ?? null,
+    eta_updated_by: demoReq.eta_updated_by ?? null,
+    eta_updated_at: demoReq.eta_updated_at ?? null,
     created_at: demoReq.created_at,
     updated_at: demoReq.updated_at,
   };
@@ -1187,6 +1257,296 @@ export async function cancelPartRequest(requestId: string): Promise<void> {
   }
 
   cancelDemoPartRequest(requestId);
+}
+
+/**
+ * Updates the item-level expected arrival date/time (ETA) for a requested part.
+ * Assigned technicians or Service Centre admins can coordinate and update ETAs.
+ * Synchronizes repair parts hold blockers, touches updated_at, appends timeline audit,
+ * and broadcasts across realtime subscribers without altering approved quote prices or stock levels.
+ */
+export async function updatePartRequestEta(
+  requestId: string,
+  input: UpdatePartRequestEtaInput,
+): Promise<UpdatePartRequestEtaResult> {
+  if (!requestId) throw new Error("Part request ID is required.");
+  const profile = await getAuthenticatedProfile();
+
+  if (profile.role === "farmer") {
+    throw new Error("Unauthorized: Farmers cannot coordinate parts ETA.");
+  }
+
+  const cleanId = requestId.trim();
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanId);
+  const nowIso = new Date().toISOString();
+  const rawEta = input.estimatedArrivalAt?.trim() || null;
+  let formattedEta = rawEta ? rawEta : "ETA pending";
+  if (rawEta) {
+    try {
+      const d = new Date(rawEta);
+      if (!isNaN(d.getTime())) {
+        formattedEta = d.toLocaleString("en-IN", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+          timeZone: "Asia/Kolkata",
+        });
+      }
+    } catch {
+      // Keep rawEta
+    }
+  }
+
+  // 1. Try atomic database RPC
+  if (isUuid) {
+    try {
+      const { data: rpcResult, error: rpcError } = await (
+        supabase.rpc as unknown as (
+          name: string,
+          params: { p_request_id: string; p_estimated_arrival_at: string | null; p_notes?: string | null },
+        ) => Promise<{ data: UpdatePartRequestEtaResult | null; error: Error | null }>
+      )("update_service_centre_part_request_eta", {
+        p_request_id: cleanId,
+        p_estimated_arrival_at: rawEta,
+        p_notes: input.notes?.trim() || null,
+      });
+
+      if (!rpcError && rpcResult) {
+        try {
+          void supabase.channel("tb-realtime-bus").send({
+            type: "broadcast",
+            event: "part_eta_updated",
+            payload: { requestId: cleanId },
+          });
+        } catch {
+          // Non-fatal
+        }
+
+        if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
+          try {
+            const bc = new BroadcastChannel("terrabyte_demo_store_sync");
+            bc.postMessage({ type: "STORE_UPDATED", event: "part_eta_updated", requestId: cleanId });
+            bc.close();
+          } catch {
+            // Non-fatal
+          }
+        }
+
+        try {
+          updateDemoPartRequestEta({
+            requestId: cleanId,
+            estimatedArrivalAt: rawEta,
+            notes: input.notes,
+            updaterId: profile.id,
+            updaterName: profile.full_name || "Staff",
+            updaterRole: profile.role,
+          });
+        } catch {
+          // Ignore
+        }
+
+        return rpcResult;
+      }
+    } catch {
+      // Fall through to direct table update
+    }
+
+    // 2. Direct Supabase transactional table operations fallback
+    try {
+      const { data: remoteReq, error: fetchErr } = await supabase
+        .from("service_centre_part_requests")
+        .select("*, part:part_id(*), repair:repair_request_id(*)")
+        .eq("id", cleanId)
+        .maybeSingle();
+
+      if (!fetchErr && remoteReq) {
+        if (remoteReq.status !== "PENDING") {
+          throw new Error(`Cannot update ETA: Part request is already ${remoteReq.status}.`);
+        }
+
+        const rep = remoteReq.repair;
+        if (profile.role === "technician" && rep && rep.technician_id && rep.technician_id !== profile.id) {
+          throw new Error("Unauthorized: Only the assigned technician or Service Centre staff can update part ETA.");
+        }
+
+        const { error: updateErr } = await supabase
+          .from("service_centre_part_requests")
+          .update({
+            estimated_arrival_at: rawEta,
+            eta_updated_by: profile.id,
+            eta_updated_at: nowIso,
+            notes: input.notes?.trim() || remoteReq.notes,
+            updated_at: nowIso,
+          })
+          .eq("id", remoteReq.id)
+          .eq("status", "PENDING");
+
+        if (updateErr) {
+          console.warn(
+            "[TerraByte] Note: service_centre_part_requests.estimated_arrival_at column update skipped (local migration required):",
+            updateErr.message,
+          );
+        }
+
+        const partName = remoteReq.part?.name || "Spare part";
+
+        if (rep) {
+          const holdObj = (rep.parts_hold as Record<string, any>) || {};
+          const rawItems = holdObj["items"];
+          const items: any[] = Array.isArray(rawItems) ? [...rawItems] : [];
+          const matchedItem = items.find(
+            (it) =>
+              it.id === remoteReq.id ||
+              it.partId === remoteReq.part_id ||
+              (it.part && it.part.toLowerCase() === partName.toLowerCase()),
+          );
+
+          if (matchedItem) {
+            matchedItem.eta = formattedEta;
+            matchedItem.eta_updated_by = profile.id;
+            matchedItem.eta_updated_at = nowIso;
+            if (input.notes?.trim()) matchedItem.reason = input.notes.trim();
+          } else {
+            items.push({
+              id: remoteReq.id,
+              part: partName,
+              partId: remoteReq.part_id,
+              quantity: remoteReq.quantity,
+              reason: input.notes?.trim() || "Waiting for parts delivery",
+              eta: formattedEta,
+              status: "PENDING",
+              since: nowIso,
+              eta_updated_by: profile.id,
+              eta_updated_at: nowIso,
+            });
+          }
+
+          const pendingItems = items.filter((it) => it.status === "PENDING");
+          let latestEta = formattedEta;
+          for (const pi of pendingItems) {
+            if (pi.eta && pi.eta !== "ETA pending") {
+              latestEta = pi.eta;
+            }
+          }
+
+          await supabase
+            .from("repair_requests")
+            .update({
+              parts_hold: {
+                ...holdObj,
+                items,
+                eta: latestEta,
+                revisedCompletion: latestEta,
+                updated_at: nowIso,
+              },
+              updated_at: nowIso,
+            })
+            .eq("id", rep.id);
+
+          await supabase.from("repair_timeline").insert({
+            repair_request_id: rep.id,
+            created_by_id: profile.id,
+            created_by_role: profile.role,
+            status: "WAITING_FOR_PARTS",
+            note: `Part ETA updated for ${partName}: ${formattedEta} by ${profile.full_name || "Staff"}.`,
+          });
+        }
+
+        try {
+          void supabase.channel("tb-realtime-bus").send({
+            type: "broadcast",
+            event: "part_eta_updated",
+            payload: { requestId: cleanId },
+          });
+        } catch {
+          // Non-fatal
+        }
+
+        if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
+          try {
+            const bc = new BroadcastChannel("terrabyte_demo_store_sync");
+            bc.postMessage({ type: "STORE_UPDATED", event: "part_eta_updated", requestId: cleanId });
+            bc.close();
+          } catch {
+            // Non-fatal
+          }
+        }
+
+        try {
+          updateDemoPartRequestEta({
+            requestId: cleanId,
+            estimatedArrivalAt: rawEta,
+            notes: input.notes,
+            updaterId: profile.id,
+            updaterName: profile.full_name || "Staff",
+            updaterRole: profile.role,
+          });
+        } catch {
+          // Ignore
+        }
+
+        return {
+          success: true,
+          request_id: remoteReq.id,
+          part_name: partName,
+          estimated_arrival_at: rawEta,
+          formatted_eta: formattedEta,
+          eta_updated_by: profile.id,
+          eta_updated_at: nowIso,
+        };
+      }
+    } catch (err: any) {
+      if (err?.message?.includes("Unauthorized") || err?.message?.includes("Cannot update ETA")) {
+        throw err;
+      }
+    }
+  }
+
+  // 3. Fallback to Demo Store
+  const updated = updateDemoPartRequestEta({
+    requestId: cleanId,
+    estimatedArrivalAt: rawEta,
+    notes: input.notes,
+    updaterId: profile.id,
+    updaterName: profile.full_name || "Staff",
+    updaterRole: profile.role,
+  });
+
+  if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
+    try {
+      const bc = new BroadcastChannel("terrabyte_demo_store_sync");
+      bc.postMessage({ type: "STORE_UPDATED", event: "part_eta_updated", requestId: cleanId });
+      bc.close();
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  try {
+    void supabase.channel("tb-realtime-bus").send({
+      type: "broadcast",
+      event: "part_eta_updated",
+      payload: { requestId: cleanId },
+    });
+  } catch {
+    // Non-fatal
+  }
+
+  const allParts = getDemoParts();
+  const part = allParts.find((p) => p.id === updated.part_id);
+
+  return {
+    success: true,
+    request_id: updated.id,
+    part_name: part?.name || "Spare part",
+    estimated_arrival_at: updated.estimated_arrival_at || null,
+    formatted_eta: formattedEta,
+    eta_updated_by: updated.eta_updated_by || profile.id,
+    eta_updated_at: updated.eta_updated_at || nowIso,
+  };
 }
 
 /**

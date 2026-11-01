@@ -750,6 +750,9 @@ export type Database = {
       service_centre_part_requests: {
         Row: {
           created_at: string
+          estimated_arrival_at: string | null
+          eta_updated_by: string | null
+          eta_updated_at: string | null
           handed_off_at: string | null
           handed_off_by: string | null
           id: string
@@ -763,6 +766,9 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          estimated_arrival_at?: string | null
+          eta_updated_by?: string | null
+          eta_updated_at?: string | null
           handed_off_at?: string | null
           handed_off_by?: string | null
           id?: string
@@ -776,6 +782,9 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          estimated_arrival_at?: string | null
+          eta_updated_by?: string | null
+          eta_updated_at?: string | null
           handed_off_at?: string | null
           handed_off_by?: string | null
           id?: string

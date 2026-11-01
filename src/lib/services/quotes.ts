@@ -162,11 +162,12 @@ function validateQuoteInputs(input: CreateQuoteInput) {
     throw new Error("Estimated completion time is required.");
   }
 
-  if (!input.items || !Array.isArray(input.items) || input.items.length === 0) {
-    throw new Error("Quote must contain at least one itemized part or supply.");
+  const items = Array.isArray(input.items) ? input.items : [];
+  if (items.length === 0 && (!input.labour_amount || input.labour_amount <= 0)) {
+    throw new Error("Quote must contain at least one itemized part or a positive labour charge.");
   }
 
-  for (const [i, item] of input.items.entries()) {
+  for (const [i, item] of items.entries()) {
     if (!item || !item.part_name || !item.part_name.trim()) {
       throw new Error(`Item ${i + 1}: Part name is required.`);
     }
@@ -288,7 +289,12 @@ export async function getQuoteVersions(repairRequestId: string): Promise<QuoteVe
       }
     >) ?? [];
   const validQuoteRows = quoteRows.filter(
-    (q) => !(q.status === "PENDING" && (!q.quote_items || q.quote_items.length === 0)),
+    (q) =>
+      !(
+        q.status === "PENDING" &&
+        (!q.quote_items || q.quote_items.length === 0) &&
+        Number(q.labour_amount || 0) === 0
+      ),
   );
   if (validQuoteRows.length === 0) return [];
 
@@ -582,7 +588,7 @@ export async function createQuote(input: CreateQuoteInput): Promise<QuoteDetail>
   // Prevent duplicate active quotes for the same repair
   const { data: existingPendingQuote } = await supabase
     .from("quotes")
-    .select("id, status, version, quote_items(id)")
+    .select("id, status, version, labour_amount, quote_items(id)")
     .eq("repair_request_id", repair.id)
     .eq("status", "PENDING")
     .maybeSingle();
@@ -590,12 +596,13 @@ export async function createQuote(input: CreateQuoteInput): Promise<QuoteDetail>
   if (existingPendingQuote) {
     const hasItems =
       existingPendingQuote.quote_items && existingPendingQuote.quote_items.length > 0;
-    if (hasItems) {
+    const hasLabour = Number(existingPendingQuote.labour_amount || 0) > 0;
+    if (hasItems || hasLabour) {
       throw new Error(
         "Cannot create quote: A pending quote already exists for this repair. Wait for the farmer to respond or request changes.",
       );
     } else {
-      // Clean up orphan quote row with 0 items from a previously interrupted transaction
+      // Clean up orphan quote row with 0 items and 0 labour from a previously interrupted transaction
       try {
         await supabase.from("quotes").delete().eq("id", existingPendingQuote.id);
       } catch {
@@ -609,8 +616,8 @@ export async function createQuote(input: CreateQuoteInput): Promise<QuoteDetail>
     }
   }
 
-  // 1b. Attempt atomic database formulation RPC first (when items are provided)
-  if (input.items.length > 0) {
+  // 1b. Attempt atomic database formulation RPC first (if items present)
+  if (input.items && input.items.length > 0) {
     try {
       const { data: rpcData, error: rpcErr } = await (
         supabase.rpc as unknown as (
@@ -656,7 +663,8 @@ export async function createQuote(input: CreateQuoteInput): Promise<QuoteDetail>
         rpcErr &&
         !rpcErr.message?.includes("function") &&
         !rpcErr.message?.includes("does not exist") &&
-        !rpcErr.message?.includes("WAITING_FOR_PARTS")
+        !rpcErr.message?.includes("WAITING_FOR_PARTS") &&
+        !rpcErr.message?.includes("at least one itemized part")
       ) {
         throw new Error(rpcErr.message);
       }
@@ -664,7 +672,8 @@ export async function createQuote(input: CreateQuoteInput): Promise<QuoteDetail>
       if (
         err instanceof Error &&
         !err.message.includes("does not exist") &&
-        !err.message.includes("function")
+        !err.message.includes("function") &&
+        !err.message.includes("at least one itemized part")
       ) {
         throw err;
       }
@@ -855,8 +864,8 @@ export async function reviseQuote(input: ReviseQuoteInput): Promise<QuoteDetail>
     throw new Error("Unauthorized: You are not assigned to this repair request.");
   }
 
-  // 2b. Attempt atomic database revision RPC first (when items are provided)
-  if (input.items.length > 0) {
+  // 2b. Attempt atomic database revision RPC first (if items present)
+  if (input.items && input.items.length > 0) {
     try {
       const { data: rpcData, error: rpcErr } = await (
         supabase.rpc as unknown as (
@@ -904,7 +913,8 @@ export async function reviseQuote(input: ReviseQuoteInput): Promise<QuoteDetail>
         rpcErr &&
         !rpcErr.message?.includes("function") &&
         !rpcErr.message?.includes("does not exist") &&
-        !rpcErr.message?.includes("WAITING_FOR_PARTS")
+        !rpcErr.message?.includes("WAITING_FOR_PARTS") &&
+        !rpcErr.message?.includes("at least one itemized part")
       ) {
         throw new Error(rpcErr.message);
       }
@@ -912,7 +922,8 @@ export async function reviseQuote(input: ReviseQuoteInput): Promise<QuoteDetail>
       if (
         err instanceof Error &&
         !err.message.includes("does not exist") &&
-        !err.message.includes("function")
+        !err.message.includes("function") &&
+        !err.message.includes("at least one itemized part")
       ) {
         throw err;
       }

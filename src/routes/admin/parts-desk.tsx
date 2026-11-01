@@ -9,6 +9,7 @@ import {
   History,
   MapPin,
   Package,
+  PackageSearch,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -17,7 +18,8 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Card, ContextualBack, Label } from "@/components/tb";
+import { Card, ContextualBack, DateTimePicker, Label } from "@/components/tb";
+import { formatEtaDateTime } from "@/lib/date-utils";
 import {
   Dialog,
   DialogContent,
@@ -26,7 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { usePartsDeskRealtime } from "@/hooks/use-repair-realtime";
+import { usePartsDeskRealtime, isUuid } from "@/hooks/use-repair-realtime";
 import { meta } from "@/lib/seo";
 import {
   adjustPartStock,
@@ -37,13 +39,31 @@ import {
   getStockAuditLog,
   receiveStock,
   returnPart,
+  updatePartRequestEta,
   type PartSaleDetail,
   type ServiceCentrePart,
   type ServiceCentrePartRequestDetail,
   type StockAuditLogDetail,
 } from "@/lib/services/parts-desk";
-import { fmtTime, inr, useTB } from "@/lib/tb-store";
+import { supabase } from "@/integrations/supabase/client";
+import { updatePartsEta } from "@/lib/services/repair-requests";
+import { actions, fmtTime, inr, useTB } from "@/lib/tb-store";
 import { cn } from "@/lib/utils";
+
+export interface SourcingHoldDetail {
+  id: string;
+  repairId: string;
+  jobNumber: string;
+  part: string;
+  partId?: string | null;
+  quantity: number;
+  reason: string;
+  eta: string;
+  status: string;
+  since: string | number;
+  technicianName?: string;
+  location?: string;
+}
 
 export const Route = createFileRoute("/admin/parts-desk")({
   head: () =>
@@ -98,6 +118,14 @@ function PartsDesk() {
   const [returnReason, setReturnReason] = useState("");
   const [returning, setReturning] = useState(false);
 
+  // Update ETA modal state
+  const [etaTarget, setEtaTarget] = useState<ServiceCentrePartRequestDetail | null>(null);
+  const [sourcingHoldTarget, setSourcingHoldTarget] = useState<SourcingHoldDetail | null>(null);
+  const [sourcingHolds, setSourcingHolds] = useState<SourcingHoldDetail[]>([]);
+  const [newEta, setNewEta] = useState("");
+  const [etaNotes, setEtaNotes] = useState("");
+  const [updatingEta, setUpdatingEta] = useState(false);
+
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
@@ -112,6 +140,107 @@ function PartsDesk() {
       setRequests(requestsData);
       setAuditLog(auditData);
       setSales(salesData);
+
+      // Extract active sourcing holds across repairs in WAITING_FOR_PARTS
+      const discoveredHolds: SourcingHoldDetail[] = [];
+      try {
+        const { data: waitingRepairs } = await supabase
+          .from("repair_requests")
+          .select("id, job_number, parts_hold, location, technician:technician_id(full_name)")
+          .not("parts_hold", "is", null)
+          .in("status", ["WAITING_FOR_PARTS", "IN_PROGRESS", "QUOTE_PENDING", "ACCEPTED"]);
+
+        if (waitingRepairs) {
+          for (const rep of waitingRepairs) {
+            const ph = (rep.parts_hold as Record<string, any>) || {};
+            const rawItems: any[] = Array.isArray(ph["items"])
+              ? (ph["items"] as any[])
+              : ph["part"]
+                ? [{ id: ph["part"], part: ph["part"], reason: ph["reason"], eta: ph["eta"], status: "PENDING" }]
+                : [];
+            for (const it of rawItems) {
+              if (it.status === "PENDING" || !it.status) {
+                const isDepotReq = requestsData.some(
+                  (req) =>
+                    req.id === it.id ||
+                    req.id.toLowerCase() === (it.id || "").toLowerCase() ||
+                    (it.partId && req.part_id === it.partId),
+                );
+                if (!isDepotReq) {
+                  discoveredHolds.push({
+                    id: it.id || it.part,
+                    repairId: rep.id,
+                    jobNumber: rep.job_number || rep.id,
+                    part: it.part || "Spare part",
+                    partId: it.partId || null,
+                    quantity: it.quantity || 1,
+                    reason: it.reason || ph["reason"] || "Waiting for parts delivery",
+                    eta: it.eta || ph["eta"] || "ETA pending",
+                    status: "PENDING",
+                    since: it.since || ph["since"] || Date.now(),
+                    technicianName: (rep.technician as any)?.full_name || "Assigned Technician",
+                    location: rep.location || "Field location",
+                  });
+                }
+              }
+            }
+          }
+        }
+      } catch {
+        // Non-fatal remote query error
+      }
+
+      // Also inspect local/demo store repairs
+      try {
+        const demoWaiting = tb.repairs.filter(
+          (r) =>
+            r.parts &&
+            ["WAITING_FOR_PARTS", "IN_PROGRESS", "QUOTE_PENDING", "ACCEPTED"].includes(r.status),
+        );
+        for (const rep of demoWaiting) {
+          const repParts = rep.parts as any;
+          const rawItems: any[] = Array.isArray(repParts?.items)
+            ? repParts.items
+            : repParts?.part
+              ? [{ id: repParts.part, part: repParts.part, reason: repParts.reason, eta: repParts.eta, status: "PENDING" }]
+              : [];
+          for (const it of rawItems) {
+            if (it.status === "PENDING" || !it.status) {
+              const isDepotReq = requestsData.some(
+                (req) =>
+                  req.id === it.id ||
+                  req.id.toLowerCase() === (it.id || "").toLowerCase() ||
+                  (it.partId && req.part_id === it.partId),
+              );
+              const alreadyFound = discoveredHolds.some(
+                (sh) =>
+                  sh.repairId === rep.id &&
+                  (sh.id === it.id || sh.part.toLowerCase() === (it.part || "").toLowerCase()),
+              );
+              if (!isDepotReq && !alreadyFound) {
+                discoveredHolds.push({
+                  id: it.id || it.part,
+                  repairId: rep.id,
+                  jobNumber: (rep as any).jobNumber || rep.id,
+                  part: it.part || "Spare part",
+                  partId: it.partId || null,
+                  quantity: it.quantity || 1,
+                  reason: it.reason || repParts?.reason || "Waiting for parts delivery",
+                  eta: it.eta || repParts?.eta || "ETA pending",
+                  status: "PENDING",
+                  since: it.since || repParts?.since || Date.now(),
+                  technicianName: "Ramesh Kumar",
+                  location: rep.location || "Katol, Nagpur",
+                });
+              }
+            }
+          }
+        }
+      } catch {
+        // Non-fatal
+      }
+      setSourcingHolds(discoveredHolds);
+
       if (partsData.length > 0 && partsData[0] && !receivePartId) {
         setReceivePartId(partsData[0].id);
         setReturnPartId(partsData[0].id);
@@ -123,7 +252,7 @@ function PartsDesk() {
     } finally {
       setLoading(false);
     }
-  }, [receivePartId]);
+  }, [receivePartId, tb.repairs]);
 
   useEffect(() => {
     loadData();
@@ -133,6 +262,7 @@ function PartsDesk() {
     tb.serviceCentrePartRequests,
     tb.serviceCentreStockAudit,
     tb.serviceCentrePartSales,
+    tb.repairs,
   ]);
 
   // Keep Parts Desk records synchronized via Supabase Realtime across all active tabs/devices
@@ -307,6 +437,76 @@ function PartsDesk() {
       toast.error(msg);
     } finally {
       setReturning(false);
+    }
+  };
+
+  const handleOpenUpdateEta = (req: ServiceCentrePartRequestDetail) => {
+    setSourcingHoldTarget(null);
+    setEtaTarget(req);
+    setNewEta(req.estimated_arrival_at || "");
+    setEtaNotes(req.notes || "");
+  };
+
+  const handleOpenSourcingHoldEta = (sh: SourcingHoldDetail) => {
+    setEtaTarget(null);
+    setSourcingHoldTarget(sh);
+    setNewEta(sh.eta || "");
+    setEtaNotes(sh.reason || "");
+  };
+
+  const handleSaveEta = async () => {
+    if (!etaTarget && !sourcingHoldTarget) return;
+    setUpdatingEta(true);
+    try {
+      if (etaTarget) {
+        await updatePartRequestEta(etaTarget.id, {
+          estimatedArrivalAt: newEta.trim() || null,
+          notes: etaNotes.trim() || undefined,
+        });
+        toast.success(`Arrival ETA updated for ${etaTarget.part?.name || "spare part"}.`);
+        setEtaTarget(null);
+      } else if (sourcingHoldTarget) {
+        const isDemo =
+          !isUuid(sourcingHoldTarget.repairId) ||
+          tb.repairs.some(
+            (x) =>
+              x.id === sourcingHoldTarget.repairId ||
+              (x as any).jobNumber === sourcingHoldTarget.repairId,
+          );
+        if (isDemo) {
+          actions.updatePartsEta(
+            sourcingHoldTarget.repairId,
+            newEta.trim() || "ETA pending",
+            "admin",
+            sourcingHoldTarget.id,
+          );
+        }
+        try {
+          await updatePartsEta(sourcingHoldTarget.repairId, {
+            eta: newEta.trim() || "ETA pending",
+            requestId: sourcingHoldTarget.id,
+          });
+        } catch {
+          // If remote DB missing or demo-only
+        }
+        if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
+          try {
+            const bc = new BroadcastChannel("terrabyte_demo_store_sync");
+            bc.postMessage({ type: "STORE_UPDATED", event: "part_eta_updated" });
+            bc.close();
+          } catch {
+            // Ignore
+          }
+        }
+        toast.success(`Sourcing ETA updated for ${sourcingHoldTarget.part}.`);
+        setSourcingHoldTarget(null);
+      }
+      await loadData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to update ETA.";
+      toast.error(msg);
+    } finally {
+      setUpdatingEta(false);
     }
   };
 
@@ -485,7 +685,7 @@ function PartsDesk() {
                   className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div className="space-y-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="font-mono text-xs font-bold text-primary">
                         {req.part?.part_number}
                       </span>
@@ -493,12 +693,34 @@ function PartsDesk() {
                       <span className="rounded-full bg-warning/15 px-2 py-0.5 text-xs font-semibold text-warning-foreground">
                         Qty: {req.quantity}
                       </span>
+                      {req.part && req.part.stock_quantity === 0 && (
+                        <span className="rounded-full bg-destructive/15 px-2 py-0.5 text-xs font-semibold text-destructive">
+                          Out of Depot Stock
+                        </span>
+                      )}
+                      {req.part && req.part.stock_quantity > 0 && req.part.stock_quantity < req.quantity && (
+                        <span className="rounded-full bg-warning/15 px-2 py-0.5 text-xs font-semibold text-warning-foreground">
+                          Insufficient Stock ({req.part.stock_quantity} available)
+                        </span>
+                      )}
                       {req.part?.location && (
                         <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
                           Shelf: {req.part.location}
                         </span>
                       )}
                     </div>
+                    <div className="flex items-center gap-1.5 text-xs mt-1">
+                      <Clock className="h-3.5 w-3.5 text-primary shrink-0" />
+                      <span className="text-muted-foreground">Expected Arrival:</span>
+                      <span className={cn("font-medium", req.estimated_arrival_at ? "text-primary font-semibold" : "text-muted-foreground italic")}>
+                        {req.estimated_arrival_at ? formatEtaDateTime(req.estimated_arrival_at) : "ETA pending"}
+                      </span>
+                    </div>
+                    {req.eta_updated_at && (
+                      <p className="text-[11px] text-muted-foreground">
+                        ETA set {req.eta_updater?.full_name ? `by ${req.eta_updater.full_name}` : ""} on {new Date(req.eta_updated_at).toLocaleDateString()}
+                      </p>
+                    )}
                     <p className="text-xs text-muted-foreground">
                       Assigned repair:{" "}
                       <Link
@@ -524,14 +746,112 @@ function PartsDesk() {
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => setHandoffTarget(req)}
-                      className="inline-flex h-9 items-center justify-center rounded-xl bg-primary px-4 text-xs font-bold text-primary-foreground hover:bg-primary/90"
+                      onClick={() => handleOpenUpdateEta(req)}
+                      className="inline-flex h-9 items-center justify-center rounded-xl border border-primary/30 bg-primary/5 px-3 text-xs font-semibold text-primary hover:bg-primary/15"
                     >
-                      Confirm Handoff
+                      Update ETA
                     </button>
+                    {req.part && req.part.stock_quantity >= req.quantity ? (
+                      <button
+                        type="button"
+                        onClick={() => setHandoffTarget(req)}
+                        className="inline-flex h-9 items-center justify-center rounded-xl bg-primary px-4 text-xs font-bold text-primary-foreground hover:bg-primary/90"
+                      >
+                        Confirm Handoff
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled
+                        title="Stock Unavailable: Insufficient depot inventory. Receive depot delivery before confirming handoff."
+                        className="inline-flex h-9 items-center justify-center rounded-xl bg-muted px-4 text-xs font-bold text-muted-foreground opacity-50 cursor-not-allowed"
+                      >
+                        Handoff Locked (Out of Stock)
+                      </button>
+                    )}
                   </div>
                 </Card>
               ))}
+            </div>
+          )}
+
+          {/* FIELD & EXTERNAL SOURCING HOLDS */}
+          {sourcingHolds.length > 0 && (
+            <div className="space-y-3 pt-6 border-t border-border">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-base font-bold text-foreground flex items-center gap-2">
+                    <PackageSearch className="h-4 w-4 text-primary" />
+                    Field &amp; External Sourcing Holds ({sourcingHolds.length})
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    Required components on field repairs awaiting delivery or external sourcing. Not held in depot stock.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {sourcingHolds.map((sh, idx) => (
+                  <Card
+                    key={`${sh.repairId}-${sh.id}-${idx}`}
+                    className="flex flex-col gap-4 border-dashed border-border/80 bg-muted/20 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h4 className="font-bold text-foreground">{sh.part}</h4>
+                        <span className="rounded-full bg-blue-500/15 border border-blue-500/30 text-blue-700 dark:text-blue-300 px-2 py-0.5 text-xs font-semibold">
+                          External Sourcing Hold
+                        </span>
+                        <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground font-medium">
+                          Awaiting Arrival
+                        </span>
+                        {sh.quantity > 1 && (
+                          <span className="rounded-full bg-warning/15 px-2 py-0.5 text-xs font-semibold text-warning-foreground">
+                            Qty: {sh.quantity}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 text-xs mt-1">
+                        <Clock className="h-3.5 w-3.5 text-primary shrink-0" />
+                        <span className="text-muted-foreground">Expected Arrival:</span>
+                        <span className={cn("font-medium", sh.eta ? "text-primary font-semibold" : "text-muted-foreground italic")}>
+                          {sh.eta ? formatEtaDateTime(sh.eta) : "ETA pending"}
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Assigned repair:{" "}
+                        <Link
+                          to="/admin/repair/$id"
+                          params={{ id: sh.repairId }}
+                          className="font-semibold text-foreground underline"
+                        >
+                          {sh.jobNumber}
+                        </Link>{" "}
+                        · Technician: {sh.technicianName}
+                      </p>
+                      <p className="text-xs text-muted-foreground flex items-center gap-1.5 mt-0.5">
+                        <MapPin className="h-3 w-3 text-primary shrink-0" />
+                        <span>Service Location: <span className="font-medium text-foreground">{sh.location}</span></span>
+                      </p>
+                      {sh.reason && (
+                        <p className="text-xs italic text-muted-foreground">
+                          Note: "{sh.reason}"
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenSourcingHoldEta(sh)}
+                        className="inline-flex h-9 items-center justify-center rounded-xl border border-primary/30 bg-primary/5 px-3 text-xs font-semibold text-primary hover:bg-primary/15"
+                      >
+                        Update ETA
+                      </button>
+                    </div>
+                  </Card>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -1220,6 +1540,70 @@ function PartsDesk() {
               className="rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
               {adjusting ? "Saving..." : "Save Stock Adjustment"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* UPDATE ETA MODAL */}
+      <Dialog
+        open={Boolean(etaTarget || sourcingHoldTarget)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEtaTarget(null);
+            setSourcingHoldTarget(null);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Coordinate Expected Arrival (ETA)</DialogTitle>
+            <DialogDescription>
+              Set or update expected delivery date &amp; time for{" "}
+              {etaTarget?.part?.name || sourcingHoldTarget?.part || "spare part"}. Updates the repair hold and farmer view in real time.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <div>
+              <Label className="text-xs">Expected Arrival Date &amp; Time</Label>
+              <DateTimePicker value={newEta} onChange={setNewEta} />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Set when component arrival or delivery is expected.
+              </p>
+            </div>
+
+            <div>
+              <Label className="text-xs">Sourcing / Coordination Notes (Optional)</Label>
+              <input
+                type="text"
+                value={etaNotes}
+                onChange={(e) => setEtaNotes(e.target.value)}
+                placeholder="e.g. Sourced from regional depot / supplier transit confirmed"
+                className="h-9 w-full rounded-lg border border-border bg-background px-3 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <button
+              type="button"
+              disabled={updatingEta}
+              onClick={() => {
+                setEtaTarget(null);
+                setSourcingHoldTarget(null);
+              }}
+              className="rounded-lg border border-border px-3 py-2 text-xs font-semibold hover:bg-muted"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={updatingEta}
+              onClick={handleSaveEta}
+              className="rounded-lg bg-primary px-4 py-2 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            >
+              {updatingEta ? "Saving..." : "Save ETA"}
             </button>
           </DialogFooter>
         </DialogContent>

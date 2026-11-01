@@ -18,6 +18,8 @@ import {
   evaluateAudioSignalActivity,
   validateRecordingSignal,
   AUDIO_ACTIVITY_THRESHOLD,
+  MIN_RECORDING_DURATION_SECONDS,
+  MAX_RECORDING_DURATION_SECONDS,
 } from "../src/lib/audio-recorder.ts";
 
 // Helper to construct a mock Request with FormData containing an audio file
@@ -431,10 +433,7 @@ test("appendTranscriptToDescription preserves existing typed description", () =>
   );
 
   // Scenario 4: Empty transcript leaves existing description untouched
-  assert.equal(
-    appendTranscriptToDescription("Hydraulic lift failed", ""),
-    "Hydraulic lift failed",
-  );
+  assert.equal(appendTranscriptToDescription("Hydraulic lift failed", ""), "Hydraulic lift failed");
 });
 
 test("formatRecordingTime accurately formats seconds into mm:ss", () => {
@@ -478,17 +477,33 @@ test("detectSupportedAudioFormat returns fallback webm when window or MediaRecor
 test("evaluateAudioSignalActivity identifies active speech vs silent microphone signal", () => {
   // Silent signal (zeros or ambient sub-threshold noise)
   assert.equal(evaluateAudioSignalActivity(0, 0), false, "Zero level must be marked inactive");
-  assert.equal(evaluateAudioSignalActivity(0.005, 0.002), false, "Sub-threshold ambient hum must be marked inactive");
+  assert.equal(
+    evaluateAudioSignalActivity(0.005, 0.002),
+    false,
+    "Sub-threshold ambient hum must be marked inactive",
+  );
 
   // Active vocal signal exceeding threshold
-  assert.equal(evaluateAudioSignalActivity(0.05, 0.02), true, "Vocal signal (5% peak) must be marked active");
-  assert.equal(evaluateAudioSignalActivity(0.35, 0.15), true, "Strong vocal signal (35% peak) must be marked active");
-  assert.equal(evaluateAudioSignalActivity(AUDIO_ACTIVITY_THRESHOLD, 0), true, "Signal meeting threshold exactly must be active");
+  assert.equal(
+    evaluateAudioSignalActivity(0.05, 0.02),
+    true,
+    "Vocal signal (5% peak) must be marked active",
+  );
+  assert.equal(
+    evaluateAudioSignalActivity(0.35, 0.15),
+    true,
+    "Strong vocal signal (35% peak) must be marked active",
+  );
+  assert.equal(
+    evaluateAudioSignalActivity(AUDIO_ACTIVITY_THRESHOLD, 0),
+    true,
+    "Signal meeting threshold exactly must be active",
+  );
 });
 
 test("validateRecordingSignal rejects silent recording with actionable error", () => {
   const silentResult = validateRecordingSignal({
-    durationSeconds: 4,
+    durationSeconds: 8,
     blobSize: 8192,
     activityStats: {
       hasAudioActivity: false,
@@ -501,40 +516,106 @@ test("validateRecordingSignal rejects silent recording with actionable error", (
   assert.match(silentResult.error, /No sound was detected from your microphone/i);
 });
 
-test("validateRecordingSignal accepts valid recording with active microphone signal", () => {
-  const validResult = validateRecordingSignal({
-    durationSeconds: 3,
+test("validateRecordingSignal rejects 2-second recording as too short (< 5 seconds)", () => {
+  const result = validateRecordingSignal({
+    durationSeconds: 2,
+    blobSize: 8000,
+    activityStats: {
+      hasAudioActivity: true,
+      peakLevel: 0.25,
+      averageLevel: 0.1,
+    },
+  });
+  assert.equal(result.valid, false);
+  assert.match(result.error, /Recording was too short/i);
+});
+
+test("validateRecordingSignal rejects 4-second recording as too short (< 5 seconds)", () => {
+  const result = validateRecordingSignal({
+    durationSeconds: 4,
     blobSize: 12000,
     activityStats: {
       hasAudioActivity: true,
       peakLevel: 0.25,
-      averageLevel: 0.12,
+      averageLevel: 0.1,
     },
   });
-
-  assert.equal(validResult.valid, true);
-  assert.equal(validResult.error, undefined);
+  assert.equal(result.valid, false);
+  assert.match(result.error, /Recording was too short/i);
 });
 
-test("validateRecordingSignal rejects very short recording (< 1 second)", () => {
-  const shortResult = validateRecordingSignal({
-    durationSeconds: 0,
-    blobSize: 4000,
+test("validateRecordingSignal accepts exactly 5-second recording when audio activity is valid", () => {
+  const result = validateRecordingSignal({
+    durationSeconds: 5,
+    blobSize: 16000,
+    activityStats: {
+      hasAudioActivity: true,
+      peakLevel: 0.25,
+      averageLevel: 0.1,
+    },
+  });
+  assert.equal(result.valid, true);
+  assert.equal(result.error, undefined);
+});
+
+test("validateRecordingSignal accepts 6-second recording when audio activity is valid", () => {
+  const result = validateRecordingSignal({
+    durationSeconds: 6,
+    blobSize: 20000,
     activityStats: {
       hasAudioActivity: true,
       peakLevel: 0.3,
+      averageLevel: 0.15,
+    },
+  });
+  assert.equal(result.valid, true);
+  assert.equal(result.error, undefined);
+});
+
+test("validateRecordingSignal rejects silent 5-second recording despite meeting duration threshold", () => {
+  const result = validateRecordingSignal({
+    durationSeconds: 5,
+    blobSize: 16000,
+    activityStats: {
+      hasAudioActivity: false,
+      peakLevel: 0.005,
+      averageLevel: 0.001,
+    },
+  });
+  assert.equal(result.valid, false);
+  assert.match(result.error, /No sound was detected from your microphone/i);
+});
+
+test("validateRecordingSignal enforces 60-second maximum recording duration", () => {
+  assert.equal(MAX_RECORDING_DURATION_SECONDS, 60);
+
+  const withinMaxResult = validateRecordingSignal({
+    durationSeconds: 60,
+    blobSize: 90000,
+    activityStats: {
+      hasAudioActivity: true,
+      peakLevel: 0.25,
       averageLevel: 0.1,
     },
-    minDurationSeconds: 1,
   });
+  assert.equal(withinMaxResult.valid, true);
 
-  assert.equal(shortResult.valid, false);
-  assert.match(shortResult.error, /Recording was too short/i);
+  const exceededResult = validateRecordingSignal({
+    durationSeconds: 61,
+    blobSize: 95000,
+    activityStats: {
+      hasAudioActivity: true,
+      peakLevel: 0.25,
+      averageLevel: 0.1,
+    },
+  });
+  assert.equal(exceededResult.valid, false);
+  assert.match(exceededResult.error, /exceeded the maximum duration/i);
 });
 
 test("validateRecordingSignal rejects undersized container blob (< 500 bytes)", () => {
   const tinyResult = validateRecordingSignal({
-    durationSeconds: 2,
+    durationSeconds: 5,
     blobSize: 250, // Empty EBML header without audio frames
     activityStats: {
       hasAudioActivity: true,
@@ -550,7 +631,7 @@ test("validateRecordingSignal rejects undersized container blob (< 500 bytes)", 
 
 test("validateRecordingSignal gracefully handles missing Web Audio tracker (null fallback)", () => {
   const fallbackResult = validateRecordingSignal({
-    durationSeconds: 2,
+    durationSeconds: 5,
     blobSize: 6000,
     activityStats: null, // Environments without Web Audio support
   });
@@ -566,7 +647,11 @@ test("Recording lifecycle: concatenates all dataavailable chunks into unified Bl
   chunks.push(chunk2);
 
   const finalBlob = new Blob(chunks, { type: "audio/webm" });
-  assert.equal(finalBlob.size, chunk1.size + chunk2.size, "Final blob must contain all collected chunks");
+  assert.equal(
+    finalBlob.size,
+    chunk1.size + chunk2.size,
+    "Final blob must contain all collected chunks",
+  );
 });
 
 test("No transcript blacklist: legitimate phrases containing 'you' or 'thank you' are preserved faithfully", async () => {
@@ -588,5 +673,9 @@ test("No transcript blacklist: legitimate phrases containing 'you' or 'thank you
 
   assert.equal(res.status, 200);
   const data = await res.json();
-  assert.equal(data.text, legitimatePhrase, "Legitimate phrases must never be blacklisted or censored");
+  assert.equal(
+    data.text,
+    legitimatePhrase,
+    "Legitimate phrases must never be blacklisted or censored",
+  );
 });

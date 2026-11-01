@@ -427,17 +427,22 @@ export type Database = {
           description: string
           equipment_id: string
           farmer_id: string
+          field_landmark: string | null
           id: string
+          is_machine_stopped: boolean
           is_testing: boolean
           job_number: string
           location: string
           parts_hold: Json | null
           photos: string[]
+          preferred_time_slot: string | null
+          service_type: "DOORSTEP" | "WORKSHOP"
           status: Database["public"]["Enums"]["repair_status"]
           status_since: string
           symptoms: string[]
           technician_id: string | null
           updated_at: string
+          urgency_level: "CRITICAL" | "HIGH" | "STANDARD" | "FLEXIBLE"
           verified_at: string | null
         }
         Insert: {
@@ -455,17 +460,22 @@ export type Database = {
           description?: string
           equipment_id: string
           farmer_id: string
+          field_landmark?: string | null
           id?: string
+          is_machine_stopped?: boolean
           is_testing?: boolean
           job_number: string
           location: string
           parts_hold?: Json | null
           photos?: string[]
+          preferred_time_slot?: string | null
+          service_type?: "DOORSTEP" | "WORKSHOP"
           status?: Database["public"]["Enums"]["repair_status"]
           status_since?: string
           symptoms?: string[]
           technician_id?: string | null
           updated_at?: string
+          urgency_level?: "CRITICAL" | "HIGH" | "STANDARD" | "FLEXIBLE"
           verified_at?: string | null
         }
         Update: {
@@ -483,17 +493,22 @@ export type Database = {
           description?: string
           equipment_id?: string
           farmer_id?: string
+          field_landmark?: string | null
           id?: string
+          is_machine_stopped?: boolean
           is_testing?: boolean
           job_number?: string
           location?: string
           parts_hold?: Json | null
           photos?: string[]
+          preferred_time_slot?: string | null
+          service_type?: "DOORSTEP" | "WORKSHOP"
           status?: Database["public"]["Enums"]["repair_status"]
           status_since?: string
           symptoms?: string[]
           technician_id?: string | null
           updated_at?: string
+          urgency_level?: "CRITICAL" | "HIGH" | "STANDARD" | "FLEXIBLE"
           verified_at?: string | null
         }
         Relationships: [

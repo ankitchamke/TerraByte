@@ -1,9 +1,11 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
+  AlertOctagon,
   ArrowLeft,
   ArrowRight,
   Camera,
   CheckCircle2,
+  Clock,
   CloudOff,
   Loader2,
   MapPin,
@@ -14,6 +16,7 @@ import {
   Square,
   Tractor,
   TriangleAlert,
+  Wrench,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -42,7 +45,17 @@ import {
 import { ago } from "@/lib/tb-store";
 import { fileToSmallDataUrl } from "@/lib/image";
 import { getFarmerEquipment, type EquipmentRow } from "@/lib/services/equipment";
-import { createRepairRequest } from "@/lib/services/repair-requests";
+import {
+  createRepairRequest,
+  type ServiceType,
+  type UrgencyLevel,
+  isValidServiceType,
+  isValidUrgencyLevel,
+  FARMER_AVAILABILITY_SLOTS,
+  URGENCY_OPTIONS,
+  SERVICE_MODE_OPTIONS,
+} from "@/lib/services/repair-requests";
+export { FARMER_AVAILABILITY_SLOTS, URGENCY_OPTIONS, SERVICE_MODE_OPTIONS };
 import type { Json } from "@/integrations/supabase/types";
 import { meta } from "@/lib/seo";
 import { cn } from "@/lib/utils";
@@ -56,7 +69,7 @@ export const Route = createFileRoute("/farmer/report-breakdown")({
 });
 
 const DRAFT = "terrabyte-breakdown-draft";
-type Draft = {
+export type Draft = {
   step: number;
   equipmentId: string;
   symptoms: string[];
@@ -64,6 +77,11 @@ type Draft = {
   photos: string[];
   village: string;
   tahsil: string;
+  serviceType: ServiceType;
+  urgencyLevel: UrgencyLevel;
+  isMachineStopped: boolean;
+  preferredTimeSlot: string;
+  fieldLandmark: string;
 };
 
 function Report() {
@@ -84,6 +102,11 @@ function Report() {
     photos: [],
     village: "",
     tahsil: "",
+    serviceType: "DOORSTEP",
+    urgencyLevel: "STANDARD",
+    isMachineStopped: false,
+    preferredTimeSlot: "Immediate / ASAP",
+    fieldLandmark: "",
   });
   const [restored, setRestored] = useState(false);
   const [voiceState, setVoiceState] = useState<VoiceRecordingState>("IDLE");
@@ -250,6 +273,14 @@ function Report() {
             photos: Array.isArray(x.photos) ? x.photos : prev.photos,
             village: typeof x.village === "string" ? x.village : prev.village,
             tahsil: typeof x.tahsil === "string" ? x.tahsil : prev.tahsil,
+            serviceType: isValidServiceType(x.serviceType) ? x.serviceType : "DOORSTEP",
+            urgencyLevel: isValidUrgencyLevel(x.urgencyLevel) ? x.urgencyLevel : "STANDARD",
+            isMachineStopped: typeof x.isMachineStopped === "boolean" ? x.isMachineStopped : false,
+            preferredTimeSlot:
+              typeof x.preferredTimeSlot === "string" && x.preferredTimeSlot.trim().length > 0
+                ? x.preferredTimeSlot
+                : "Immediate / ASAP",
+            fieldLandmark: typeof x.fieldLandmark === "string" ? x.fieldLandmark : "",
           }));
           setRestored(true);
         }
@@ -339,9 +370,7 @@ function Report() {
       !navigator?.mediaDevices?.getUserMedia ||
       typeof MediaRecorder === "undefined"
     ) {
-      toast.error(
-        "Voice recording is not supported on this browser. Please use keyboard typing.",
-      );
+      toast.error("Voice recording is not supported on this browser. Please use keyboard typing.");
       return;
     }
 
@@ -582,6 +611,11 @@ function Report() {
           profile?.village?.trim() ||
           "On-site / Field",
         assessment: assessment as unknown as Json,
+        service_type: d.serviceType,
+        urgency_level: d.urgencyLevel,
+        is_machine_stopped: d.isMachineStopped,
+        preferred_time_slot: d.preferredTimeSlot?.trim() || null,
+        field_landmark: d.serviceType === "DOORSTEP" ? d.fieldLandmark?.trim() || null : null,
         ...(gps
           ? {
               gpsLocation: {
@@ -673,6 +707,11 @@ function Report() {
                 photos: [],
                 village: profile?.village?.trim() || "",
                 tahsil: "",
+                serviceType: "DOORSTEP",
+                urgencyLevel: "STANDARD",
+                isMachineStopped: false,
+                preferredTimeSlot: "Immediate / ASAP",
+                fieldLandmark: "",
               });
               clearGps();
               setRestored(false);
@@ -763,10 +802,55 @@ function Report() {
 
       {d.step === 3 && (
         <div className="space-y-4">
+          {/* Service Delivery Mode Choice */}
+          <div className="space-y-3 rounded-2xl border-2 border-border bg-card p-4">
+            <div className="flex items-center gap-2">
+              <Wrench className="h-5 w-5 text-primary" />
+              <h2 className="text-base font-bold text-foreground">Service Delivery Mode</h2>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Choose how you would like to receive repair assistance for your equipment.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {SERVICE_MODE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.mode}
+                  type="button"
+                  onClick={() => up({ serviceType: opt.mode })}
+                  className={cn(
+                    "flex flex-col items-start rounded-xl border-2 p-3.5 text-left transition-all cursor-pointer",
+                    d.serviceType === opt.mode
+                      ? "border-primary bg-primary/5 shadow-xs"
+                      : "border-border bg-card hover:border-border/80 hover:bg-muted/40",
+                  )}
+                >
+                  <div className="flex w-full items-center justify-between">
+                    <span className="font-bold text-sm text-foreground">{opt.label}</span>
+                    <span
+                      className={cn(
+                        "h-4 w-4 rounded-full border-2 flex items-center justify-center",
+                        d.serviceType === opt.mode
+                          ? "border-primary"
+                          : "border-muted-foreground/40",
+                      )}
+                    >
+                      {d.serviceType === opt.mode && (
+                        <span className="h-2 w-2 rounded-full bg-primary" />
+                      )}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{opt.subtitle}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="space-y-3 rounded-2xl border-2 border-border bg-card p-4">
             <div className="flex items-center gap-2">
               <MapPin className="h-5 w-5 text-primary" />
-              <h2 className="text-base font-bold text-foreground">Breakdown Location</h2>
+              <h2 className="text-base font-bold text-foreground">
+                {d.serviceType === "DOORSTEP" ? "Field Breakdown Location" : "Base Location"}
+              </h2>
             </div>
             <p className="text-xs text-muted-foreground">
               Provide your village and tahsil so the nearest technician can find you.
@@ -798,6 +882,29 @@ function Report() {
                 </select>
               </div>
             </div>
+
+            {/* Field Landmark / Access Instructions (Doorstep only, max 300 chars) */}
+            {d.serviceType === "DOORSTEP" && (
+              <div className="pt-2">
+                <div className="flex items-center justify-between">
+                  <Label>Field Landmark / Plot Access Instructions (Optional)</Label>
+                  <span className="text-[11px] text-muted-foreground font-mono">
+                    {d.fieldLandmark.length}/300
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  maxLength={300}
+                  className={input}
+                  placeholder="e.g. Gate 3 near canal, 500m behind Gram Panchayat water tank, plot #14"
+                  value={d.fieldLandmark}
+                  onChange={(e) => up({ fieldLandmark: e.target.value.slice(0, 300) })}
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Give visual landmarks or mud road directions for the mobile technician.
+                </p>
+              </div>
+            )}
 
             {/* One-time Browser Geolocation Capture */}
             <div className="pt-2 border-t border-border/60">
@@ -877,6 +984,111 @@ function Report() {
             </div>
           </div>
 
+          {/* Urgency & Machine Status Card */}
+          <div className="space-y-4 rounded-2xl border-2 border-border bg-card p-4">
+            <div className="flex items-center gap-2">
+              <AlertOctagon className="h-5 w-5 text-primary" />
+              <h2 className="text-base font-bold text-foreground">Urgency & Machine Status</h2>
+            </div>
+
+            {/* Machine Stoppage Toggle */}
+            <label
+              className={cn(
+                "flex items-start gap-3 rounded-xl border-2 p-3 cursor-pointer transition-colors",
+                d.isMachineStopped
+                  ? "border-destructive/60 bg-destructive/10"
+                  : "border-border bg-card hover:bg-muted/40",
+              )}
+            >
+              <input
+                type="checkbox"
+                checked={d.isMachineStopped}
+                onChange={(e) => up({ isMachineStopped: e.target.checked })}
+                className="mt-1 h-4 w-4 rounded border-border text-destructive focus:ring-destructive cursor-pointer"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                  Machine is completely stopped / immobile
+                  {d.isMachineStopped && (
+                    <span className="rounded-full bg-destructive/20 px-2 py-0.5 text-[10px] font-semibold text-destructive">
+                      HALTED IN FIELD
+                    </span>
+                  )}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Check if equipment cannot run or drive safely (e.g. engine stalled, axle/hydraulic
+                  failure in field).
+                </p>
+              </div>
+            </label>
+
+            {/* Operational Urgency Level */}
+            <div className="space-y-2">
+              <Label>Operational Urgency</Label>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {URGENCY_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.level}
+                    type="button"
+                    onClick={() => up({ urgencyLevel: opt.level })}
+                    className={cn(
+                      "flex flex-col items-start rounded-xl border-2 p-3 text-left transition-all cursor-pointer",
+                      d.urgencyLevel === opt.level
+                        ? opt.level === "CRITICAL"
+                          ? "border-destructive bg-destructive/10"
+                          : opt.level === "HIGH"
+                            ? "border-warning bg-warning/10"
+                            : "border-primary bg-primary/5"
+                        : "border-border bg-card hover:border-border/80 hover:bg-muted/30",
+                    )}
+                  >
+                    <div className="flex w-full items-center justify-between">
+                      <span className="font-bold text-sm text-foreground">{opt.title}</span>
+                      <span
+                        className={cn(
+                          "h-3.5 w-3.5 rounded-full border-2 flex items-center justify-center",
+                          d.urgencyLevel === opt.level
+                            ? "border-current"
+                            : "border-muted-foreground/40",
+                        )}
+                      >
+                        {d.urgencyLevel === opt.level && (
+                          <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                        )}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">{opt.description}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Farmer Availability Window */}
+            <div className="space-y-2 pt-2 border-t border-border/60">
+              <div className="flex items-center gap-1.5">
+                <Clock className="h-4 w-4 text-muted-foreground" />
+                <Label>Your Availability / Preferred Timing</Label>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {FARMER_AVAILABILITY_SLOTS.map((slot) => (
+                  <button
+                    key={slot}
+                    type="button"
+                    onClick={() => up({ preferredTimeSlot: slot })}
+                    className={cn(
+                      "rounded-lg border px-3 py-2 text-xs font-semibold text-center transition-colors cursor-pointer",
+                      d.preferredTimeSlot === slot
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border bg-card text-foreground hover:bg-muted",
+                    )}
+                  >
+                    {slot}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
           <div className="space-y-3">
             <Label>Problem Description</Label>
 
@@ -908,7 +1120,9 @@ function Report() {
                       Recording Voice ({formatRecordingTime(recordSeconds)} / 1:00)
                     </span>
                     <span className="text-xs text-muted-foreground font-mono">
-                      Whisper Large V3
+                      {recordSeconds < 5
+                        ? `Min 5s (${5 - recordSeconds}s left)`
+                        : "Whisper Large V3"}
                     </span>
                   </div>
 
@@ -918,9 +1132,7 @@ function Report() {
                       <span>Mic Activity</span>
                       <span
                         className={
-                          audioLevel > 0.02
-                            ? "text-success font-semibold"
-                            : "text-muted-foreground"
+                          audioLevel > 0.02 ? "text-success font-semibold" : "text-muted-foreground"
                         }
                       >
                         {audioLevel > 0.02 ? "Voice Signal Detected" : "Listening for voice…"}
@@ -940,7 +1152,8 @@ function Report() {
                   </div>
 
                   <p className="text-xs text-muted-foreground">
-                    Speak clearly in Hindi, Marathi, or English. Tap Stop when finished.
+                    Speak clearly in Hindi, Marathi, or English (minimum 5 seconds). Tap Stop when
+                    finished.
                   </p>
                   <div className="flex items-center gap-2 pt-1">
                     <button
@@ -1012,7 +1225,8 @@ function Report() {
               onChange={(e) => up({ description: e.target.value })}
             />
             <p className="text-xs text-muted-foreground">
-              Review and edit your description before continuing. Keyboard typing is always available.
+              Review and edit your description before continuing. Keyboard typing is always
+              available.
             </p>
           </div>
         </div>
@@ -1058,31 +1272,80 @@ function Report() {
       )}
 
       {d.step === 5 && (
-        <Card className="space-y-2">
-          <p>
-            <b>Machine:</b>{" "}
-            {selectedEquipment ? `${selectedEquipment.make} ${selectedEquipment.model}` : "—"}
-          </p>
-          <p>
-            <b>Symptoms:</b> {d.symptoms.join(", ")}
-          </p>
-          <p>
-            <b>Location:</b> {formatCoarseLocation(d.village, d.tahsil) || "On-site / Field"}
-            {gps ? (
-              <span className="ml-2 inline-flex items-center gap-1 rounded-md bg-success/15 px-2 py-0.5 text-xs font-semibold text-success">
-                <MapPin className="h-3 w-3" /> Exact GPS attached ({formatGpsAccuracy(gps.accuracy)}
-                )
-              </span>
-            ) : null}
-          </p>
-          {d.description && (
+        <Card className="space-y-3">
+          <div className="flex items-center justify-between border-b border-border/60 pb-2">
+            <h3 className="font-bold text-base text-foreground">Review Breakdown Summary</h3>
+            <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
+              Step 5 of 5
+            </span>
+          </div>
+
+          <div className="space-y-2 text-sm">
             <p>
-              <b>Description:</b> {d.description}
+              <b>Machine:</b>{" "}
+              {selectedEquipment ? `${selectedEquipment.make} ${selectedEquipment.model}` : "—"}
             </p>
-          )}
-          <p>
-            <b>Photos:</b> {d.photos.length}
-          </p>
+            <p>
+              <b>Service Mode:</b>{" "}
+              <span className="font-semibold text-foreground">
+                {d.serviceType === "DOORSTEP" ? "Doorstep / On-Field Service" : "Workshop Drop-off"}
+              </span>
+            </p>
+            <p>
+              <b>Urgency:</b>{" "}
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 font-semibold",
+                  d.urgencyLevel === "CRITICAL"
+                    ? "text-destructive"
+                    : d.urgencyLevel === "HIGH"
+                      ? "text-warning-foreground"
+                      : "text-foreground",
+                )}
+              >
+                {d.urgencyLevel}
+                {d.isMachineStopped && " · Immobile in field"}
+              </span>
+            </p>
+            <p>
+              <b>Machine Stoppage:</b>{" "}
+              {d.isMachineStopped ? (
+                <span className="inline-flex items-center gap-1 font-semibold text-destructive">
+                  <AlertOctagon className="h-3.5 w-3.5" /> Completely stopped / halted in field
+                </span>
+              ) : (
+                <span className="text-muted-foreground">Mobile / Can operate safely</span>
+              )}
+            </p>
+            <p>
+              <b>Preferred Availability:</b> {d.preferredTimeSlot || "Immediate / ASAP"}
+            </p>
+            <p>
+              <b>Location:</b> {formatCoarseLocation(d.village, d.tahsil) || "On-site / Field"}
+              {gps ? (
+                <span className="ml-2 inline-flex items-center gap-1 rounded-md bg-success/15 px-2 py-0.5 text-xs font-semibold text-success">
+                  <MapPin className="h-3 w-3" /> Exact GPS attached (
+                  {formatGpsAccuracy(gps.accuracy)})
+                </span>
+              ) : null}
+            </p>
+            {d.serviceType === "DOORSTEP" && d.fieldLandmark ? (
+              <p>
+                <b>Field Landmark:</b> <span className="italic">"{d.fieldLandmark}"</span>
+              </p>
+            ) : null}
+            <p>
+              <b>Symptoms:</b> {d.symptoms.join(", ")}
+            </p>
+            {d.description && (
+              <p>
+                <b>Description:</b> {d.description}
+              </p>
+            )}
+            <p>
+              <b>Photos:</b> {d.photos.length} attached
+            </p>
+          </div>
         </Card>
       )}
 

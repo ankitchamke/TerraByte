@@ -1,6 +1,8 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   AlertCircle,
+  AlertTriangle,
+  Building2,
   Camera,
   Clock,
   Loader2,
@@ -9,12 +11,14 @@ import {
   PackageSearch,
   Plus,
   Trash2,
+  Truck,
   XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AssessmentCard, QuoteTable, Timeline } from "@/components/repair-parts";
 import { DirectionsButton } from "@/components/directions-button";
+import { OnDemandTranslation } from "@/components/on-demand-translation";
 import { RouteEstimateCard } from "@/components/route-estimate-card";
 import { formatGpsAccuracy } from "@/lib/location";
 import {
@@ -64,6 +68,7 @@ import {
   updatePartsEta,
   waitForParts,
   getRepairDispatchLocation,
+  normalizeRepairDoorstepUrgency,
   type RepairDispatchLocation,
   type RepairRequestDetail,
 } from "@/lib/services/repair-requests";
@@ -105,7 +110,9 @@ export const Route = createFileRoute("/technician/job/$id")({
         <ContextualBack to="/technician" label="Jobs" />
         <Card className="border-destructive text-destructive space-y-2">
           <p className="font-bold text-lg">Failed to load technician job</p>
-          <p className="text-sm">{err?.message || "An unexpected error occurred while loading this job."}</p>
+          <p className="text-sm">
+            {err?.message || "An unexpected error occurred while loading this job."}
+          </p>
           {err?.stack && (
             <pre className="text-xs bg-muted/60 p-3 rounded-lg overflow-x-auto text-foreground font-mono">
               {err.stack}
@@ -195,6 +202,11 @@ function Job() {
             cancellation_requested_at: (demo as any).cancellation?.requestedAt
               ? new Date((demo as any).cancellation.requestedAt).toISOString()
               : null,
+            service_type: demo.service_type || demo.serviceType || "DOORSTEP",
+            urgency_level: demo.urgency_level || demo.urgencyLevel || "STANDARD",
+            is_machine_stopped: Boolean(demo.is_machine_stopped ?? demo.isMachineStopped),
+            preferred_time_slot: demo.preferred_time_slot || demo.preferredTimeSlot || null,
+            field_landmark: demo.field_landmark || demo.fieldLandmark || null,
             equipment: eq
               ? {
                   id: eq.id,
@@ -319,13 +331,10 @@ function Job() {
 
   const isAssignedToMe = r.technician_id === profile?.id;
   const isUnassignedIncoming = !r.technician_id && r.status === "REQUESTED";
-  const isStaffAuthorized = profile?.role === "service_centre" || isAssignedToMe || isUnassignedIncoming;
+  const isStaffAuthorized =
+    profile?.role === "service_centre" || isAssignedToMe || isUnassignedIncoming;
 
-  if (
-    !isStaffAuthorized &&
-    r.status !== "COMPLETED" &&
-    r.status !== "CANCELLED"
-  ) {
+  if (!isStaffAuthorized && r.status !== "COMPLETED" && r.status !== "CANCELLED") {
     return (
       <div className="space-y-5">
         <ContextualBack to="/technician" label="Jobs" />
@@ -348,9 +357,7 @@ function Job() {
 
   const demoRepair = tb.repairs.find(
     (x) =>
-      x.id === id ||
-      (x as any).jobNumber === id ||
-      (r && (x.id === r.job_number || x.id === r.id))
+      x.id === id || (x as any).jobNumber === id || (r && (x.id === r.job_number || x.id === r.id)),
   );
 
   const pendingQuote = quotes.find(
@@ -419,7 +426,9 @@ function Job() {
             since:
               typeof (r.parts_hold as any).since === "number" && !isNaN((r.parts_hold as any).since)
                 ? (r.parts_hold as any).since
-                : new Date((r.parts_hold as any).since || r.status_since || safeCreatedAtMs).getTime() || safeCreatedAtMs,
+                : new Date(
+                    (r.parts_hold as any).since || r.status_since || safeCreatedAtMs,
+                  ).getTime() || safeCreatedAtMs,
           },
         }
       : {}),
@@ -601,6 +610,31 @@ function Job() {
           </div>
         )}
 
+      {/* Critical Field Stoppage Alert Banner */}
+      {(() => {
+        const norm = normalizeRepairDoorstepUrgency(r);
+        if (
+          norm.urgency_level === "CRITICAL" &&
+          norm.is_machine_stopped &&
+          r.status !== "CANCELLED" &&
+          r.status !== "COMPLETED"
+        ) {
+          return (
+            <div className="rounded-xl border-2 border-destructive/60 bg-destructive/10 p-4 text-sm space-y-1 shadow-xs">
+              <p className="font-bold text-destructive flex items-center gap-1.5">
+                <AlertTriangle className="h-4 w-4" /> Field Operations Halted · Critical Field
+                Stoppage
+              </p>
+              <p className="text-foreground text-xs leading-relaxed">
+                Farmer reported that the machine is completely stopped in the field. Fieldwork is
+                interrupted and requires prioritized technical intervention.
+              </p>
+            </div>
+          );
+        }
+        return null;
+      })()}
+
       <Card>
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
@@ -636,6 +670,94 @@ function Job() {
               <RouteEstimateCard repairId={r.id} hasGpsLocation={Boolean(dispatchLocation)} />
             </div>
           )}
+
+          {/* Phase 10.2 Service Logistics & Operational Urgency */}
+          {(() => {
+            const norm = normalizeRepairDoorstepUrgency(r);
+            const isCriticalStopped = norm.urgency_level === "CRITICAL" && norm.is_machine_stopped;
+            return (
+              <div
+                className={cn(
+                  "sm:col-span-2 rounded-xl border p-4 space-y-3",
+                  isCriticalStopped
+                    ? "border-destructive/40 bg-destructive/5"
+                    : "border-border/70 bg-muted/20",
+                )}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Service Mode */}
+                    {norm.service_type === "DOORSTEP" ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-bold text-primary">
+                        <Truck className="h-3.5 w-3.5" /> Doorstep / On-Field Service
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs font-bold text-muted-foreground border border-border">
+                        <Building2 className="h-3.5 w-3.5" /> Workshop Drop-off
+                      </span>
+                    )}
+
+                    {/* Operational Urgency */}
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold",
+                        norm.urgency_level === "CRITICAL"
+                          ? "bg-destructive/15 text-destructive font-bold"
+                          : norm.urgency_level === "HIGH"
+                            ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 font-bold"
+                            : norm.urgency_level === "STANDARD"
+                              ? "bg-blue-500/10 text-blue-700 dark:text-blue-400 font-medium"
+                              : "bg-muted text-muted-foreground font-normal",
+                      )}
+                    >
+                      {norm.urgency_level === "CRITICAL" && <AlertTriangle className="h-3 w-3" />}
+                      Urgency:{" "}
+                      {norm.urgency_level === "CRITICAL"
+                        ? "Critical"
+                        : norm.urgency_level === "HIGH"
+                          ? "High"
+                          : norm.urgency_level === "STANDARD"
+                            ? "Standard"
+                            : "Flexible"}
+                    </span>
+
+                    {/* Machine Stoppage Status */}
+                    {norm.is_machine_stopped ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-destructive/15 px-2.5 py-0.5 text-xs font-bold text-destructive">
+                        <AlertTriangle className="h-3 w-3" /> Machine Stopped in Field
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                        Partial operation / Not stopped
+                      </span>
+                    )}
+                  </div>
+
+                  {norm.preferred_time_slot && (
+                    <div className="text-xs font-medium text-muted-foreground">
+                      Farmer Availability:{" "}
+                      <span className="font-semibold text-foreground">
+                        {norm.preferred_time_slot}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Field Landmark (Doorstep only / when present) */}
+                {norm.service_type === "DOORSTEP" && Boolean(norm.field_landmark?.trim()) && (
+                  <div className="rounded-lg bg-card border border-border p-3 text-xs space-y-1">
+                    <p className="font-bold text-foreground flex items-center gap-1.5">
+                      <MapPin className="h-3.5 w-3.5 text-primary" /> Field Landmark & Access
+                      Instructions
+                    </p>
+                    <p className="text-muted-foreground whitespace-pre-wrap">
+                      {norm.field_landmark}
+                    </p>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           <div className="sm:col-span-2">
             <Label>Reported symptoms</Label>
             <div className="flex flex-wrap gap-1.5">
@@ -657,6 +779,7 @@ function Job() {
             <div className="sm:col-span-2">
               <Label>Farmer's description</Label>
               <p>"{r.description}"</p>
+              <OnDemandTranslation text={r.description} />
             </div>
           )}
           <div className="sm:col-span-2 space-y-2 pt-2 border-t border-border/50">
@@ -769,26 +892,33 @@ function Job() {
         <Card className="border-accent">
           <div className="flex items-center justify-between gap-2 mb-3">
             <h2 className="text-lg font-bold flex items-center gap-2">
-              <Lock className="h-4 w-4 text-accent" /> Quote v{pendingQuote.version} (Pending Farmer Review)
+              <Lock className="h-4 w-4 text-accent" /> Quote v{pendingQuote.version} (Pending Farmer
+              Review)
             </h2>
             <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/30">
               Awaiting Farmer
             </span>
           </div>
           <p className="text-xs text-muted-foreground mb-3">
-            This quotation has been submitted to the farmer. Repair work is locked until the farmer approves or requests changes.
+            This quotation has been submitted to the farmer. Repair work is locked until the farmer
+            approves or requests changes.
           </p>
           <QuoteTable q={toQuoteView(pendingQuote)} />
           <div className="mt-4 pt-3 border-t border-border/60 text-xs text-muted-foreground space-y-1">
             <p className="font-semibold text-foreground">Next Available Actions:</p>
             <ul className="list-disc list-inside space-y-0.5">
               <li>Wait for the farmer to review and approve the quote.</li>
-              <li>If the farmer requests clarification or changes, status will advance to <b>Changes Requested</b> and you can submit a revised quote.</li>
-              <li>Use the ticket chat below to discuss details or answer questions with the farmer.</li>
+              <li>
+                If the farmer requests clarification or changes, status will advance to{" "}
+                <b>Changes Requested</b> and you can submit a revised quote.
+              </li>
+              <li>
+                Use the ticket chat below to discuss details or answer questions with the farmer.
+              </li>
             </ul>
           </div>
         </Card>
-      ) : (r.status === "ACCEPTED" || r.status === "QUOTE_REVISED") ? (
+      ) : r.status === "ACCEPTED" || r.status === "QUOTE_REVISED" ? (
         <QuoteBuilder
           repairId={r.id}
           status={r.status}
@@ -798,7 +928,7 @@ function Job() {
           partRequests={partRequests}
           onDone={loadData}
         />
-      ) : (r.status === "WAITING_FOR_PARTS" && !approvedQuote) ? (
+      ) : r.status === "WAITING_FOR_PARTS" && !approvedQuote ? (
         <QuoteBuilder
           repairId={r.id}
           status={r.status}
@@ -859,7 +989,7 @@ function Job() {
               ? partRequests.some((pr) => pr.status === "PENDING")
               : Boolean(
                   (r.parts_hold as any)?.items?.some((it: any) => it.status === "PENDING") ||
-                  (adaptedRepair.parts as any)?.items?.some((it: any) => it.status === "PENDING")
+                  (adaptedRepair.parts as any)?.items?.some((it: any) => it.status === "PENDING"),
                 )
           }
         />
@@ -876,26 +1006,26 @@ function Job() {
         />
       )}
 
-      {["IN_PROGRESS", "WAITING_FOR_PARTS", "ACCEPTED", "QUOTE_REVISED", "QUOTE_PENDING"].includes(r.status) && (
+      {["IN_PROGRESS", "WAITING_FOR_PARTS", "ACCEPTED", "QUOTE_REVISED", "QUOTE_PENDING"].includes(
+        r.status,
+      ) && (
         <PartsPickupCard
           repairId={r.id}
           repairStatus={r.status}
           isAssigned={r.technician_id === profile?.id}
           partRequests={partRequests}
-          sourcingHolds={
-            (((r.parts_hold as any)?.items || demoRepair?.parts?.items || []) as any[]).filter(
-              (item: any) => {
-                const isDepot = partRequests.some(
-                  (req) =>
-                    req.id === item.id ||
-                    req.id.toLowerCase() === (item.id || "").toLowerCase() ||
-                    (item.partId && req.part_id === item.partId) ||
-                    req.part?.name?.toLowerCase() === (item.part || "").toLowerCase(),
-                );
-                return !isDepot && (item.status === "PENDING" || !item.status);
-              },
-            )
-          }
+          sourcingHolds={(
+            ((r.parts_hold as any)?.items || demoRepair?.parts?.items || []) as any[]
+          ).filter((item: any) => {
+            const isDepot = partRequests.some(
+              (req) =>
+                req.id === item.id ||
+                req.id.toLowerCase() === (item.id || "").toLowerCase() ||
+                (item.partId && req.part_id === item.partId) ||
+                req.part?.name?.toLowerCase() === (item.part || "").toLowerCase(),
+            );
+            return !isDepot && (item.status === "PENDING" || !item.status);
+          })}
           onUpdate={loadData}
         />
       )}
@@ -931,26 +1061,30 @@ function Job() {
         <summary className="cursor-pointer font-semibold">Status timeline</summary>
         <div className="mt-4">
           <ol className="space-y-3 text-sm">
-            {(Array.isArray(r.repair_timeline) ? r.repair_timeline : []).slice().reverse().map((e, i) => (
-              <li key={i} className="flex gap-3">
-                <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
-                <div className="min-w-0">
-                  <p>
-                    <b className="font-mono text-xs">{e.status}</b>{" "}
-                    <span className="text-muted-foreground">
-                      ·{" "}
-                      {e.created_by_role === "technician"
-                        ? "Technician"
-                        : e.created_by_role === "admin"
-                          ? "Service Centre"
-                          : "Farmer"}{" "}
-                      · {fmtTime(e.created_at ? new Date(e.created_at).getTime() : safeCreatedAtMs)}
-                    </span>
-                  </p>
-                  {e.note && <p className="text-muted-foreground">{e.note}</p>}
-                </div>
-              </li>
-            ))}
+            {(Array.isArray(r.repair_timeline) ? r.repair_timeline : [])
+              .slice()
+              .reverse()
+              .map((e, i) => (
+                <li key={i} className="flex gap-3">
+                  <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
+                  <div className="min-w-0">
+                    <p>
+                      <b className="font-mono text-xs">{e.status}</b>{" "}
+                      <span className="text-muted-foreground">
+                        ·{" "}
+                        {e.created_by_role === "technician"
+                          ? "Technician"
+                          : e.created_by_role === "admin"
+                            ? "Service Centre"
+                            : "Farmer"}{" "}
+                        ·{" "}
+                        {fmtTime(e.created_at ? new Date(e.created_at).getTime() : safeCreatedAtMs)}
+                      </span>
+                    </p>
+                    {e.note && <p className="text-muted-foreground">{e.note}</p>}
+                  </div>
+                </li>
+              ))}
           </ol>
         </div>
       </details>
@@ -1060,11 +1194,13 @@ function QuoteBuilder({
   const [technicianExplanation, setTechnicianExplanation] = useState("");
   const [catalogParts, setCatalogParts] = useState<ServiceCentrePart[]>([]);
   const hasPreviousQuote = Boolean(
-    previousQuote && (previousQuote.version > 0 || isUuid(previousQuote.id))
+    previousQuote && (previousQuote.version > 0 || isUuid(previousQuote.id)),
   );
 
   useEffect(() => {
-    void getServiceCentreParts().then(setCatalogParts).catch(() => {});
+    void getServiceCentreParts()
+      .then(setCatalogParts)
+      .catch(() => {});
   }, []);
 
   // Automatically sync technician part requests into quote parts
@@ -1182,7 +1318,7 @@ function QuoteBuilder({
     for (const p of activeParts) {
       if (p.catalogPartId && (!p.price || Number(p.price) <= 0 || isNaN(Number(p.price)))) {
         toast.error(
-          `Catalog part "${p.name}" does not have a valid customer-facing selling price. Please contact Service Centre staff to verify catalog pricing.`
+          `Catalog part "${p.name}" does not have a valid customer-facing selling price. Please contact Service Centre staff to verify catalog pricing.`,
         );
         return;
       }
@@ -1212,7 +1348,7 @@ function QuoteBuilder({
         tb.repairs.some((x) => x.id === repairId || (x as any).jobNumber === repairId);
 
       const hasPreviousQuote = Boolean(
-        previousQuote && (previousQuote.version > 0 || isUuid(previousQuote.id))
+        previousQuote && (previousQuote.version > 0 || isUuid(previousQuote.id)),
       );
 
       if (isDemo) {
@@ -1239,9 +1375,7 @@ function QuoteBuilder({
             // Non-fatal remote sync in demo mode
           }
         }
-        toast.success(
-          hasPreviousQuote ? "Revised quote sent to farmer" : "Quote sent to farmer"
-        );
+        toast.success(hasPreviousQuote ? "Revised quote sent to farmer" : "Quote sent to farmer");
       } else if (hasPreviousQuote && previousQuote) {
         await reviseQuote({
           ...payload,
@@ -1368,9 +1502,12 @@ function QuoteBuilder({
       )}
       {q.parts.length === 0 && (
         <div className="rounded-xl border border-dashed border-primary/40 bg-primary/5 p-4 text-center space-y-1">
-          <p className="text-sm font-semibold text-foreground">Labour & Inspection Quote (No parts added)</p>
+          <p className="text-sm font-semibold text-foreground">
+            Labour & Inspection Quote (No parts added)
+          </p>
           <p className="text-xs text-muted-foreground">
-            You can send a labour-only quote without parts, or click "Add part" below to include spare components.
+            You can send a labour-only quote without parts, or click "Add part" below to include
+            spare components.
           </p>
         </div>
       )}
@@ -1390,7 +1527,10 @@ function QuoteBuilder({
             <div>
               <select
                 aria-label="Select from Depot Catalog"
-                className={cn(input, "h-10 min-h-[2.5rem] py-1.5 px-3 text-xs leading-normal cursor-pointer")}
+                className={cn(
+                  input,
+                  "h-10 min-h-[2.5rem] py-1.5 px-3 text-xs leading-normal cursor-pointer",
+                )}
                 value={p.catalogPartId || ""}
                 onChange={(e) => {
                   const val = e.target.value;
@@ -1453,7 +1593,8 @@ function QuoteBuilder({
               <input
                 className={cn(
                   input,
-                  Boolean(p.catalogPartId) && "bg-muted cursor-not-allowed opacity-90 font-medium select-none"
+                  Boolean(p.catalogPartId) &&
+                    "bg-muted cursor-not-allowed opacity-90 font-medium select-none",
                 )}
                 inputMode="numeric"
                 value={p.price}
@@ -1608,7 +1749,7 @@ function InProgress({
         setP((prev) => {
           if (!prev.catalogPartId && prev.part) {
             const match = parts.find(
-              (cp) => cp.name.trim().toLowerCase() === prev.part.trim().toLowerCase()
+              (cp) => cp.name.trim().toLowerCase() === prev.part.trim().toLowerCase(),
             );
             if (match) {
               return { ...prev, catalogPartId: match.id };
@@ -1667,8 +1808,7 @@ function InProgress({
     try {
       const effectiveCatalogPartId =
         p.catalogPartId ||
-        catalogParts.find((cp) => cp.name.trim().toLowerCase() === p.part.trim().toLowerCase())
-          ?.id;
+        catalogParts.find((cp) => cp.name.trim().toLowerCase() === p.part.trim().toLowerCase())?.id;
 
       if (effectiveCatalogPartId) {
         await requestServiceCentrePart({
@@ -1694,7 +1834,7 @@ function InProgress({
       toast.success(
         effectiveCatalogPartId
           ? `Part requisition created for ${p.part.trim()}. Repair paused for parts.`
-          : "Repair paused. Farmer notified of the delay."
+          : "Repair paused. Farmer notified of the delay.",
       );
       await onUpdate();
     } catch (err: any) {
@@ -1922,7 +2062,7 @@ function InProgress({
                   aria-label="Select from Depot Catalog"
                   className={cn(
                     input,
-                    "h-10 min-h-[2.5rem] py-1.5 px-3 text-xs leading-normal cursor-pointer font-medium"
+                    "h-10 min-h-[2.5rem] py-1.5 px-3 text-xs leading-normal cursor-pointer font-medium",
                   )}
                   value={p.catalogPartId || ""}
                   onChange={(e) => {
@@ -1931,7 +2071,9 @@ function InProgress({
                       setP({ ...p, catalogPartId: "", part: "" });
                       return;
                     }
-                    const found = catalogParts.find((cp) => cp.id === val || cp.part_number === val);
+                    const found = catalogParts.find(
+                      (cp) => cp.id === val || cp.part_number === val,
+                    );
                     if (found) {
                       setP({
                         ...p,
@@ -1946,7 +2088,8 @@ function InProgress({
                     const inStock = cp.stock_quantity > 0;
                     return (
                       <option key={cp.id} value={cp.id}>
-                        {cp.name} ({cp.part_number}) — ₹{cp.unit_price} [{inStock ? `${cp.stock_quantity} in stock` : "Out of stock"}]
+                        {cp.name} ({cp.part_number}) — ₹{cp.unit_price} [
+                        {inStock ? `${cp.stock_quantity} in stock` : "Out of stock"}]
                       </option>
                     );
                   })}
@@ -1962,7 +2105,7 @@ function InProgress({
                   onChange={(e) => {
                     const newName = e.target.value;
                     const matched = catalogParts.find(
-                      (cp) => cp.name.trim().toLowerCase() === newName.trim().toLowerCase()
+                      (cp) => cp.name.trim().toLowerCase() === newName.trim().toLowerCase(),
                     );
                     setP({
                       ...p,
@@ -2154,9 +2297,7 @@ function Waiting({
         await resumeRepair(repairId);
       }
       toast.success(
-        hasPendingQuote
-          ? "Parts hold cleared. Awaiting farmer approval on quote."
-          : "Work resumed",
+        hasPendingQuote ? "Parts hold cleared. Awaiting farmer approval on quote." : "Work resumed",
       );
       await onUpdate();
     } catch (err: any) {
@@ -2168,7 +2309,8 @@ function Waiting({
   };
 
   const partsItems: BlockerPartItem[] = Array.isArray(parts.items) ? parts.items : [];
-  const hasPendingItems = partsItems.length > 0 ? partsItems.some((it) => it.status === "PENDING") : true;
+  const hasPendingItems =
+    partsItems.length > 0 ? partsItems.some((it) => it.status === "PENDING") : true;
   const allArrived = Boolean(parts.allPartsArrived) || (partsItems.length > 0 && !hasPendingItems);
 
   return (
@@ -2192,7 +2334,8 @@ function Waiting({
                   pr.part?.name?.trim().toLowerCase() === item.part.trim().toLowerCase(),
               );
               const isDepotReq = Boolean(matchingReq);
-              const isOutOfStock = matchingReq && matchingReq.part && matchingReq.part.stock_quantity === 0;
+              const isOutOfStock =
+                matchingReq && matchingReq.part && matchingReq.part.stock_quantity === 0;
               const isInsufficient =
                 matchingReq &&
                 matchingReq.part &&
@@ -2210,7 +2353,9 @@ function Waiting({
                     </p>
                     <p className="text-[11px] text-muted-foreground">{item.reason}</p>
                     <span className="text-[10px] text-muted-foreground font-mono">
-                      {isDepotReq ? "Service Centre Depot Requisition" : "Field / External Sourcing Hold"}
+                      {isDepotReq
+                        ? "Service Centre Depot Requisition"
+                        : "Field / External Sourcing Hold"}
                     </span>
                   </div>
                   <div className="text-right space-y-1">

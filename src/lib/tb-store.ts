@@ -180,6 +180,16 @@ export interface Repair {
   cancellation_note?: string;
   cancellation_requested_at?: string | number;
   cancellation_admin_response?: string;
+  service_type?: "DOORSTEP" | "WORKSHOP";
+  serviceType?: "DOORSTEP" | "WORKSHOP";
+  urgency_level?: "CRITICAL" | "HIGH" | "STANDARD" | "FLEXIBLE";
+  urgencyLevel?: "CRITICAL" | "HIGH" | "STANDARD" | "FLEXIBLE";
+  is_machine_stopped?: boolean;
+  isMachineStopped?: boolean;
+  preferred_time_slot?: string | null;
+  preferredTimeSlot?: string | null;
+  field_landmark?: string | null;
+  fieldLandmark?: string | null;
 }
 export interface ServiceRecord {
   id: string;

@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ChevronRight, Clock, Inbox } from "lucide-react";
+import { AlertTriangle, Building2, ChevronRight, Clock, Inbox, Truck } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Card, DemoTag, StatusPill } from "@/components/tb";
@@ -10,6 +10,8 @@ import { cn } from "@/lib/utils";
 import { useRepairListRealtime } from "@/hooks/use-repair-realtime";
 import {
   getTechnicianRepairRequests,
+  normalizeRepairDoorstepUrgency,
+  triageUrgencyComparator,
   type RepairRequestWithEquipment,
 } from "@/lib/services/repair-requests";
 import {
@@ -93,7 +95,10 @@ function TechHome() {
       <div className="space-y-6">
         <Card className="text-destructive">
           <p>Failed to load jobs: {error}</p>
-          <button onClick={() => void loadData()} className="mt-3 inline-block font-semibold underline">
+          <button
+            onClick={() => void loadData()}
+            className="mt-3 inline-block font-semibold underline"
+          >
             Retry
           </button>
         </Card>
@@ -101,10 +106,18 @@ function TechHome() {
     );
   }
 
-  const incoming = repairs.filter((r) => r.status === "REQUESTED");
+  const incoming = repairs
+    .filter((r) => r.status === "REQUESTED")
+    .sort(
+      (a, b) =>
+        triageUrgencyComparator(a, b) ||
+        new Date(a.status_since).getTime() - new Date(b.status_since).getTime(),
+    );
   const onHold = repairs.filter((r) => r.status === "CANCELLATION_REQUESTED");
   const active = repairs.filter((r) =>
-    ["ACCEPTED", "QUOTE_PENDING", "QUOTE_REVISED", "IN_PROGRESS", "WAITING_FOR_PARTS"].includes(r.status)
+    ["ACCEPTED", "QUOTE_PENDING", "QUOTE_REVISED", "IN_PROGRESS", "WAITING_FOR_PARTS"].includes(
+      r.status,
+    ),
   );
   const done = repairs.filter((r) => r.status === "COMPLETED");
   const cancelled = repairs.filter((r) => r.status === "CANCELLED");
@@ -132,7 +145,7 @@ function TechHome() {
                 ? v
                   ? "bg-success text-primary-foreground"
                   : "bg-foreground text-background"
-                : "text-muted-foreground"
+                : "text-muted-foreground",
             )}
           >
             {v ? "● Online" : "Busy"}
@@ -183,7 +196,7 @@ function Section({
         className={cn(
           "mb-3 text-xl font-bold",
           onHold && "text-warning-foreground flex items-center gap-2",
-          isCancelled && "text-muted-foreground"
+          isCancelled && "text-muted-foreground",
         )}
       >
         {onHold && <Clock className="h-5 w-5 text-warning shrink-0" />}
@@ -199,6 +212,8 @@ function Section({
         {list.map((r) => {
           const e = r.equipment;
           const statusSinceMs = new Date(r.status_since).getTime();
+          const norm = normalizeRepairDoorstepUrgency(r);
+          const isCriticalStopped = norm.urgency_level === "CRITICAL" && norm.is_machine_stopped;
           return (
             <Link
               key={r.id}
@@ -209,10 +224,12 @@ function Section({
                 onHold
                   ? "border-warning/70 bg-warning/10 hover:bg-warning/15 shadow-xs"
                   : isCancelled
-                  ? "border-border bg-muted/40 hover:bg-muted/60 opacity-80"
-                  : urgent
-                  ? "border-accent"
-                  : "border-border hover:border-border/80"
+                    ? "border-border bg-muted/40 hover:bg-muted/60 opacity-80"
+                    : isCriticalStopped
+                      ? "border-destructive/80 bg-destructive/5 hover:bg-destructive/10 shadow-xs ring-1 ring-destructive/20"
+                      : urgent
+                        ? "border-accent"
+                        : "border-border hover:border-border/80",
               )}
             >
               <div className="min-w-0 flex-1">
@@ -220,6 +237,38 @@ function Section({
                   <p className="font-mono text-xs text-muted-foreground">
                     {r.job_number || r.id} · {ago(statusSinceMs)} in status
                   </p>
+                  {/* Service Delivery Mode Badge */}
+                  {norm.service_type === "DOORSTEP" ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                      <Truck className="h-3 w-3" /> Doorstep
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+                      <Building2 className="h-3 w-3" /> Workshop
+                    </span>
+                  )}
+                  {/* Operational Urgency Badge */}
+                  {isCriticalStopped ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-destructive/15 px-2 py-0.5 text-[11px] font-bold text-destructive">
+                      <AlertTriangle className="h-3 w-3" /> Critical · Field Stoppage
+                    </span>
+                  ) : norm.urgency_level === "CRITICAL" ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-destructive/15 px-2 py-0.5 text-[11px] font-bold text-destructive">
+                      <AlertTriangle className="h-3 w-3" /> Critical
+                    </span>
+                  ) : norm.urgency_level === "HIGH" ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-400">
+                      High
+                    </span>
+                  ) : norm.urgency_level === "STANDARD" ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-[11px] font-medium text-blue-700 dark:text-blue-400">
+                      Standard
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-muted/70 px-2 py-0.5 text-[11px] font-normal text-muted-foreground">
+                      Flexible
+                    </span>
+                  )}
                   {onHold && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-warning/20 px-2 py-0.5 text-[11px] font-semibold text-warning-foreground">
                       <span className="h-1.5 w-1.5 rounded-full bg-warning animate-pulse" />
@@ -232,7 +281,8 @@ function Section({
                 </p>
                 {onHold ? (
                   <p className="truncate text-sm text-warning-foreground font-medium italic">
-                    Reason: "{r.cancellation_reason || "Cancellation requested"}" · Pending Service Centre review
+                    Reason: "{r.cancellation_reason || "Cancellation requested"}" · Pending Service
+                    Centre review
                   </p>
                 ) : isCancelled && r.cancellation_reason ? (
                   <p className="truncate text-sm text-muted-foreground italic">
@@ -241,6 +291,19 @@ function Section({
                 ) : (
                   <p className="truncate text-sm text-muted-foreground">
                     {r.symptoms.join(", ")} · {r.location}
+                  </p>
+                )}
+                {norm.field_landmark && (
+                  <p className="truncate text-xs text-muted-foreground/90 font-medium">
+                    📍 Landmark: {norm.field_landmark}
+                  </p>
+                )}
+                {norm.preferred_time_slot && (
+                  <p className="text-xs text-muted-foreground">
+                    Preferred timing:{" "}
+                    <span className="font-semibold text-foreground">
+                      {norm.preferred_time_slot}
+                    </span>
                   </p>
                 )}
                 <div className="mt-1.5">

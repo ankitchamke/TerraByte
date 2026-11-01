@@ -182,6 +182,9 @@ export function evaluateAudioSignalActivity(
   return peakLevel >= threshold || averageLevel >= threshold * 0.5;
 }
 
+export const MIN_RECORDING_DURATION_SECONDS = 5;
+export const MAX_RECORDING_DURATION_SECONDS = 60;
+
 /**
  * Validates recording duration, container size, and actual audio signal activity
  * prior to uploading to the transcription server.
@@ -191,20 +194,29 @@ export function validateRecordingSignal(options: {
   blobSize: number;
   activityStats?: AudioActivityStats | null;
   minDurationSeconds?: number;
+  maxDurationSeconds?: number;
   minBlobBytes?: number;
 }): RecordingValidationResult {
   const {
     durationSeconds,
     blobSize,
     activityStats,
-    minDurationSeconds = 1,
+    minDurationSeconds = MIN_RECORDING_DURATION_SECONDS,
+    maxDurationSeconds = MAX_RECORDING_DURATION_SECONDS,
     minBlobBytes = 500,
   } = options;
 
   if (durationSeconds < minDurationSeconds) {
     return {
       valid: false,
-      error: "Recording was too short. Please speak your description before stopping.",
+      error: `Recording was too short (under ${minDurationSeconds} seconds). Please speak your description for at least ${minDurationSeconds} seconds before stopping.`,
+    };
+  }
+
+  if (durationSeconds > maxDurationSeconds) {
+    return {
+      valid: false,
+      error: `Recording exceeded the maximum duration of ${maxDurationSeconds} seconds.`,
     };
   }
 

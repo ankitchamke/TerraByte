@@ -11,6 +11,13 @@ export type RepairStatus = Database["public"]["Enums"]["repair_status"];
 
 export type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
 
+export * from "./doorstep-service";
+import {
+  type ServiceType,
+  type UrgencyLevel,
+  validateDoorstepUrgencyInput,
+} from "./doorstep-service";
+
 export interface CreateRepairRequestInput {
   equipment_id: string;
   symptoms: string[];
@@ -18,6 +25,11 @@ export interface CreateRepairRequestInput {
   photos?: string[];
   location: string;
   assessment?: Json;
+  service_type?: ServiceType | undefined;
+  urgency_level?: UrgencyLevel | undefined;
+  is_machine_stopped?: boolean | undefined;
+  preferred_time_slot?: string | null | undefined;
+  field_landmark?: string | null | undefined;
   gpsLocation?:
     | {
         latitude: number;
@@ -208,8 +220,11 @@ export async function createRepairRequest(
   const jobNumber = await generateUniqueJobNumber();
   const now = new Date().toISOString();
 
+  // Validate and sanitize doorstep & urgency attributes
+  const doorstepUrgency = validateDoorstepUrgencyInput(input);
+
   // 3. Insert the repair request row (protected by RLS WITH CHECK (farmer_id = current_profile_id()))
-  const { data: repair, error: insertError } = await supabase
+  let { data: repair, error: insertError } = await supabase
     .from("repair_requests")
     .insert({
       job_number: jobNumber,
@@ -223,12 +238,75 @@ export async function createRepairRequest(
       location,
       assessment: input.assessment ?? {},
       status_since: now,
+      service_type: doorstepUrgency.service_type,
+      urgency_level: doorstepUrgency.urgency_level,
+      is_machine_stopped: doorstepUrgency.is_machine_stopped,
+      preferred_time_slot: doorstepUrgency.preferred_time_slot,
+      field_landmark: doorstepUrgency.field_landmark,
     })
     .select()
     .single();
 
-  if (insertError) {
-    throw new Error(`Failed to create repair ticket: ${insertError.message}`);
+  // Graceful fallback for unmigrated environments (e.g., local dev or pending remote migration)
+  if (
+    insertError &&
+    (insertError.message.includes("service_type") ||
+      insertError.message.includes("urgency_level") ||
+      insertError.message.includes("is_machine_stopped") ||
+      insertError.message.includes("preferred_time_slot") ||
+      insertError.message.includes("field_landmark") ||
+      insertError.message.includes("schema cache"))
+  ) {
+    console.warn(
+      "[TerraByte] Remote schema cache missing doorstep urgency columns. Falling back to core insert:",
+      insertError.message,
+    );
+    const fallbackRes = await supabase
+      .from("repair_requests")
+      .insert({
+        job_number: jobNumber,
+        equipment_id: input.equipment_id,
+        farmer_id: profile.id,
+        status: "REQUESTED",
+        is_testing: false,
+        symptoms: input.symptoms,
+        description: input.description?.trim() || "",
+        photos: input.photos || [],
+        location,
+        assessment: {
+          ...(typeof input.assessment === "object" && input.assessment !== null
+            ? (input.assessment as Record<string, unknown>)
+            : {}),
+          doorstep_urgency: {
+            service_type: doorstepUrgency.service_type,
+            urgency_level: doorstepUrgency.urgency_level,
+            is_machine_stopped: doorstepUrgency.is_machine_stopped,
+            preferred_time_slot: doorstepUrgency.preferred_time_slot,
+            field_landmark: doorstepUrgency.field_landmark,
+          },
+        } as unknown as Json,
+        status_since: now,
+      })
+      .select()
+      .single();
+
+    if (!fallbackRes.error && fallbackRes.data) {
+      repair = {
+        ...fallbackRes.data,
+        service_type: doorstepUrgency.service_type,
+        urgency_level: doorstepUrgency.urgency_level,
+        is_machine_stopped: doorstepUrgency.is_machine_stopped,
+        preferred_time_slot: doorstepUrgency.preferred_time_slot,
+        field_landmark: doorstepUrgency.field_landmark,
+      };
+      insertError = null;
+    }
+  }
+
+  if (insertError || !repair) {
+    throw new Error(
+      `Failed to create repair ticket: ${insertError?.message || "Record insertion failed"}`,
+    );
   }
 
   // 3b. Optional secure dispatch location (protected by RLS, isolated from open queue)
@@ -1715,9 +1793,7 @@ export async function updatePartsEta(
     "ACCEPTED",
   ];
   if (!permittedStatuses.includes(repair.status)) {
-    throw new Error(
-      `Cannot update parts ETA: Ticket is in '${repair.status}' status.`,
-    );
+    throw new Error(`Cannot update parts ETA: Ticket is in '${repair.status}' status.`);
   }
 
   const currentHold = (repair.parts_hold as Record<string, unknown>) ?? {};
@@ -1725,7 +1801,10 @@ export async function updatePartsEta(
   const existingItems: any[] = Array.isArray(rawCurrentItems) ? [...rawCurrentItems] : [];
 
   if (input.requestId || input.partId || input.itemId || input.partName) {
-    const targetKey = (input.requestId || input.partId || input.itemId || input.partName)!.toLowerCase();
+    const targetKey = (input.requestId ||
+      input.partId ||
+      input.itemId ||
+      input.partName)!.toLowerCase();
     const matchIdx = existingItems.findIndex(
       (it) =>
         (it.id && it.id.toLowerCase() === targetKey) ||

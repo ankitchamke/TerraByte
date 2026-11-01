@@ -3681,3 +3681,328 @@ test("Pause for parts: prevents duplicate requisitions on retried submission and
 
 
 
+
+// 80. SERVICE CENTRE NOTIFICATIONS: REQUISITION CREATION, UPDATES, CANCELLATION & DEDUPLICATION
+test("Service Centre notifications: new depot requisition, updates, cancellation, and duplicate prevention", () => {
+  resetDemo();
+
+  const parts = getDemoParts();
+  const filterPart = parts[0];
+  assert.ok(filterPart);
+
+  const repId = actions.createRepair({
+    equipmentId: "e1",
+    farmerId: "f1",
+    symptoms: ["Fuel starvation"],
+    description: "Clogged inline fuel filter",
+    photos: [],
+    location: "Katol, Nagpur",
+  });
+  actions.requestTechnician(repId, "t1");
+  actions.accept(repId);
+
+  const notifsBefore = getTB().notifications.filter((n) => n.role === "admin");
+
+  // 1. New depot requisition dispatches admin notification linking to /admin/parts-desk
+  const req1 = requestDemoPart({
+    repairRequestId: repId,
+    partId: filterPart.id,
+    quantity: 1,
+    notes: "Awaiting depot collection",
+    eta: "2026-11-04T10:00:00Z",
+    requesterId: "t1",
+  });
+
+  const adminNotifs1 = getTB().notifications.filter((n) => n.role === "admin");
+  assert.strictEqual(adminNotifs1.length, notifsBefore.length + 1, "Must emit exactly 1 notification to Service Centre");
+  const newReqNotif = adminNotifs1[0];
+  assert.ok(newReqNotif.text.includes("New depot requisition:"), "Notification must announce new depot requisition");
+  assert.ok(newReqNotif.text.includes(filterPart.name));
+  assert.strictEqual(newReqNotif.link, "/admin/parts-desk", "Must link to /admin/parts-desk");
+  assert.strictEqual(newReqNotif.read, false);
+  // Verify service-centre notification classification in notifications.ts
+  const notifServiceCode = fs.readFileSync(path.resolve("src/lib/services/notifications.ts"), "utf8");
+  assert.ok(
+    notifServiceCode.includes('"depot requisition"') && notifServiceCode.includes('"requisition"'),
+    "notifications.ts must classify depot requisition notifications as actionable for Service Centre"
+  );
+  assert.ok(
+    notifServiceCode.includes('t.includes("requisition")'),
+    "notifications.ts must map requisition notifications to Parts category"
+  );
+
+  // 2. Retrying submission with identical parameters NEVER duplicates notification (idempotency)
+  requestDemoPart({
+    repairRequestId: repId,
+    partId: filterPart.id,
+    quantity: 1,
+    notes: "Awaiting depot collection",
+    eta: "2026-11-04T10:00:00Z",
+    requesterId: "t1",
+  });
+  const adminNotifsRetry = getTB().notifications.filter((n) => n.role === "admin");
+  assert.strictEqual(adminNotifsRetry.length, adminNotifs1.length, "Unchanged retry must NOT create duplicate notification");
+
+  // 3. Meaningful change in quantity dispatches 'Depot requisition updated' notification
+  requestDemoPart({
+    repairRequestId: repId,
+    partId: filterPart.id,
+    quantity: 3,
+    notes: "Increased quantity needed",
+    eta: "2026-11-04T10:00:00Z",
+    requesterId: "t1",
+  });
+  const adminNotifsUpdated = getTB().notifications.filter((n) => n.role === "admin");
+  assert.strictEqual(adminNotifsUpdated.length, adminNotifs1.length + 1, "Updated request must emit notification");
+  const updatedNotif = adminNotifsUpdated[0];
+  assert.ok(updatedNotif.text.includes("Depot requisition updated:"), "Notification must announce updated requisition");
+  assert.ok(updatedNotif.text.includes("3x"));
+  assert.strictEqual(updatedNotif.link, "/admin/parts-desk");
+
+  // 4. Technician cancels requisition dispatches cancellation notification to admin
+  cancelDemoPartRequest(req1.id, "technician");
+  const adminNotifsCancelled = getTB().notifications.filter((n) => n.role === "admin");
+  assert.strictEqual(adminNotifsCancelled.length, adminNotifsUpdated.length + 1);
+  const cancelNotif = adminNotifsCancelled[0];
+  assert.ok(cancelNotif.text.includes("Depot requisition cancelled:"));
+  assert.strictEqual(cancelNotif.link, "/admin/parts-desk");
+});
+
+// 81. TECHNICIAN NOTIFICATIONS: ETA UPDATE, READY FOR PICKUP, CONFIRMED HANDOFF & CANCELLATION
+test("Assigned technician notifications: ETA update, stock receipt ready for pickup, handoff, and cancellation", () => {
+  resetDemo();
+
+  const parts = getDemoParts();
+  const filterPart = parts[0];
+
+  const repId = actions.createRepair({
+    equipmentId: "e1",
+    farmerId: "f1",
+    symptoms: ["Hydraulic leak"],
+    description: "Cylinder replacement",
+    photos: [],
+    location: "Katol, Nagpur",
+  });
+  actions.requestTechnician(repId, "t1");
+  actions.accept(repId);
+
+  // Drain stock to 0 to simulate awaiting depot stock
+  adjustDemoPartStock(filterPart.id, -filterPart.stock_quantity, "test-drain", "t1");
+
+  const req = requestDemoPart({
+    repairRequestId: repId,
+    partId: filterPart.id,
+    quantity: 1,
+    notes: "Awaiting supplier arrival",
+    requesterId: "t1",
+  });
+
+  const techNotifsBefore = getTB().notifications.filter((n) => n.role === "technician" && n.userId === "t1");
+
+  // 1. Service Centre staff updates ETA -> technician notified
+  updateDemoPartRequestEta({
+    requestId: req.id,
+    estimatedArrivalAt: "2026-11-05T14:00:00Z",
+    updaterId: "admin",
+    updaterName: "Depot Staff",
+    updaterRole: "admin",
+  });
+
+  const techNotifsAfterEta = getTB().notifications.filter((n) => n.role === "technician" && n.userId === "t1");
+  assert.strictEqual(techNotifsAfterEta.length, techNotifsBefore.length + 1);
+  const etaNotif = techNotifsAfterEta[0];
+  assert.ok(etaNotif.text.includes("Parts ETA updated:"), "Must notify technician of ETA update");
+  assert.strictEqual(etaNotif.link, `/technician/job/${repId}`);
+
+  // Identical ETA update (no-op) does NOT create duplicate notification
+  updateDemoPartRequestEta({
+    requestId: req.id,
+    estimatedArrivalAt: "2026-11-05T14:00:00Z",
+    updaterId: "admin",
+    updaterName: "Depot Staff",
+    updaterRole: "admin",
+  });
+  const techNotifsNoOp = getTB().notifications.filter((n) => n.role === "technician" && n.userId === "t1");
+  assert.strictEqual(techNotifsNoOp.length, techNotifsAfterEta.length, "No-op ETA update must not duplicate notification");
+
+  // 2. Incoming stock delivery arrives at depot -> technician notified part is ready for pickup
+  receiveDemoStock({
+    partId: filterPart.id,
+    quantity: 5,
+    reason: "Supplier shipment received",
+    callerName: "admin",
+  });
+
+  const techNotifsAfterReceive = getTB().notifications.filter((n) => n.role === "technician" && n.userId === "t1");
+  assert.strictEqual(techNotifsAfterReceive.length, techNotifsAfterEta.length + 1);
+  const pickupNotif = techNotifsAfterReceive[0];
+  assert.ok(pickupNotif.text.includes("Part ready for pickup:"), "Must notify technician that part arrived and is ready for pickup");
+  assert.strictEqual(pickupNotif.link, `/technician/job/${repId}`);
+
+  // 3. Service Centre confirms physical handoff -> technician notified
+  confirmDemoPartHandoff(req.id, "admin");
+  const techNotifsAfterHandoff = getTB().notifications.filter((n) => n.role === "technician" && n.userId === "t1");
+  assert.strictEqual(techNotifsAfterHandoff.length, techNotifsAfterReceive.length + 1);
+  const handoffNotif = techNotifsAfterHandoff[0];
+  assert.ok(handoffNotif.text.includes("Parts handed off:"), "Must notify technician that handoff is confirmed");
+  assert.ok(handoffNotif.text.includes("Ready for installation"));
+  assert.strictEqual(handoffNotif.link, `/technician/job/${repId}`);
+
+  // 4. Service Centre cancels a request -> technician notified
+  const req2 = requestDemoPart({
+    repairRequestId: repId,
+    partId: parts[1].id,
+    quantity: 1,
+    notes: "Second part request",
+    requesterId: "t1",
+  });
+  cancelDemoPartRequest(req2.id, "admin");
+  const techNotifsAfterCancel = getTB().notifications.filter((n) => n.role === "technician" && n.userId === "t1");
+  assert.strictEqual(techNotifsAfterCancel.length, techNotifsAfterHandoff.length + 1);
+  const cancelNotif = techNotifsAfterCancel[0];
+  assert.ok(cancelNotif.text.includes("Part request cancelled:"));
+  assert.strictEqual(cancelNotif.link, `/technician/job/${repId}`);
+});
+
+// 82. FARMER NOTIFICATIONS: WAITING FOR PARTS, ETA UPDATES, RESUME & PRIVACY
+test("Farmer parts notifications: waiting for parts, ETA update, resume, and strict depot privacy", () => {
+  resetDemo();
+
+  const parts = getDemoParts();
+  const nozzlePart = parts[1];
+
+  const repId = actions.createRepair({
+    equipmentId: "e1",
+    farmerId: "f1",
+    symptoms: ["Engine misfire"],
+    description: "Injector test",
+    photos: [],
+    location: "Katol, Nagpur",
+  });
+  actions.requestTechnician(repId, "t1");
+  actions.accept(repId);
+
+  // 1. Repair becomes blocked waiting for parts -> farmer notified
+  actions.waitForParts(repId, {
+    part: nozzlePart.name,
+    reason: "Awaiting supplier delivery",
+    eta: "Tomorrow, 10:00 am",
+  });
+
+  const farmerNotifs1 = getTB().notifications.filter((n) => n.role === "farmer" && n.userId === "f1");
+  assert.strictEqual(farmerNotifs1.length, 2, "Farmer has accept notification + parts waiting notification");
+  const waitNotif = farmerNotifs1[0];
+  assert.ok(waitNotif.text.includes("paused: waiting for"), "Farmer notified that repair is waiting for parts");
+  assert.ok(waitNotif.text.includes("Tomorrow, 10:00 am"));
+  assert.strictEqual(waitNotif.link, `/farmer/repair/${repId}`);
+
+  // 2. Meaningful ETA update -> farmer notified of updated completion
+  actions.updatePartsEta(repId, "Friday, 4:00 pm", "admin");
+  const farmerNotifs2 = getTB().notifications.filter((n) => n.role === "farmer" && n.userId === "f1");
+  assert.strictEqual(farmerNotifs2.length, 3);
+  const etaNotif = farmerNotifs2[0];
+  assert.ok(etaNotif.text.includes("ETA updated to Friday, 4:00 pm"));
+  assert.strictEqual(etaNotif.link, `/farmer/repair/${repId}`);
+
+  // 3. Work resumes after parts handoff -> farmer notified
+  actions.resume(repId);
+  const farmerNotifs3 = getTB().notifications.filter((n) => n.role === "farmer" && n.userId === "f1");
+  assert.strictEqual(farmerNotifs3.length, 4);
+  const resumeNotif = farmerNotifs3[0];
+  assert.ok(
+    (resumeNotif.text.includes("Part arrived") || resumeNotif.text.includes("Parts received")) &&
+      resumeNotif.text.includes("resumed")
+  );
+  assert.strictEqual(resumeNotif.link, `/farmer/repair/${repId}`);
+
+  // 4. Strict Farmer Privacy Verification
+  // Farmer notifications must NEVER contain wholesale prices, internal stock counts, or shelf locations
+  for (const n of farmerNotifs3) {
+    assert.strictEqual(n.text.includes("in stock"), false, "Farmer notification must not reveal depot stock counts");
+    assert.strictEqual(n.text.includes("wholesale"), false, "Farmer notification must not reveal wholesale costs");
+    assert.strictEqual(n.text.includes("Shelf"), false, "Farmer notification must not reveal depot shelf locations");
+    assert.strictEqual(n.text.includes("supplier"), false, "Farmer notification must not reveal internal supplier sourcing");
+  }
+});
+
+// 83. NOTIFICATION READ STATE, UNREAD COUNTS & ROLE AUTHORIZATION ISOLATION
+test("Notification read state: markRead updates unread counts and preserves role authorization isolation", () => {
+  resetDemo();
+
+  const parts = getDemoParts();
+  const filterPart = parts[0];
+
+  const repId = actions.createRepair({
+    equipmentId: "e1",
+    farmerId: "f1",
+    symptoms: ["Engine stall"],
+    description: "Inspection",
+    photos: [],
+    location: "Katol, Nagpur",
+  });
+  actions.requestTechnician(repId, "t1");
+  actions.accept(repId);
+
+  // Trigger notifications across all three roles:
+  // Admin: new depot requisition
+  const req = requestDemoPart({
+    repairRequestId: repId,
+    partId: filterPart.id,
+    quantity: 1,
+    notes: "Inspection need",
+    requesterId: "t1",
+  });
+
+  // Technician: parts handed off
+  confirmDemoPartHandoff(req.id, "admin");
+
+  // Farmer: resume repair
+  actions.resume(repId);
+
+  const state = getTB();
+  const unreadAdmin = state.notifications.filter((n) => n.role === "admin" && !n.read).length;
+  const unreadTech = state.notifications.filter((n) => n.role === "technician" && n.userId === "t1" && !n.read).length;
+  const unreadFarmer = state.notifications.filter((n) => n.role === "farmer" && n.userId === "f1" && !n.read).length;
+
+  assert.ok(unreadAdmin > 0, "Admin must have unread notifications");
+  assert.ok(unreadTech > 0, "Technician must have unread notifications");
+  assert.ok(unreadFarmer > 0, "Farmer must have unread notifications");
+
+  // Admin marks notifications as read
+  actions.markRead("admin");
+  const stateAfterAdminRead = getTB();
+  assert.strictEqual(
+    stateAfterAdminRead.notifications.filter((n) => n.role === "admin" && !n.read).length,
+    0,
+    "Admin unread count must be 0 after markRead"
+  );
+  // Technician and Farmer unread counts remain unchanged
+  assert.strictEqual(
+    stateAfterAdminRead.notifications.filter((n) => n.role === "technician" && n.userId === "t1" && !n.read).length,
+    unreadTech,
+    "Technician notifications must remain unread when admin marks read"
+  );
+
+  // Technician marks read
+  actions.markRead("technician", "t1");
+  const stateAfterTechRead = getTB();
+  assert.strictEqual(
+    stateAfterTechRead.notifications.filter((n) => n.role === "technician" && n.userId === "t1" && !n.read).length,
+    0,
+    "Technician unread count must be 0 after markRead"
+  );
+  assert.strictEqual(
+    stateAfterTechRead.notifications.filter((n) => n.role === "farmer" && n.userId === "f1" && !n.read).length,
+    unreadFarmer,
+    "Farmer notifications must remain unread"
+  );
+
+  // Farmer marks read
+  actions.markRead("farmer", "f1");
+  const stateAfterFarmerRead = getTB();
+  assert.strictEqual(
+    stateAfterFarmerRead.notifications.filter((n) => n.role === "farmer" && n.userId === "f1" && !n.read).length,
+    0,
+    "Farmer unread count must be 0 after markRead"
+  );
+});

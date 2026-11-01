@@ -148,6 +148,9 @@ export function isActionableServiceCentreNotification(text: string): boolean {
     "technician registration",
     "pending verification",
     "completed",
+    "depot requisition",
+    "requisition",
+    "parts desk",
   ];
   return operationalPatterns.some((pattern) => t.includes(pattern));
 }
@@ -172,7 +175,7 @@ export function getNotificationCategory(text: string): NotificationCategory {
   const t = text.toLowerCase();
   if (t.includes("breakdown")) return "Breakdown";
   if (t.includes("quote")) return "Quote";
-  if (t.includes("spare part") || t.includes("parts") || t.includes("eta")) return "Parts";
+  if (t.includes("spare part") || t.includes("parts") || t.includes("eta") || t.includes("requisition")) return "Parts";
   if (t.includes("testing") || t.includes("tested")) return "Testing";
   if (
     t.includes("approved by the service centre") ||

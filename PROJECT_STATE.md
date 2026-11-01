@@ -17,9 +17,9 @@
   - **Phase 8 — Logistics, Route Estimates & Health Monitoring**: **COMPLETE** (OSRM route estimates, demo-data cleanup, commit `b4e4289`)
   - **Phase 9.1 — Service Centre Parts Pickup**: **COMPLETE** (Depot inventory, technician pickup requisitions, atomic handoff, stock audit ledger)
   - **Phase 9.2 — Stock Movement, Sales History & Quote Integration**: **COMPLETE** (Stock movement ledger, durable sales against approved quotes, returns, receiving, sales reporting, and atomic quote formulation with `catalog_part_id`)
-  - **Phase 9.3 — Unavailable Parts Sourcing & ETA Coordination**: **PROPOSED / SCOPED** (Coordinating parts unavailable at depot, granular per-item sourcing ETAs on requisitions, critical-path sync to `parts_hold`)
-  - **Phase 9.4 — Dedicated Parts Notifications**: **RESERVED / FUTURE** (Dedicated parts-specific notification queues, technician arrival alerts, and farmer delay updates reserved for the end of Phase 9)
-- **Current Milestone**: Phase 9.2 stabilized, tested, and verified; Phase 9.3 (Unavailable Parts Sourcing) scoped as next proposal.
+  - **Phase 9.3 — Unavailable Parts Sourcing & ETA Coordination**: **COMPLETE** (Granular per-item sourcing ETAs on requisitions, critical-path sync to `parts_hold`, out-of-stock handoff locks, labour-only quotes, sourcing queue visibility, and pause form catalog selector)
+  - **Phase 9.4 — Dedicated Parts Notifications**: **COMPLETE** (Role-specific in-app notifications for Service Centre, assigned technician, and farmer; idempotent retry deduplication, unread badge count sync, and strict farmer privacy boundaries)
+- **Current Milestone**: Phase 9 (Spare Parts Coordination, Requisitions, Movement, Unavailable Sourcing & Notifications) fully complete, tested, and verified across 105 automated tests.
 
 ---
 
@@ -129,7 +129,7 @@
 | **Quotation & Pricing** | Itemized parts, labour, taxes, versioning, Quote v1 vs v2 comparison diff | Integrated UPI / Razorpay escrow payment gateway |
 | **Repair Operations** | 7-step stepper, parts-on-hold delay tracking, load testing, complete & sign-off | Video inspection live stream call |
 | **Communications** | Ticket-scoped chat (`repair_messages`), unread tracking, read receipts | Voice note audio messaging, WhatsApp webhook bot |
-| **Spare Parts Coordination** | Central Nagpur depot inventory (`/admin/parts-desk`), technician pickup requisitions (`/technician/job/:id`), atomic handoff with row locking, non-negative stock constraints, stock audit ledger, atomic quote formulation with `catalog_part_id` | Unavailable-parts sourcing & multi-item ETA coordination (Phase 9.3 Proposed), dedicated parts notification subphase (Phase 9.4 Reserved), automated vendor PO generation, multi-depot inventory transfers |
+| **Spare Parts Coordination** | Central Nagpur depot inventory (`/admin/parts-desk`), technician pickup requisitions (`/technician/job/:id`), atomic handoff with row locking, non-negative stock constraints, stock audit ledger, atomic quote formulation with `catalog_part_id`, unavailable parts sourcing & per-item ETA coordination (Phase 9.3), parts-specific in-app notifications (Phase 9.4) | Automated vendor PO generation, multi-depot inventory transfers |
 | **Service History** | Permanent equipment maintenance records, downtime hours, invoices | Blockchain NFT maintenance ledger |
 | **Data Hygiene & Demo** | Atomic dual-key `reset_demo_data()` RPC, real user isolation, Nagpur geography, canonical parts stock restore | Multi-district cluster tenancy |
 

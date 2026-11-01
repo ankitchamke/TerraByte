@@ -382,6 +382,12 @@ export async function requestServiceCentrePart(
       .maybeSingle();
 
     let request = existingPending as any;
+    const isRetry = Boolean(existingPending);
+    const isChanged =
+      isRetry &&
+      Boolean(existingPending) &&
+      (existingPending!.quantity !== input.quantity ||
+        (input.notes?.trim() || null) !== (existingPending!.notes || null));
 
     if (existingPending) {
       const { data: updatedReq, error: updateReqErr } = await supabase
@@ -624,12 +630,19 @@ export async function requestServiceCentrePart(
       }
 
       try {
-        const techName = profile.full_name || "Assigned technician";
-        await createNotification({
-          recipient_role: "admin",
-          notification_text: `Parts Desk: ${techName} requested ${input.quantity}x parts for repair ${repairJobNumber}.`,
-          link_target: `/admin/parts-desk`,
-        });
+        let notifText: string | null = null;
+        if (!isRetry) {
+          notifText = `New depot requisition: ${partName} (${input.quantity}x) requested for ${repairJobNumber}.`;
+        } else if (isChanged) {
+          notifText = `Depot requisition updated: ${partName} (${input.quantity}x) for ${repairJobNumber}.`;
+        }
+        if (notifText) {
+          await createNotification({
+            recipient_role: "admin",
+            notification_text: notifText,
+            link_target: `/admin/parts-desk`,
+          });
+        }
       } catch {
         // Notification failure non-fatal
       }
@@ -1017,12 +1030,14 @@ export async function confirmPartHandoff(requestId: string): Promise<ConfirmHand
         }
 
         // Update parts_hold blocker item and touch repair_requests to broadcast Realtime change
+        let currentRepair: any = null;
         try {
-          const { data: currentRepair } = await supabase
+          const { data: fetchedRep } = await supabase
             .from("repair_requests")
-            .select("id, status, parts_hold")
+            .select("id, job_number, technician_id, status, parts_hold")
             .eq("id", remoteReq.repair_request_id)
             .maybeSingle();
+          currentRepair = fetchedRep;
 
           if (currentRepair) {
             const holdObj = (currentRepair.parts_hold as Record<string, any>) || {};
@@ -1094,6 +1109,22 @@ export async function confirmPartHandoff(requestId: string): Promise<ConfirmHand
           confirmDemoPartHandoff(cleanId, profile.full_name || "Nagpur Service Centre");
         } catch {
           // ignore
+        }
+
+        // Dispatch technician notification upon confirmed handoff
+        try {
+          const techId = remoteReq.requested_by || currentRepair?.technician_id;
+          const jobNum = currentRepair?.job_number || remoteReq.repair_request_id;
+          if (techId && jobNum) {
+            await createNotification({
+              recipient_role: "technician",
+              recipient_user_id: techId,
+              notification_text: `Parts handed off: ${partRow.name} (${remoteReq.quantity}x) for ${jobNum}. Ready for installation.`,
+              link_target: `/technician/job/${jobNum}`,
+            });
+          }
+        } catch {
+          // Non-fatal
         }
 
         return {
@@ -1251,12 +1282,42 @@ export async function cancelPartRequest(requestId: string): Promise<void> {
     }
 
     const { error } = await query;
-    if (!error) return;
+    if (!error) {
+      try {
+        const { data: reqData } = await supabase
+          .from("service_centre_part_requests")
+          .select("*, part:part_id(*), repair:repair_request_id(*)")
+          .eq("id", requestId)
+          .maybeSingle();
+        const partName = reqData?.part?.name || "Spare part";
+        const jobNum = reqData?.repair?.job_number || reqData?.repair_request_id;
+        if (profile.role === "admin") {
+          const techId = reqData?.requested_by || reqData?.repair?.technician_id;
+          if (techId && jobNum) {
+            await createNotification({
+              recipient_role: "technician",
+              recipient_user_id: techId,
+              notification_text: `Part request cancelled: ${partName} for ${jobNum}.`,
+              link_target: `/technician/job/${jobNum}`,
+            });
+          }
+        } else if (jobNum) {
+          await createNotification({
+            recipient_role: "admin",
+            notification_text: `Depot requisition cancelled: ${partName} for ${jobNum}.`,
+            link_target: `/admin/parts-desk`,
+          });
+        }
+      } catch {
+        // Non-fatal
+      }
+      return;
+    }
   } catch {
     // Fall back to demo store
   }
 
-  cancelDemoPartRequest(requestId);
+  cancelDemoPartRequest(requestId, profile.role as any);
 }
 
 /**
@@ -1453,6 +1514,40 @@ export async function updatePartRequestEta(
             status: "WAITING_FOR_PARTS",
             note: `Part ETA updated for ${partName}: ${formattedEta} by ${profile.full_name || "Staff"}.`,
           });
+
+          const previousEta = remoteReq.estimated_arrival_at || "";
+          const isEtaChanged = previousEta !== rawEta;
+
+          if (isEtaChanged) {
+            if (profile.role !== "technician") {
+              const techId = rep?.technician_id || remoteReq.requested_by;
+              const jobNum = rep?.job_number || remoteReq.repair_request_id;
+              if (techId && jobNum) {
+                try {
+                  await createNotification({
+                    recipient_role: "technician",
+                    recipient_user_id: techId,
+                    notification_text: `Parts ETA updated: ${partName} for ${jobNum} expected ${formattedEta}.`,
+                    link_target: `/technician/job/${jobNum}`,
+                  });
+                } catch {
+                  // Non-fatal
+                }
+              }
+            }
+            if (rep?.farmer_id && rep?.job_number) {
+              try {
+                await createNotification({
+                  recipient_role: "farmer",
+                  recipient_user_id: rep.farmer_id,
+                  notification_text: `Repair ${rep.job_number}: Expected completion updated to ${formattedEta}.`,
+                  link_target: `/farmer/repair/${rep.job_number}`,
+                });
+              } catch {
+                // Non-fatal
+              }
+            }
+          }
         }
 
         try {
@@ -1641,6 +1736,33 @@ export async function receiveStock(input: ReceiveStockInput): Promise<{
     }
   } catch {
     // Database RPC unavailable; fall through to demo store
+  }
+
+  try {
+    const { data: pendingReqs } = await supabase
+      .from("service_centre_part_requests")
+      .select("id, repair_request_id, requested_by, repair:repair_request_id(job_number), part:part_id(name)")
+      .eq("part_id", input.partId)
+      .eq("status", "PENDING");
+
+    const notifiedTechs = new Set<string>();
+    for (const pr of pendingReqs || []) {
+      const techId = pr.requested_by;
+      const jobNum = (pr.repair as any)?.job_number || pr.repair_request_id;
+      const partName = (pr.part as any)?.name || "Spare part";
+      const key = `${techId}-${jobNum}`;
+      if (techId && jobNum && !notifiedTechs.has(key)) {
+        notifiedTechs.add(key);
+        await createNotification({
+          recipient_role: "technician",
+          recipient_user_id: techId,
+          notification_text: `Part ready for pickup: ${partName} received at depot for ${jobNum}.`,
+          link_target: `/technician/job/${jobNum}`,
+        });
+      }
+    }
+  } catch {
+    // Non-fatal
   }
 
   const { part } = receiveDemoStock({

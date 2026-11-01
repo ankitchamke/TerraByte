@@ -1441,7 +1441,20 @@ export function requestDemoPart(input: {
       updatedRequests = [createdReq, ...updatedRequests];
     }
 
-    const notifText = `New parts requisition for ${input.repairRequestId}: ${target.name} (Qty ${input.quantity})`;
+    const existingReq = existingReqIndex >= 0 ? (s.serviceCentrePartRequests ?? [])[existingReqIndex] : null;
+    const isRetry = Boolean(existingReq);
+    const isChanged =
+      isRetry &&
+      (existingReq!.quantity !== input.quantity ||
+        (input.notes?.trim() || null) !== (existingReq!.notes || null) ||
+        (input.eta?.trim() || null) !== (existingReq!.estimated_arrival_at || null));
+
+    let notifText: string | null = null;
+    if (!isRetry) {
+      notifText = `New depot requisition: ${target.name} (${input.quantity}x) requested for ${input.repairRequestId}.`;
+    } else if (isChanged) {
+      notifText = `Depot requisition updated: ${target.name} (${input.quantity}x) for ${input.repairRequestId}.`;
+    }
 
     const etaText = input.eta?.trim() ? input.eta.trim() : "ETA pending";
     const blockerItem: BlockerPartItem = {
@@ -1636,11 +1649,13 @@ export function requestDemoPart(input: {
       ...s,
       repairs: updatedRepairs,
       serviceCentrePartRequests: updatedRequests,
-      notifications: notify(s, {
-        role: "admin",
-        text: notifText,
-        link: "/admin/parts-desk",
-      }),
+      notifications: notifText
+        ? notify(s, {
+            role: "admin",
+            text: notifText,
+            link: "/admin/parts-desk",
+          })
+        : s.notifications,
     };
   });
 
@@ -1836,10 +1851,8 @@ export function confirmDemoPartHandoff(
       notifications: notify(s, {
         role: "technician",
         userId: targetReq.requested_by,
-        text: `Parts handed off: ${part.name} (Qty ${targetReq.quantity}) for ${targetReq.repair_request_id}`,
-        link: targetReq.repair_request_id.startsWith("TB-")
-          ? `/technician/job/${targetReq.repair_request_id}`
-          : "/technician",
+        text: `Parts handed off: ${part.name} (${targetReq.quantity}x) for ${targetReq.repair_request_id}. Ready for installation.`,
+        link: `/technician/job/${targetReq.repair_request_id}`,
       }),
     };
   });
@@ -1847,7 +1860,10 @@ export function confirmDemoPartHandoff(
   return result!;
 }
 
-export function cancelDemoPartRequest(requestId: string): DemoPartRequest {
+export function cancelDemoPartRequest(
+  requestId: string,
+  cancellerRole: Role = "technician",
+): DemoPartRequest {
   let updatedReq: DemoPartRequest | null = null;
   set((s) => {
     const reqs = s.serviceCentrePartRequests ?? [];
@@ -1858,9 +1874,30 @@ export function cancelDemoPartRequest(requestId: string): DemoPartRequest {
     const nowIso = new Date().toISOString();
     updatedReq = { ...target, status: "CANCELLED", updated_at: nowIso };
 
+    const catalogParts = s.serviceCentreParts ?? INITIAL_DEMO_PARTS;
+    const part = catalogParts.find((p) => p.id === target.part_id);
+    const partName = part?.name || "Spare part";
+
+    let nextNotifications = s.notifications;
+    if (cancellerRole === "technician") {
+      nextNotifications = notify(s, {
+        role: "admin",
+        text: `Depot requisition cancelled: ${partName} for ${target.repair_request_id}.`,
+        link: "/admin/parts-desk",
+      });
+    } else {
+      nextNotifications = notify(s, {
+        role: "technician",
+        userId: target.requested_by,
+        text: `Part request cancelled: ${partName} for ${target.repair_request_id}.`,
+        link: `/technician/job/${target.repair_request_id}`,
+      });
+    }
+
     return {
       ...s,
       serviceCentrePartRequests: reqs.map((r) => (r.id === requestId ? updatedReq! : r)),
+      notifications: nextNotifications,
     };
   });
 
@@ -2053,12 +2090,40 @@ export function updateDemoPartRequestEta(input: {
       );
     }
 
+    const previousEta = target.estimated_arrival_at || "";
+    const newEta = input.estimatedArrivalAt?.trim() || "";
+    const isEtaChanged = previousEta !== newEta;
+
+    let nextNotifications = s.notifications;
+    if (isEtaChanged) {
+      if (input.updaterRole !== "technician") {
+        const techId = repair?.technicianId || target.requested_by;
+        if (techId) {
+          nextNotifications = notify({ ...s, notifications: nextNotifications }, {
+            role: "technician",
+            userId: techId,
+            text: `Parts ETA updated: ${partName} for ${repair?.id || target.repair_request_id} expected ${etaText}.`,
+            link: `/technician/job/${repair?.id || target.repair_request_id}`,
+          });
+        }
+      }
+      if (repair?.farmerId) {
+        nextNotifications = notify({ ...s, notifications: nextNotifications }, {
+          role: "farmer",
+          userId: repair.farmerId,
+          text: `Repair ${repair.id}: Expected completion updated to ${etaText}.`,
+          link: `/farmer/repair/${repair.id}`,
+        });
+      }
+    }
+
     return {
       ...s,
       repairs: updatedRepairs,
       serviceCentrePartRequests: reqs.some((r) => r.id === target.id)
         ? reqs.map((r) => (r.id === target.id ? updatedReq! : r))
         : [updatedReq!, ...reqs],
+      notifications: nextNotifications,
     };
   });
 
@@ -2115,10 +2180,29 @@ export function receiveDemoStock(input: {
       created_at: nowIso,
     };
 
+    const pendingReqs = (s.serviceCentrePartRequests ?? []).filter(
+      (r) => r.part_id === target.id && r.status === "PENDING",
+    );
+    let nextNotifs = s.notifications;
+    const notifiedTechs = new Set<string>();
+    for (const pr of pendingReqs) {
+      const key = `${pr.requested_by}-${pr.repair_request_id}`;
+      if (!notifiedTechs.has(key)) {
+        notifiedTechs.add(key);
+        nextNotifs = notify({ ...s, notifications: nextNotifs }, {
+          role: "technician",
+          userId: pr.requested_by,
+          text: `Part ready for pickup: ${target.name} received at depot for ${pr.repair_request_id}.`,
+          link: `/technician/job/${pr.repair_request_id}`,
+        });
+      }
+    }
+
     return {
       ...s,
       serviceCentreParts: parts.map((p) => (p.id === target.id ? updatedPart! : p)),
       serviceCentreStockAudit: [auditEntry!, ...(s.serviceCentreStockAudit ?? [])],
+      notifications: nextNotifs,
     };
   });
 

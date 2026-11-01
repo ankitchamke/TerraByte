@@ -112,7 +112,16 @@ function toQuoteView(q: QuoteDetail): Quote {
   };
 }
 
-function formatTechCardData(t: VerifiedTechnicianWithProfile): Technician {
+function formatTechCardData(
+  t: VerifiedTechnicianWithProfile,
+  match?: ScoredTechnicianMatch | null,
+): Technician {
+  const distance = match?.distanceKm ?? t.distance_km ?? 0;
+  const eta =
+    match?.estimatedDriveMinutes ??
+    t.eta_minutes ??
+    (distance ? Math.round((distance / 35) * 60) : 45);
+
   return {
     id: t.profile_id,
     name: t.profile?.full_name || "Technician",
@@ -120,8 +129,8 @@ function formatTechCardData(t: VerifiedTechnicianWithProfile): Technician {
     brands: t.brands || [],
     skills: t.skills || [],
     verified: Boolean(t.is_verified),
-    distanceKm: t.distance_km ?? 0,
-    etaMin: t.eta_minutes ?? 45,
+    distanceKm: distance,
+    etaMin: eta,
     available: Boolean(t.is_available),
     rating: Number(t.rating ?? 4.8),
     jobsDone: t.jobs_completed ?? 0,
@@ -872,7 +881,8 @@ function RepairHub() {
           {eligibleTechs.map((m, i) => (
             <TechCard
               key={m.technician.id}
-              t={formatTechCardData(m.technician)}
+              t={formatTechCardData(m.technician, m)}
+              distanceSource={m.distanceSource}
               reasons={m.reasons}
             >
               <div className="mt-4 flex gap-2">

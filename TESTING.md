@@ -484,3 +484,91 @@ No phase promotion or production deployment may occur if:
 | **Staff Translation**     | Chrome native on-device translation service and `<OnDemandTranslation />` widget verified across 62 automated tests.                                   | **VERIFIED** |
 | **Auth & RLS Boundaries** | Least-privilege RLS policies prevent cross-farmer reads, enforce role guards, and protect sensitive coordinates.                                       | **VERIFIED** |
 | **Demo Data Reset**       | Dual-key `reset_demo_data()` RPC executes with non-trivial WHERE clauses, restoring canonical 3-persona baseline.                                      | **VERIFIED** |
+
+---
+
+## 13. Phase 10.3 Location-Aware Technician Dispatch Verification Matrix
+
+| Test ID      | Test Scenario                                   | Target Layer      | Expected Result                                                                                                             | Actual Result                        |  Status  |
+| :----------- | :---------------------------------------------- | :---------------- | :-------------------------------------------------------------------------------------------------------------------------- | :----------------------------------- | :------: |
+| **P10.3-01** | 14 Official Nagpur Tahsils constant             | Location Engine   | `NAGPUR_TAHSILS` contains exactly 14 official district tahsils.                                                             | `tests/technician-dispatch.test.mjs` | **PASS** |
+| **P10.3-02** | Official Tahsil Centroid Bounding Box           | Location Engine   | All 14 tahsil coordinates lie strictly within `[20.5, 21.8]°N, [78.2, 79.6]°E`.                                             | `tests/technician-dispatch.test.mjs` | **PASS** |
+| **P10.3-03** | Tahsil Name Normalization                       | Location Engine   | Handles casing, punctuation, and regional aliases (`Savner` -> `Saoner`, `Umrer` -> `Umred`).                               | `tests/technician-dispatch.test.mjs` | **PASS** |
+| **P10.3-04** | Strict Tahsil Centroid Lookup                   | Location Engine   | Strictly returns `null` for unrecognized locations; never silently defaults to Nagpur city.                                 | `tests/technician-dispatch.test.mjs` | **PASS** |
+| **P10.3-05** | Haversine Distance Calculation                  | Location Engine   | Computes straight-line spherical distance accurately; rejects invalid latitude/longitude.                                   | `tests/technician-dispatch.test.mjs` | **PASS** |
+| **P10.3-06** | Approximate Road Distance Math                  | Location Engine   | Applies 1.3x rural road curvature factor and 35 km/h realistic transit speed.                                               | `tests/technician-dispatch.test.mjs` | **PASS** |
+| **P10.3-07** | Bounded OSRM Driving Distance                   | Routing Service   | Returns live driving distance on HTTP success; falls back automatically to approximate distance on timeout/failure.         | `tests/technician-dispatch.test.mjs` | **PASS** |
+| **P10.3-08** | OSRM Skip Flag                                  | Routing Service   | Bypasses external OSRM network requests when `skipOsrm: true`.                                                              | `tests/technician-dispatch.test.mjs` | **PASS** |
+| **P10.3-09** | Critical Stopped-Machine Scoring Weights        | Scoring Domain    | Applies approved weights: Proximity (40), Availability (25), Brand/Skill (25), Mobile capability (10).                      | `tests/technician-dispatch.test.mjs` | **PASS** |
+| **P10.3-10** | Routine Maintenance Scoring Weights             | Scoring Domain    | Applies approved weights: Brand (30), Skill (25), Proximity (20), Availability (15), Delivery mode (10).                    | `tests/technician-dispatch.test.mjs` | **PASS** |
+| **P10.3-11** | Active Workload Availability Scaling            | Scoring Domain    | Scales availability: 0 jobs = 100%, 1 job = 70%, 2+ jobs = 30%.                                                             | `tests/technician-dispatch.test.mjs` | **PASS** |
+| **P10.3-12** | Doorstep vs Workshop Capability Matching        | Scoring Domain    | Awards 10 points for mobile capability on Doorstep repairs; awards 10 points for registered facility on Workshop repairs.   | `tests/technician-dispatch.test.mjs` | **PASS** |
+| **P10.3-13** | Travel Radius Cutoff Enforcement                | Scoring Domain    | If Doorstep distance exceeds `max_travel_radius_km`, proximity score drops to 0.                                            | `tests/technician-dispatch.test.mjs` | **PASS** |
+| **P10.3-14** | Adaptive Ranking: Critical Immobile Machine     | Scoring Domain    | Ranks nearest available mechanic first over a distant brand specialist.                                                     | `tests/technician-dispatch.test.mjs` | **PASS** |
+| **P10.3-15** | Adaptive Ranking: Routine Maintenance           | Scoring Domain    | Ranks certified brand and skill expert first over an unqualified nearby technician.                                         | `tests/technician-dispatch.test.mjs` | **PASS** |
+| **P10.3-16** | SQL Migration 20261103100000 Schema             | Database Schema   | Defines columns, CHECK constraints, composite index, and baseline demo anchors.                                             | `tests/technician-dispatch.test.mjs` | **PASS** |
+| **P10.3-17** | Security AST: RLS Private Coordinate Protection | Database Security | `repair_dispatch_locations` RLS policy blocks unassigned technicians from reading private GPS coordinates.                  | `tests/technician-dispatch.test.mjs` | **PASS** |
+| **P10.3-18** | Authorization Guards on assignTechnician        | Service Security  | Rejects assignments without machinery owner or Service Centre administrative authority.                                     | `tests/technician-dispatch.test.mjs` | **PASS** |
+| **P10.3-19** | Service Centre Ranked Candidate Cards AST       | Staff UI          | Renders `⚡ Urgent Proximity Match` / `⭐ Best Match` badges, rank tags, and match score percentages.                       | `tests/dispatch-ui.test.mjs`         | **PASS** |
+| **P10.3-20** | Distance Source Labels AST                      | Staff UI          | Labels distance sources explicitly: `Exact GPS`, `Tahsil Estimate`, or `Approx. Fallback`.                                  | `tests/dispatch-ui.test.mjs`         | **PASS** |
+| **P10.3-21** | Workload & Active Job Count Badges AST          | Staff UI          | Renders `Available · 0 active jobs`, `Available · 1 active job`, `Busy · X active jobs`.                                    | `tests/dispatch-ui.test.mjs`         | **PASS** |
+| **P10.3-22** | Brand, Skill, Doorstep & Radius Badges AST      | Staff UI          | Renders brand specialization, system skill, mobile capability, and travel radius warning badges.                            | `tests/dispatch-ui.test.mjs`         | **PASS** |
+| **P10.3-23** | Prominent Emergency Dispatch Banner AST         | Staff UI          | Renders emergency dispatch explanation banner when machine is stopped in field (`is_machine_stopped: true`).                | `tests/dispatch-ui.test.mjs`         | **PASS** |
+| **P10.3-24** | Explicit Confirmation Modal AST                 | Staff UI          | Renders mandatory assignment confirmation dialog before invoking `assignTechnician()`.                                      | `tests/dispatch-ui.test.mjs`         | **PASS** |
+| **P10.3-25** | Assign Any Candidate Regardless of Rank AST     | Staff UI          | Allows dispatcher to assign candidate #2 or #3; distinguishes currently assigned technician.                                | `tests/dispatch-ui.test.mjs`         | **PASS** |
+| **P10.3-26** | Privacy-Safe Farmer View AST                    | Farmer UI         | Never exposes raw GPS coordinates, technician private coordinates, or internal match scores to farmer.                      | `tests/dispatch-ui.test.mjs`         | **PASS** |
+| **P10.3-27** | TechCard Coarse Distance Formatting             | Shared UI         | Formats coarse distance (`~14 km (approx) · ~24 min drive`) and handles missing distance (`Distance estimate unavailable`). | `tests/dispatch-ui.test.mjs`         | **PASS** |
+| **P10.3-28** | UI Loading & Empty State Handling               | Staff & Farmer UI | Displays loading spinners while calculating recommendations; displays empty state when 0 technicians match.                 | `tests/dispatch-ui.test.mjs`         | **PASS** |
+
+---
+
+## 14. Phase 10.3 Manual QA Walkthrough (Evaluator Guide)
+
+### Step 1: Emergency Field Stoppage Dispatch Triage (Service Centre)
+
+1. Sign in as **Nagpur Regional Service Centre** (`admin.nagpur@terrabyte.demo` / `terrabyte2026`).
+2. Navigate to `/admin/repairs` (Repair Operations Queue).
+3. Open an emergency stopped-machine ticket (e.g. `CRITICAL` + Machine Stopped).
+4. Inspect the **Dispatch technician** card in the left column:
+   - Verify the red emergency alert banner is displayed: _"Emergency Field Dispatch — Operations Halted"_.
+   - Verify the top-ranked technician displays the `⚡ Urgent Proximity Match` badge.
+   - Verify distance source tags: `Exact GPS`, `Tahsil Estimate`, or `Approx. Fallback`.
+   - Verify active workload tags (`Available · 0 active jobs`, `Available · 1 active job`, or `Busy`).
+   - Verify brand specialization (`Mahindra Specialist`) and system expertise badges.
+5. Click **"Assign technician"** on candidate #2:
+   - Verify the **Confirm Technician Dispatch** dialog appears.
+   - Verify the modal shows candidate name, workshop, distance, driving ETA, and active workload.
+   - Verify clicking **"Confirm Assignment"** updates the ticket, displays a success toast, and records the event in the repair activity timeline.
+
+### Step 2: Routine Workshop Maintenance Triage (Service Centre)
+
+1. Open a routine ticket with `STANDARD` urgency and `Workshop Drop-off` delivery mode.
+2. Inspect the **Dispatch technician** card:
+   - Verify no emergency banner is shown.
+   - Verify the top-ranked candidate displays the `⭐ Best Match` badge.
+   - Verify certified brand and skill specialists rank highest (competency-first weighting: Brand 30%, Skill 25%).
+   - Verify delivery mode indicates `Workshop Facility`.
+
+### Step 3: Privacy-Safe Farmer View Verification
+
+1. Sign in as **Balasaheb Patil** (`farmer.nagpur@terrabyte.demo` / `terrabyte2026`).
+2. Navigate to an unassigned repair request `/farmer/repair/:id`.
+3. Inspect the recommended technician cards:
+   - Verify coarse distance estimates are displayed (`~14 km (approx) · ~24 min drive`).
+   - Verify that **NO** raw latitude/longitude coordinates and **NO** internal match scores (e.g. `Score 85%`) are rendered.
+   - Verify that viewing recommendations does not auto-assign or change the ticket state.
+
+---
+
+## 15. Phase 10.3 Regression Verification Summary
+
+| Subsystem                       | Verification Scope                                                                                                                                     |    Status    |
+| :------------------------------ | :----------------------------------------------------------------------------------------------------------------------------------------------------- | :----------: |
+| **Location & Dispatch Engine**  | 20 automated tests in `tests/technician-dispatch.test.mjs` verifying centroids, Haversine, OSRM timeout fallback, adaptive matrix, and radius cutoffs. | **VERIFIED** |
+| **Dispatch UI & Triage**        | 10 automated tests in `tests/dispatch-ui.test.mjs` verifying ranked cards, emergency banners, distance tags, confirmation modals, and privacy gates.   | **VERIFIED** |
+| **Doorstep & Urgency Intake**   | 46 automated tests in `tests/doorstep-urgency.test.mjs` verifying wizard intake, 4 urgency tiers, landmark preservation, and 3-tier queue sorting.     | **VERIFIED** |
+| **Multilingual Voice Intake**   | 35 automated tests in `tests/transcription.test.mjs` verifying Groq Whisper Large V3, silence rejection, and Devanagari script preservation.           | **VERIFIED** |
+| **Staff On-Demand Translation** | 25 automated tests across `chrome-translator.test.mjs` and `on-demand-translation.test.mjs` verifying Chrome AI 6-direction translation.               | **VERIFIED** |
+| **Demo Data Reset & Hygiene**   | 6 automated tests in `tests/cleanup-verification.test.mjs` verifying dual-key 3-persona baseline restoration.                                          | **VERIFIED** |
+| **TypeScript Type Safety**      | `npx tsc --noEmit` executed with 0 errors across entire repository.                                                                                    | **VERIFIED** |
+| **Production Build**            | `npm run build` executed with Vite and Nitro Vercel web preset; all client and SSR bundles built cleanly.                                              | **VERIFIED** |

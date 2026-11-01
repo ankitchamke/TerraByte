@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   AlertOctagon,
   AlertTriangle,
+  BadgeCheck,
   Building2,
   CheckCircle2,
   ChevronDown,
@@ -10,10 +11,13 @@ import {
   History,
   Loader2,
   MapPin,
+  Navigation,
   Package,
   PackageSearch,
+  Sparkles,
   Truck,
   XCircle,
+  Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -233,6 +237,8 @@ function AdminRepair() {
   const [cancelling, setCancelling] = useState(false);
   const [activityOpen, setActivityOpen] = useState(true);
   const [showAllActivity, setShowAllActivity] = useState(false);
+  const [confirmAssignModal, setConfirmAssignModal] = useState<ScoredTechnicianMatch | null>(null);
+  const [loadingTechMatches, setLoadingTechMatches] = useState(false);
 
   // Cancellation review dialog states
   const [approveDialogOpen, setApproveDialogOpen] = useState(false);
@@ -280,6 +286,7 @@ function AdminRepair() {
           setEta(ph["eta"] || "");
         }
 
+        setLoadingTechMatches(true);
         // Concurrently fetch quotes, quote versions, eligible technicians, service history, dispatch location, and parts requests
         const [quotesData, eligibleData, versionsData, shData, dispatchLocData, reqsData] =
           await Promise.all([
@@ -299,6 +306,7 @@ function AdminRepair() {
         setServiceRecord(shData);
         setDispatchLocation(dispatchLocData);
         setPartRequests(reqsData);
+        setLoadingTechMatches(false);
         hasLoadedRef.current = true;
         return;
       }
@@ -348,6 +356,7 @@ function AdminRepair() {
       }
     } finally {
       setLoading(false);
+      setLoadingTechMatches(false);
     }
   }, [id, s.repairs, s.service, s.serviceCentrePartRequests, s.serviceCentreParts]);
 
@@ -452,6 +461,11 @@ function AdminRepair() {
 
   const od = checkOverdue(status, statusSince);
   const doorstepInfo = normalizeRepairDoorstepUrgency(dbRepair || mockR);
+  const isCriticalStopped =
+    doorstepInfo.urgency_level === "CRITICAL" && doorstepInfo.is_machine_stopped;
+  const dispatchAssessment = (r?.assessment || mockR?.assessment || {}) as Record<string, unknown>;
+  const targetSkill =
+    typeof dispatchAssessment["skill"] === "string" ? dispatchAssessment["skill"] : "";
 
   // Active Quote
   const pendingQuote = quotes.find((q) => q.status === "PENDING");
@@ -1133,62 +1147,268 @@ function AdminRepair() {
           {/* Dispatch / Reassignment */}
           {status !== "COMPLETED" && status !== "CANCELLED" && (
             <Card>
-              <h2 className="mb-3 text-lg font-bold">
-                {technicianName ? "Reassign technician" : "Dispatch technician"}
-              </h2>
-              <p className="mb-3 text-sm">
-                Current: <b>{technicianName ?? "Unassigned"}</b>
-                {isReal && r.declined_by && r.declined_by.length > 0 && (
-                  <span className="text-muted-foreground">
-                    {" "}
-                    · declined by {r.declined_by.length}{" "}
-                    {r.declined_by.length === 1 ? "technician" : "technicians"}
+              <div className="mb-3 flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-lg font-bold">
+                    {technicianName ? "Reassign technician" : "Dispatch technician"}
+                  </h2>
+                  <p className="text-sm">
+                    Current: <b>{technicianName ?? "Unassigned"}</b>
+                    {isReal && r.declined_by && r.declined_by.length > 0 && (
+                      <span className="text-muted-foreground">
+                        {" "}
+                        · declined by {r.declined_by.length}{" "}
+                        {r.declined_by.length === 1 ? "technician" : "technicians"}
+                      </span>
+                    )}
+                  </p>
+                </div>
+
+                {isCriticalStopped && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-destructive/15 px-2.5 py-1 text-xs font-bold text-destructive">
+                    <AlertOctagon className="h-3.5 w-3.5 shrink-0" /> Emergency Stoppage
                   </span>
                 )}
-              </p>
+              </div>
 
-              <div className="space-y-2">
-                {techMatches.length > 0 ? (
-                  techMatches
-                    .filter((m) => m.technician.profile_id !== r.technician_id)
-                    .map((m) => (
+              {/* Prominent Emergency Dispatch Explanation for Critical Field Stoppages */}
+              {isCriticalStopped && (
+                <div className="mb-4 rounded-xl border border-destructive/40 bg-destructive/10 p-3.5 text-xs text-destructive space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-sm">
+                    <AlertOctagon className="h-4 w-4 shrink-0 text-destructive" />
+                    <span>Emergency Field Dispatch — Operations Halted</span>
+                  </div>
+                  <p className="text-destructive/90 leading-relaxed">
+                    Machinery is completely stopped and immobile in the field. Recommendations are
+                    weighted for rapid response proximity (40%), immediate technician availability
+                    (25%), brand/skill capability (25%), and mobile on-field service (10%).
+                  </p>
+                </div>
+              )}
+
+              {/* Recommendations list */}
+              <div className="space-y-3">
+                {loadingTechMatches ? (
+                  <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
+                    <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                    <span>Calculating location-aware recommendations…</span>
+                  </div>
+                ) : techMatches.length > 0 ? (
+                  techMatches.map((m, idx) => {
+                    const isTopMatch = idx === 0;
+                    const isCurrentAssignee =
+                      m.technician.profile_id === (isReal ? r.technician_id : mockR?.technicianId);
+
+                    return (
                       <div
                         key={m.technician.profile_id}
-                        className="flex items-center gap-3 rounded-xl border border-border p-3"
+                        className={cn(
+                          "rounded-xl border p-3.5 transition-colors space-y-2.5",
+                          isCurrentAssignee
+                            ? "border-success/40 bg-success/5"
+                            : isTopMatch && m.isUrgencyWeighted
+                              ? "border-destructive/40 bg-destructive/5"
+                              : isTopMatch
+                                ? "border-primary/40 bg-primary/5"
+                                : "border-border bg-card",
+                        )}
                       >
-                        <div className="min-w-0 flex-1">
-                          <p className="font-semibold">
-                            {m.technician.profile?.full_name}{" "}
-                            <span className="font-mono text-xs text-muted-foreground">
-                              score {m.score}
+                        {/* Header: Name, Verification, Match Indicator, Match Score */}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="font-bold text-sm sm:text-base text-foreground">
+                                {m.technician.profile?.full_name || "Registered Technician"}
+                              </span>
+
+                              {m.technician.is_verified && (
+                                <span className="inline-flex items-center gap-0.5 text-xs font-semibold text-info">
+                                  <BadgeCheck
+                                    className="h-4 w-4"
+                                    aria-label="Verified technician"
+                                  />
+                                  <span className="text-[11px]">Verified</span>
+                                </span>
+                              )}
+
+                              {/* Best Match / Urgent Proximity Match indicator */}
+                              {isTopMatch &&
+                                (m.isUrgencyWeighted ? (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-destructive/15 px-2 py-0.5 text-[11px] font-bold text-destructive">
+                                    <Zap className="h-3 w-3" /> Urgent Proximity Match
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-[11px] font-bold text-primary">
+                                    <Sparkles className="h-3 w-3" /> Best Match
+                                  </span>
+                                ))}
+
+                              {!isTopMatch && (
+                                <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                                  Rank #{idx + 1}
+                                </span>
+                              )}
+                            </div>
+
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {m.technician.workshop_name || "Authorized Workshop"} ·{" "}
+                              {m.technician.profile?.village || "Nagpur District"}
+                            </p>
+                          </div>
+
+                          <div className="shrink-0 text-right">
+                            <span className="font-mono text-xs font-bold text-muted-foreground">
+                              Score {m.score}%
                             </span>
-                          </p>
-                          <p className="truncate text-xs text-muted-foreground">
-                            {m.reasons.join(" · ") || "Verified technician"} ·{" "}
-                            {m.technician.profile?.village || "Nagpur"} · ~
-                            {m.technician.eta_minutes ?? 45} min
-                          </p>
+                          </div>
                         </div>
-                        <button
-                          disabled={assigning === m.technician.profile_id}
-                          onClick={() =>
-                            void handleAssign(
-                              m.technician.profile_id,
-                              m.technician.profile?.full_name || "technician",
+
+                        {/* Proximity & Distance Source */}
+                        <div className="flex flex-wrap items-center gap-2 text-xs">
+                          {m.distanceKm !== null ? (
+                            <span className="inline-flex items-center gap-1 font-semibold text-foreground">
+                              <MapPin className="h-3.5 w-3.5 text-primary shrink-0" />~
+                              {m.distanceKm} km
+                              {m.distanceSource !== "exact_gps" ? " (approx)" : ""} · ~
+                              {m.estimatedDriveMinutes ?? Math.round((m.distanceKm / 35) * 60)} min
+                              drive
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-muted-foreground">
+                              <MapPin className="h-3.5 w-3.5 shrink-0" />
+                              Distance unavailable
+                            </span>
+                          )}
+
+                          {/* Distance source label */}
+                          {m.distanceSource === "exact_gps" && (
+                            <span className="rounded bg-success/15 px-1.5 py-0.5 text-[10px] font-semibold text-success">
+                              Exact GPS
+                            </span>
+                          )}
+                          {m.distanceSource === "tahsil_centroid" && (
+                            <span className="rounded bg-info/15 px-1.5 py-0.5 text-[10px] font-semibold text-info">
+                              Tahsil Estimate
+                            </span>
+                          )}
+                          {m.distanceSource === "unknown" && (
+                            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                              Approx. Fallback
+                            </span>
+                          )}
+
+                          {/* Availability & active job count */}
+                          {m.technician.is_available ? (
+                            m.activeJobCount === 0 ? (
+                              <span className="rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-semibold text-success">
+                                Available · 0 active jobs
+                              </span>
+                            ) : m.activeJobCount === 1 ? (
+                              <span className="rounded-full bg-info/15 px-2 py-0.5 text-[11px] font-semibold text-info">
+                                Available · 1 active job
+                              </span>
+                            ) : (
+                              <span className="rounded-full bg-warning/20 px-2 py-0.5 text-[11px] font-semibold text-warning-foreground">
+                                Busy · {m.activeJobCount} active jobs
+                              </span>
                             )
-                          }
-                          className="h-10 shrink-0 rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                        >
-                          {assigning === m.technician.profile_id ? "Assigning…" : "Assign"}
-                        </button>
+                          ) : (
+                            <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+                              Off-duty / Unavailable
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Capabilities & Match Badges */}
+                        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                          {m.brandMatch && (
+                            <span className="rounded-md bg-primary/10 px-2 py-0.5 font-medium text-primary text-[11px]">
+                              ✓ {equipmentMake} Specialist
+                            </span>
+                          )}
+                          {m.skillMatch && (
+                            <span className="rounded-md bg-primary/10 px-2 py-0.5 font-medium text-primary text-[11px]">
+                              ✓ {targetSkill || "System"} Expert
+                            </span>
+                          )}
+                          {doorstepInfo.service_type === "DOORSTEP" ? (
+                            m.doorstepMatch ? (
+                              <span className="rounded-md bg-success/10 px-2 py-0.5 font-medium text-success text-[11px]">
+                                Mobile Field Service
+                              </span>
+                            ) : (
+                              <span className="rounded-md bg-warning/15 px-2 py-0.5 font-medium text-warning-foreground text-[11px]">
+                                Workshop Depot Only
+                              </span>
+                            )
+                          ) : (
+                            <span className="rounded-md bg-muted px-2 py-0.5 font-medium text-muted-foreground text-[11px]">
+                              Workshop Facility
+                            </span>
+                          )}
+
+                          {doorstepInfo.service_type === "DOORSTEP" &&
+                            !m.isWithinRadius &&
+                            m.distanceKm !== null && (
+                              <span className="rounded-md bg-destructive/15 px-2 py-0.5 font-medium text-destructive text-[11px]">
+                                ⚠️ Outside {m.technician.max_travel_radius_km ?? 40} km radius
+                              </span>
+                            )}
+                        </div>
+
+                        {/* Reasons */}
+                        {m.reasons && m.reasons.length > 0 && (
+                          <div className="flex flex-wrap gap-1 text-[11px] text-muted-foreground">
+                            {m.reasons.map((rStr, rIdx) => (
+                              <span key={rIdx} className="rounded bg-muted/60 px-1.5 py-0.5">
+                                • {rStr}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Action row */}
+                        <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/50">
+                          <div>
+                            {m.technician.profile?.phone ? (
+                              <CallButton
+                                phone={m.technician.profile.phone}
+                                label={
+                                  m.technician.profile.full_name
+                                    ? `Call ${m.technician.profile.full_name.split(" ")[0]}`
+                                    : "Call"
+                                }
+                                className="text-xs h-8 px-2.5"
+                              />
+                            ) : null}
+                          </div>
+
+                          {isCurrentAssignee ? (
+                            <span className="text-xs font-semibold text-success flex items-center gap-1">
+                              <CheckCircle2 className="h-4 w-4" /> Current Assigned Technician
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={assigning === m.technician.profile_id}
+                              onClick={() => setConfirmAssignModal(m)}
+                              className="h-8 shrink-0 rounded-lg bg-primary px-3 text-xs font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                            >
+                              {technicianName ? "Reassign to technician" : "Assign technician"}
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    ))
+                    );
+                  })
                 ) : (
-                  <p className="text-sm text-muted-foreground italic py-1">
-                    {status === "REQUESTED"
-                      ? "Searching for eligible verified technicians in district…"
-                      : "Technician assigned."}
-                  </p>
+                  <div className="rounded-xl border border-dashed border-border p-4 text-center text-sm text-muted-foreground space-y-1">
+                    <p className="font-semibold text-foreground">No eligible technicians found</p>
+                    <p className="text-xs">
+                      No verified technicians are currently registered in this district for this
+                      equipment.
+                    </p>
+                  </div>
                 )}
               </div>
             </Card>
@@ -2071,6 +2291,120 @@ function AdminRepair() {
               className="rounded-lg bg-primary px-4 py-2 text-xs font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
             >
               {updatingSourcingEta ? "Saving..." : "Save ETA"}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* MANUAL TECHNICIAN ASSIGNMENT CONFIRMATION MODAL */}
+      <Dialog
+        open={Boolean(confirmAssignModal)}
+        onOpenChange={(open) => !open && setConfirmAssignModal(null)}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Building2 className="h-5 w-5 text-primary" />
+              {technicianName ? "Confirm Technician Reassignment" : "Confirm Technician Dispatch"}
+            </DialogTitle>
+            <DialogDescription>
+              Review technician details before dispatching. Recommendations do not auto-assign.
+            </DialogDescription>
+          </DialogHeader>
+
+          {confirmAssignModal && (
+            <div className="space-y-3 py-2 text-sm">
+              <div className="rounded-xl border border-border p-3 space-y-1.5 bg-muted/30">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-base text-foreground">
+                    {confirmAssignModal.technician.profile?.full_name || "Registered Technician"}
+                  </span>
+                  <span className="font-mono text-xs text-muted-foreground">
+                    Score {confirmAssignModal.score}%
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {confirmAssignModal.technician.workshop_name || "Authorized Workshop"} ·{" "}
+                  {confirmAssignModal.technician.profile?.village || "Nagpur District"}
+                </p>
+
+                <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
+                  {confirmAssignModal.distanceKm !== null ? (
+                    <span className="inline-flex items-center gap-1 font-semibold text-foreground">
+                      <MapPin className="h-3.5 w-3.5 text-primary shrink-0" />~
+                      {confirmAssignModal.distanceKm} km
+                      {confirmAssignModal.distanceSource !== "exact_gps" ? " (approx)" : ""} · ~
+                      {confirmAssignModal.estimatedDriveMinutes ??
+                        Math.round((confirmAssignModal.distanceKm / 35) * 60)}{" "}
+                      min drive
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">Distance unavailable</span>
+                  )}
+                  <span>·</span>
+                  <span className="font-medium">
+                    {confirmAssignModal.activeJobCount === 0
+                      ? "0 active jobs"
+                      : `${confirmAssignModal.activeJobCount} active jobs`}
+                  </span>
+                </div>
+              </div>
+
+              {confirmAssignModal.activeJobCount >= 2 && (
+                <p className="rounded-lg bg-warning/15 p-2.5 text-xs text-warning-foreground flex items-center gap-1.5">
+                  <AlertTriangle className="h-4 w-4 shrink-0" />
+                  <span>
+                    This technician currently has {confirmAssignModal.activeJobCount} active jobs.
+                    Response time may be delayed.
+                  </span>
+                </p>
+              )}
+              {!confirmAssignModal.isWithinRadius &&
+                confirmAssignModal.distanceKm !== null &&
+                doorstepInfo.service_type === "DOORSTEP" && (
+                  <p className="rounded-lg bg-destructive/10 p-2.5 text-xs text-destructive flex items-center gap-1.5">
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    <span>
+                      Outside standard doorstep travel radius ({confirmAssignModal.distanceKm} km
+                      &gt; {confirmAssignModal.technician.max_travel_radius_km ?? 40} km).
+                    </span>
+                  </p>
+                )}
+
+              <p className="text-xs text-muted-foreground">
+                Confirming will update Repair <b>#{jobNumber}</b> and notify the technician.
+              </p>
+            </div>
+          )}
+
+          <DialogFooter className="flex gap-2 sm:justify-end">
+            <button
+              type="button"
+              onClick={() => setConfirmAssignModal(null)}
+              disabled={Boolean(assigning)}
+              className={cn(btn.ghost, "text-sm")}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={Boolean(assigning)}
+              onClick={async () => {
+                if (!confirmAssignModal) return;
+                const techId = confirmAssignModal.technician.profile_id;
+                const techName = confirmAssignModal.technician.profile?.full_name || "technician";
+                setConfirmAssignModal(null);
+                await handleAssign(techId, techName);
+              }}
+              className={cn(btn.primary, "text-sm font-semibold")}
+            >
+              {assigning ? (
+                <span className="flex items-center gap-1.5">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Assigning…
+                </span>
+              ) : (
+                "Confirm Assignment"
+              )}
             </button>
           </DialogFooter>
         </DialogContent>

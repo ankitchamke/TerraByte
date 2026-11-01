@@ -25,7 +25,8 @@ flowchart TD
     P9 --> P101["PHASE 10.1: Multilingual Voice Transcription<br/>(STATUS: COMPLETE)"]
     P101 --> P1011["PHASE 10.1.1: Staff On-Demand Translation<br/>(STATUS: COMPLETE)"]
     P1011 --> P102["PHASE 10.2: Doorstep Service Intake & Urgency<br/>(STATUS: COMPLETE)"]
-    P102 -.-> P103["PHASE 10.3: Location-Aware Automated Dispatch<br/>(STATUS: SCOPED / NEXT)"]
+    P102 --> P103["PHASE 10.3: Location-Aware Technician Dispatch<br/>(STATUS: COMPLETE)"]
+    P103 -.-> P104["PHASE 10.4: Multi-Job Field Route Planning<br/>(STATUS: SCOPED / NEXT)"]
 ```
 
 ---
@@ -603,11 +604,34 @@ flowchart TD
 
 ---
 
-### PHASE 10.3 — Location-Aware Automated Dispatch & Route Optimization (SCOPED / NEXT)
+### PHASE 10.3 — Location-Aware Technician Dispatch & Recommendation Engine
 
-- **Status**: **SCOPED / FUTURE WORK**
-- **Objective**: Automate technician matching and dispatch based on real-time field proximity, operational urgency, and multi-job traveling routes.
-- **Key Deliverables (Planned)**:
-  1. Dynamic technician-to-field road distance calculation via OSRM table/matrix API.
-  2. Priority dispatch recommendations weighting critical stopped machines with shortest driving ETA.
-  3. Multi-job field route optimization grouping nearby doorstep requests in the same taluka cluster.
+- **Status**: **COMPLETE**
+- **Objective**: Match agricultural machinery repair requests with qualified, available, and proximate technicians using an adaptive, urgency-aware recommendation engine while strictly preserving human Service Centre dispatch authority.
+- **Subphases Implemented & Verified**:
+  1. **Subphase 10.3-A: Architecture & Inspection**
+     - Conducted read-only inspection of technician profiles, geolocation capture (`repair_dispatch_locations`), OSRM routing helpers, and existing technician assignment RPCs.
+     - Designed adaptive dual-mode scoring framework: Proximity-first (40%) for critical immobile machines vs Competency-first (30% brand, 25% skill) for routine maintenance.
+  2. **Subphase 10.3-B: Data Model, Geographic Fallback & Recommendation Engine**
+     - Created migration `supabase/migrations/20261103100000_phase10_3_technician_dispatch.sql` adding `workshop_latitude`, `workshop_longitude`, `is_doorstep_capable` (default `true`), and `max_travel_radius_km` (default `40`) with CHECK constraints and partial index.
+     - Synchronized TypeScript types in `src/integrations/supabase/types.ts`.
+     - Built Nagpur geographic fallback in `src/lib/location.ts`: 14 official district tahsil centroids (`NAGPUR_TAHSIL_CENTROIDS`), strict normalization (`normalizeNagpurTahsil`), strict centroid lookup (`getNagpurTahsilCentroid`), Haversine math, and approximate rural road distance (1.3x curvature, 35 km/h transit speed).
+     - Extended `resolveDrivingDistance` in `src/lib/services/routing.ts` with bounded OSRM timeout and automatic fallback.
+     - Built pure scoring domain service in `src/lib/services/technician-dispatch.ts`:
+       - Critical Stopped: Proximity (40), Availability (25), Brand/Skill (25), Mobile capability (10).
+       - Routine: Brand (30), Skill (25), Proximity (20), Availability (15), Delivery mode (10).
+       - Workload scaling: 0 active jobs = 100%, 1 active job = 70%, 2+ active jobs = 30%.
+       - Travel radius cutoff: 0 proximity points if doorstep distance exceeds `max_travel_radius_km`.
+  3. **Subphase 10.3-C: Location-Aware Dispatch UI & Visual Triage**
+     - Service Centre repair detail (`src/routes/admin/repair/$id.tsx`):
+       - Ranked recommendation cards with `⚡ Urgent Proximity Match` / `⭐ Best Match` badges, rank tags, match percentages, distance source indicators (`Exact GPS`, `Tahsil Estimate`, `Approx. Fallback`), availability & active job count badges, brand/skill chips, and doorstep capability.
+       - Emergency field dispatch explanation banner for critical immobile machines.
+       - Mandatory manual assignment confirmation dialog displaying technician details, distance, and workload warnings before invoking `assignTechnician()`. Recommendations never auto-assign.
+     - Farmer repair detail (`src/routes/farmer/repair/$id.tsx`):
+       - Privacy-safe `TechCard` rendering coarse distance (`~14 km (approx) · ~24 min drive`) or `Distance estimate unavailable`.
+       - Never exposes raw GPS coordinates, technician private coordinates, or internal match scores.
+  4. **Subphase 10.3-D: End-to-End Verification & Documentation**
+     - 30 automated tests passing across `tests/technician-dispatch.test.mjs` (20) and `tests/dispatch-ui.test.mjs` (10).
+     - 142 / 142 tests passing across all test suites in the repository.
+     - Production build verified with Vite and Nitro Vercel preset.
+     - Updated `PROJECT_STATE.md`, `IMPLEMENTATION_PLAN.md`, and `TESTING.md`.

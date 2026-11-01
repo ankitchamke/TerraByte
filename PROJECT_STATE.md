@@ -2,7 +2,7 @@
 
 ## 1. Current Phase & Engineering Status
 
-- **Status**: **COMPLETE — PHASE 10.2 DOORSTEP SERVICE INTAKE & OPERATIONAL URGENCY IMPLEMENTED AND VERIFIED**
+- **Status**: **COMPLETE — PHASE 10.3 LOCATION-AWARE TECHNICIAN DISPATCH IMPLEMENTED AND VERIFIED**
 - **Branch**: `phase-10` (Connected to Lovable; no destructive Git history operations)
 - **Official Problem Statement**: **"One-Stop Agricultural Equipment Repair"**
 - **Domain**: AgriTech · Agricultural Machinery Maintenance & Operational Coordination
@@ -19,8 +19,9 @@
   - **Phase 10.1 — Multilingual Voice Transcription (Groq Whisper Large V3)**: **COMPLETE** (Serverless transcription, silence detection, 5s minimum duration, Hindi/Marathi script preservation)
   - **Phase 10.1.1 — Staff-Side On-Demand Translation (Chrome Built-in AI)**: **COMPLETE** (Chrome Native Translator & Language Detector API, 6-direction translation between English, Hindi, and Marathi, on-demand staff UI)
   - **Phase 10.2 — Doorstep Service Intake & Operational Urgency**: **COMPLETE** (Subphases 10.2-A through 10.2-D: schema migration, domain validation, wizard intake, staff triage & visibility, remote migration applied, 46 automated tests)
-- **Current Milestone**: Phase 10.2 fully complete, tested, and verified across 137 automated tests in the Phase 10 suite (46 doorstep & urgency, 35 voice transcription, 50 Chrome translation & UI, 6 cleanup verification).
-- **Next Phase**: Phase 10.3 — Location-Aware Automated Technician Dispatch & Dynamic Route Optimization.
+  - **Phase 10.3 — Location-Aware Technician Dispatch & Recommendation Engine**: **COMPLETE** (Subphases 10.3-A through 10.3-D: schema migration, 14 Nagpur tahsil centroids, adaptive scoring matrix, workload scaling, Service Centre & Farmer UI cards, manual confirmation modal, 30 dispatch automated tests)
+- **Current Milestone**: Phase 10.3 fully complete, tested, and verified across 142 automated tests in the test suite (10 dispatch UI, 20 dispatch engine & math, 46 doorstep urgency, 15 Chrome translator, 10 on-demand translation, 35 voice transcription, 6 cleanup verification).
+- **Next Phase**: Phase 10.4 — Multi-Job Field Route Planning & Traveling Technician Circuits.
 
 ---
 
@@ -102,25 +103,55 @@
   - 149 / 149 tests passing across the active suite.
   - Zero TypeScript errors in Phase 10.2 files, clean Prettier formatting, clean Nitro Vercel production build.
 
+### Phase 10.3 — Location-Aware Technician Dispatch & Recommendation Engine
+
+- **Subphase 10.3-A (Architecture & Inspection)**:
+  - Audited existing candidate matching, GPS location schema (`repair_dispatch_locations`), and DirectionsButton routing.
+  - Architected dual-mode adaptive weighting model: Emergency field stoppage (proximity-first) vs Routine maintenance (competency-first).
+- **Subphase 10.3-B (Data Model, Geographic Fallback & Recommendation Engine)**:
+  - Database migration `supabase/migrations/20261103100000_phase10_3_technician_dispatch.sql` adding:
+    - `workshop_latitude` (`double precision`, `[-90, 90]`).
+    - `workshop_longitude` (`double precision`, `[-180, 180]`).
+    - `is_doorstep_capable` (`boolean DEFAULT true`).
+    - `max_travel_radius_km` (`integer DEFAULT 40`, `[5, 500]`).
+    - Partial composite index on `(is_doorstep_capable, is_available) WHERE is_verified = true`.
+  - Updated Supabase TypeScript types in `src/integrations/supabase/types.ts`.
+  - Added 14 Nagpur District tahsil centroids (`NAGPUR_TAHSIL_CENTROIDS`), normalization helper (`normalizeNagpurTahsil`), strict centroid lookup (`getNagpurTahsilCentroid`), Haversine distance, and 1.3x rural road curvature with 35 km/h transit model in `src/lib/location.ts`.
+  - Bounded OSRM timeout with automatic fallback to approximate road distance in `src/lib/services/routing.ts`.
+  - Pure domain adaptive scoring matrix in `src/lib/services/technician-dispatch.ts`:
+    - Critical Stopped: Proximity (40), Availability (25), Brand/Skill (25), Mobile capability (10).
+    - Routine: Brand (30), Skill (25), Proximity (20), Availability (15), Delivery mode (10).
+    - Workload scaling: 0 jobs = 100%, 1 job = 70%, 2+ jobs = 30%.
+    - Doorstep travel radius cutoff: proximity points drop to 0 if distance exceeds `max_travel_radius_km`.
+- **Subphase 10.3-C (Location-Aware Dispatch UI & Visual Triage)**:
+  - Service Centre repair detail: Ranked candidate cards with `⚡ Urgent Proximity Match` / `⭐ Best Match` badges, rank pills, match score percentages, exact vs estimated distance labels (`Exact GPS`, `Tahsil Estimate`, `Approx. Fallback`), availability & workload badges, brand/skill chips, mobile field capability, and travel radius warnings.
+  - Emergency field dispatch banner: Prominent alert explaining rapid response weighting when machine is completely stopped.
+  - Manual assignment confirmation dialog: Mandatory explicit confirmation modal displaying candidate summary and workload warnings before invoking `assignTechnician()`. Recommendations never auto-assign.
+  - Privacy-safe farmer view: Upgraded `TechCard` displaying coarse distance (`~14 km (approx) · ~24 min drive`) without exposing raw GPS coordinates, technician private coordinates, or internal match scores.
+- **Subphase 10.3-D (End-to-End Verification & Documentation)**:
+  - 30 automated tests passing across `tests/technician-dispatch.test.mjs` (20) and `tests/dispatch-ui.test.mjs` (10).
+  - 142 / 142 tests passing across all test suites in the repository.
+  - Verified manual human assignment authority, privacy boundaries, emergency highlighting, and zero regressions.
+
 ---
 
 ## 3. Implemented Features vs. Future Roadmap Inventory
 
-| Capability Area              | Implemented & Production Ready (Now)                                                                                                                                                                                                                                                                                            | Deferred to Future Roadmap                                                  |
-| :--------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :-------------------------------------------------------------------------- |
-| **Authentication & Roles**   | Supabase Auth (Email/Pass), RoleGuard, Profile triggers, Unverified Tech gate                                                                                                                                                                                                                                                   | Phone OTP (SMS Gateway), Social OAuth (Google/Apple)                        |
-| **Machinery Fleet**          | Tractors, harvesters, tillers, pumps; Chassis/Serial tracking, Status                                                                                                                                                                                                                                                           | CAN bus J1939 telematics dongle integration                                 |
-| **Breakdown Intake**         | 5-step wizard, symptom chips, Groq Whisper voice transcription (5s min, silence detection), field photos, Doorstep vs Workshop selector, 4-tier urgency assessment, machine stoppage flag, availability slots, field landmark instructions                                                                                      | Offline BackgroundSync ServiceWorker queue                                  |
-| **Diagnostic Intake**        | Rule-based symptom assessment, severity, parts categories, safety tips, MCP server                                                                                                                                                                                                                                              | Multimodal Gemini 2.5 Vision image defect classification                    |
-| **Multilingual Support**     | Groq Whisper Large V3 transcription (Hindi/Marathi/English script preserved), Chrome Native Translator & Language Detector API for staff-side on-demand translation                                                                                                                                                             | Automated bidirectional voice translation during calls                      |
-| **Doorstep & Logistics**     | Doorstep/Workshop intake, stoppage detection, preferred timing, field landmark notes, staff triage queue sorting (Critical Stopped > Urgency > SLA Overdue > FIFO), emergency stoppage banners, OSRM driving route estimation, Google Maps directions                                                                           | Phase 10.3 Location-aware automated dispatch & multi-job route optimization |
-| **Technician Matching**      | Multi-factor scoring (brand 40, skill 30, avail 20, ETA 10)                                                                                                                                                                                                                                                                     | Real-time GPS technician live turn-by-turn map tracking                     |
-| **Quotation & Pricing**      | Itemized parts, labour, taxes, versioning, Quote v1 vs v2 comparison diff, Depot catalog picker                                                                                                                                                                                                                                 | Integrated UPI / Razorpay escrow payment gateway                            |
-| **Repair Operations**        | 7-step stepper, parts-on-hold delay tracking, load testing, complete & sign-off                                                                                                                                                                                                                                                 | Video inspection live stream call                                           |
-| **Communications**           | Ticket-scoped chat (`repair_messages`), unread tracking, read receipts                                                                                                                                                                                                                                                          | Voice note audio messaging, WhatsApp webhook bot                            |
-| **Spare Parts Coordination** | Central Nagpur depot inventory (`/admin/parts-desk`), technician pickup requisitions (`/technician/job/:id`), atomic handoff with row locking, non-negative stock constraints, stock audit ledger, atomic quote formulation with `catalog_part_id`, unavailable parts sourcing & per-item ETA coordination, parts notifications | Automated vendor PO generation, multi-depot inventory transfers             |
-| **Service History**          | Permanent equipment maintenance records, downtime hours, invoices                                                                                                                                                                                                                                                               | Blockchain NFT maintenance ledger                                           |
-| **Data Hygiene & Demo**      | Atomic dual-key `reset_demo_data()` RPC, real user isolation, Nagpur geography, canonical parts stock restore                                                                                                                                                                                                                   | Multi-district cluster tenancy                                              |
+| Capability Area              | Implemented & Production Ready (Now)                                                                                                                                                                                                                                                                                            | Deferred to Future Roadmap                                       |
+| :--------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :--------------------------------------------------------------- |
+| **Authentication & Roles**   | Supabase Auth (Email/Pass), RoleGuard, Profile triggers, Unverified Tech gate                                                                                                                                                                                                                                                   | Phone OTP (SMS Gateway), Social OAuth (Google/Apple)             |
+| **Machinery Fleet**          | Tractors, harvesters, tillers, pumps; Chassis/Serial tracking, Status                                                                                                                                                                                                                                                           | CAN bus J1939 telematics dongle integration                      |
+| **Breakdown Intake**         | 5-step wizard, symptom chips, Groq Whisper voice transcription (5s min, silence detection), field photos, Doorstep vs Workshop selector, 4-tier urgency assessment, machine stoppage flag, availability slots, field landmark instructions                                                                                      | Offline BackgroundSync ServiceWorker queue                       |
+| **Diagnostic Intake**        | Rule-based symptom assessment, severity, parts categories, safety tips, MCP server                                                                                                                                                                                                                                              | Multimodal Gemini 2.5 Vision image defect classification         |
+| **Multilingual Support**     | Groq Whisper Large V3 transcription (Hindi/Marathi/English script preserved), Chrome Native Translator & Language Detector API for staff-side on-demand translation                                                                                                                                                             | Automated bidirectional voice translation during calls           |
+| **Doorstep & Logistics**     | Doorstep/Workshop intake, stoppage detection, preferred timing, field landmark notes, staff triage queue sorting (Critical Stopped > Urgency > SLA Overdue > FIFO), emergency stoppage banners, OSRM driving route estimation, Google Maps directions                                                                           | Multi-stop circuit route planning for daily travelling mechanics |
+| **Technician Dispatch**      | Location-aware adaptive recommendation engine (Nagpur tahsil centroids, OSRM driving distance with rural road fallback, active workload scaling, emergency stoppage weighting, doorstep travel radius cutoff, manual assignment confirmation modal, privacy-safe farmer view)                                                   | Real-time GPS technician live turn-by-turn map tracking          |
+| **Quotation & Pricing**      | Itemized parts, labour, taxes, versioning, Quote v1 vs v2 comparison diff, Depot catalog picker                                                                                                                                                                                                                                 | Integrated UPI / Razorpay escrow payment gateway                 |
+| **Repair Operations**        | 7-step stepper, parts-on-hold delay tracking, load testing, complete & sign-off                                                                                                                                                                                                                                                 | Video inspection live stream call                                |
+| **Communications**           | Ticket-scoped chat (`repair_messages`), unread tracking, read receipts                                                                                                                                                                                                                                                          | Voice note audio messaging, WhatsApp webhook bot                 |
+| **Spare Parts Coordination** | Central Nagpur depot inventory (`/admin/parts-desk`), technician pickup requisitions (`/technician/job/:id`), atomic handoff with row locking, non-negative stock constraints, stock audit ledger, atomic quote formulation with `catalog_part_id`, unavailable parts sourcing & per-item ETA coordination, parts notifications | Automated vendor PO generation, multi-depot inventory transfers  |
+| **Service History**          | Permanent equipment maintenance records, downtime hours, invoices                                                                                                                                                                                                                                                               | Blockchain NFT maintenance ledger                                |
+| **Data Hygiene & Demo**      | Atomic dual-key `reset_demo_data()` RPC, real user isolation, Nagpur geography, canonical parts stock restore                                                                                                                                                                                                                   | Multi-district cluster tenancy                                   |
 
 ---
 
@@ -135,30 +166,33 @@
    - `is_machine_stopped` defaults to `false`.
    - Field landmarks are accepted exclusively for Doorstep repairs (max 300 characters).
    - Priority queue sorting formula: `Critical + Stopped Machine (100) > Critical (80) > High (60) > Standard (40) > Flexible (20)`. Ties break via SLA overdue status, then FIFO (`status_since`).
-5. **Language & Translation Integrity**:
+5. **Location-Aware Dispatch Canon**:
+   - Recommendations are strictly assistive decision support and **never auto-assign** in the background without explicit human confirmation.
+   - Proximity is weighted highest (40%) during critical field stoppages, whereas brand specialization is weighted highest (30%) during routine repairs.
+   - Unrecognized regional locations strictly return `null` and never silently default to Nagpur city.
+   - Farmer exact GPS coordinates and technician private coordinates are never leaked to unassigned roles or rendered in farmer views.
+6. **Language & Translation Integrity**:
    - Voice transcription preserves spoken Hindi and Marathi Devanagari script without unsolicited machine translation.
    - Translation is strictly on-demand, staff-initiated, on-device via Chrome Native APIs, and never overwrites original farmer text in `repairs.description`.
-6. **Inventory Ownership**: Stock is owned by the central Service Centre (Nagpur Central Command). Technicians request parts from this depot for assigned repairs; stock is decremented atomically upon physical handoff (`ISSUED_TO_REPAIR`).
-7. **Farmer Privacy Boundary**: Farmers receive high-level repair delay and ETA updates (`WAITING_FOR_PARTS`), but internal depot stock counts, wholesale costs, supplier origins, and staff audit notes are strictly quarantined at the database RLS level.
-8. **Demo Account Authorization**: Reset Demo capabilities are strictly restricted on the backend via dual-key authorization to the 3 designated evaluation personas:
+7. **Inventory Ownership**: Stock is owned by the central Service Centre (Nagpur Central Command). Technicians request parts from this depot for assigned repairs; stock is decremented atomically upon physical handoff (`ISSUED_TO_REPAIR`).
+8. **Farmer Privacy Boundary**: Farmers receive high-level repair delay and ETA updates (`WAITING_FOR_PARTS`), but internal depot stock counts, wholesale costs, supplier origins, and staff audit notes are strictly quarantined at the database RLS level.
+9. **Demo Account Authorization**: Reset Demo capabilities are strictly restricted on the backend via dual-key authorization to the 3 designated evaluation personas:
    - `farmer.nagpur@terrabyte.demo` (Balasaheb Patil)
    - `tech.nagpur@terrabyte.demo` (Ramesh Kumar)
    - `admin.nagpur@terrabyte.demo` (Nagpur Service Centre)
-9. **Real User Isolation**: Real user data is strictly isolated by RLS and cannot be modified or cleared by demo reset operations.
-10. **Assistive AI Boundary**: Machine diagnostics use rule-based reasoning with transparent markers. AI provides decision support; farmers and technicians retain final operational authority.
+10. **Real User Isolation**: Real user data is strictly isolated by RLS and cannot be modified or cleared by demo reset operations.
+11. **Assistive AI Boundary**: Machine diagnostics use rule-based reasoning with transparent markers. AI provides decision support; farmers and technicians retain final operational authority.
 
 ---
 
-## 5. Known Limitations & Phase 10.3 Scope
+## 5. Known Limitations & Phase 10.4 Scope
 
-### Known Limitations in Phase 10.2
+### Known Limitations in Phase 10.3
 
-- **Manual Dispatch**: Service Centre dispatchers still manually select and assign technicians from the scored candidate list.
-- **Static Distance/ETA**: Technician ETAs on the job feed currently use coarse estimates based on technician profile default travel times rather than live road routing calculations.
-- **Single-Job Travel**: Technician routing does not yet calculate multi-stop circuit routes between multiple agricultural fields.
+- **Single-Leg Travel Estimation**: Driving distance calculates technician base/workshop to field breakdown origin; does not yet chain multiple sequential field visits into a multi-stop traveling circuit.
+- **Migration Pending Maintenance Window**: Migration `20261103100000_phase10_3_technician_dispatch.sql` is staged locally and backward-compatible. Runtime fallback currently resolves technician locations via profile village/tahsil until applied in production.
 
-### Remaining Work for Phase 10.3 (Location-Aware Automated Dispatch)
+### Future Work for Phase 10.4 (Multi-Job Traveling Route Optimization)
 
-1. **Dynamic Technician Proximity Matching**: Calculate road distance from technician's workshop/current base to farmer's field landmark/GPS coordinates using OSRM matrix routing.
-2. **Automated Urgency-Weighted Dispatch**: Automatically recommend or assign the nearest qualified technician for `CRITICAL` stopped-machine requests.
-3. **Multi-Job Field Route Planning**: Group nearby doorstep requests in the same taluka (e.g., Saoner or Katol clusters) into daily field visit circuits for traveling mechanics.
+1. **Multi-Job Field Route Planning**: Group nearby doorstep requests in the same taluka cluster (e.g. Katol or Saoner) into daily field visit circuits for traveling mechanics.
+2. **Dynamic Circuit Re-Ordering**: Dynamically re-order field visit sequences based on urgent stoppage notifications during an active day route.

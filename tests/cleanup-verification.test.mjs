@@ -185,3 +185,160 @@ test("reset_demo_data migration enforces 3-persona dual-key checks and does not 
   assert.ok(!sql.includes("TB-8898"), "Must not reference deleted demo ticket TB-8898");
   assert.ok(!sql.includes("TB-8841"), "Must not recreate sample ticket TB-8841");
 });
+
+// 5. Verify every DELETE in reset_demo_data contains an explicit, scoped non-trivial WHERE clause
+test("reset_demo_data contains explicit non-trivial WHERE clauses on all deletions and scopes strictly to demo records", () => {
+  const migrationPath = path.resolve(
+    "supabase/migrations/20261028110000_phase8b_cleanup_reset_demo_rpc.sql"
+  );
+  const sql = fs.readFileSync(migrationPath, "utf8");
+
+  // Find all DELETE statements
+  const deleteMatches = sql.match(/DELETE\s+FROM\s+[a-zA-Z0-9_.]+/gi) || [];
+  assert.ok(deleteMatches.length >= 6, "Must contain DELETE statements");
+
+  for (const match of deleteMatches) {
+    const after = sql.slice(sql.indexOf(match));
+    const nextSemicolon = after.indexOf(";");
+    const stmt = after.slice(0, nextSemicolon);
+
+    // 1. Must contain WHERE clause
+    assert.ok(
+      stmt.includes("WHERE"),
+      `DELETE statement must contain WHERE clause for safeupdate compliance: "${match}"`
+    );
+
+    // 2. Must not contain trivial all-matching predicates
+    assert.ok(
+      !stmt.includes("WHERE id IS NOT NULL"),
+      `DELETE statement must not use trivial 'WHERE id IS NOT NULL': "${stmt}"`
+    );
+    assert.ok(
+      !stmt.includes("WHERE 1=1") && !stmt.includes("WHERE true"),
+      `DELETE statement must not use trivial match-all predicates: "${stmt}"`
+    );
+
+    // 3. Must be scoped to demo UUIDs or demo repair IDs
+    assert.ok(
+      stmt.includes("v_demo_repair_ids") ||
+        stmt.includes("v_demo_farmer_id"),
+      `DELETE statement must be scoped strictly to demo repair IDs or demo farmer: "${stmt}"`
+    );
+  }
+
+  // 4. Verify that repair identification strictly rejects matching by technician_id
+  assert.ok(
+    !sql.includes("OR technician_id = v_demo_tech_id"),
+    "repair_requests scoping must NEVER match by technician_id to prevent deleting real user tickets assigned to Ramesh"
+  );
+
+  // 5. Verify child deletions do not match by author or technician indiscriminately
+  assert.ok(
+    !sql.includes("OR author_id IN (v_demo_farmer_id"),
+    "repair_notes deletion must not match by author_id outside of demo repair IDs"
+  );
+  assert.ok(
+    !sql.includes("OR created_by_id IN (v_demo_farmer_id"),
+    "repair_timeline deletion must not match by created_by_id outside of demo repair IDs"
+  );
+  assert.ok(
+    !sql.includes("OR technician_id = v_demo_tech_id"),
+    "quotes deletion must not match by technician_id outside of demo repair IDs"
+  );
+
+  // 6. Verify notifications delete uses correct column recipient_user_id
+  assert.ok(
+    sql.includes("recipient_user_id = v_demo_farmer_id"),
+    "notifications deletion must use recipient_user_id column"
+  );
+
+  // Verify empty demo tables guard: bypasses child deletions if no demo repairs exist
+  assert.ok(
+    sql.includes("IF v_demo_repair_ids IS NOT NULL AND array_length(v_demo_repair_ids, 1) > 0 THEN"),
+    "Must safely guard and skip repair child deletions when no demo repairs exist"
+  );
+});
+
+// 6. Verify Phase 9.3 forward migration contains explicit non-trivial WHERE clauses, safeupdate compliance, and deterministic baseline
+test("Phase 9.3 forward migration reset_demo_data contains explicit non-trivial WHERE clauses, safeupdate compliance, and deterministic baseline", () => {
+  const migrationPath = path.resolve(
+    "supabase/migrations/20261031153000_phase9_3_safe_scoped_reset_demo_rpc.sql"
+  );
+  assert.ok(fs.existsSync(migrationPath), "Phase 9.3 migration file must exist");
+  const sql = fs.readFileSync(migrationPath, "utf8");
+
+  // Find all DELETE statements
+  const deleteMatches = sql.match(/DELETE\s+FROM\s+[a-zA-Z0-9_.]+/gi) || [];
+  assert.ok(deleteMatches.length >= 8, "Must contain at least 8 DELETE statements in forward migration");
+
+  for (const match of deleteMatches) {
+    const after = sql.slice(sql.indexOf(match));
+    const nextSemicolon = after.indexOf(";");
+    const stmt = after.slice(0, nextSemicolon);
+
+    // 1. Must contain WHERE clause
+    assert.ok(
+      stmt.includes("WHERE"),
+      `DELETE statement must contain WHERE clause for safeupdate compliance: "${match}"`
+    );
+
+    // 2. Must not contain trivial all-matching predicates
+    assert.ok(
+      !stmt.includes("WHERE id IS NOT NULL"),
+      `DELETE statement must not use trivial 'WHERE id IS NOT NULL': "${stmt}"`
+    );
+    assert.ok(
+      !stmt.includes("WHERE 1=1") && !stmt.includes("WHERE true"),
+      `DELETE statement must not use trivial match-all predicates: "${stmt}"`
+    );
+
+    // 3. Must be scoped to demo UUIDs, demo repair IDs, demo quote IDs, or Nagpur Service Centre
+    assert.ok(
+      stmt.includes("v_demo_repair_ids") ||
+        stmt.includes("v_demo_quote_ids") ||
+        stmt.includes("v_demo_farmer_id") ||
+        stmt.includes("v_demo_admin_id"),
+      `DELETE statement must be scoped strictly to demo entities: "${stmt}"`
+    );
+  }
+
+  // 4. Verify repair identification strictly rejects matching by technician_id
+  assert.ok(
+    !sql.includes("OR technician_id = v_demo_tech_id"),
+    "repair_requests scoping must NEVER match by technician_id"
+  );
+
+  // 5. Verify child deletions do not match by author or technician indiscriminately
+  assert.ok(
+    !sql.includes("OR author_id IN (v_demo_farmer_id"),
+    "repair_notes deletion must not match by author_id outside of demo repair IDs"
+  );
+  assert.ok(
+    !sql.includes("OR created_by_id IN (v_demo_farmer_id"),
+    "repair_timeline deletion must not match by created_by_id outside of demo repair IDs"
+  );
+
+  // 6. Verify notifications delete uses correct column recipient_user_id
+  assert.ok(
+    sql.includes("recipient_user_id = v_demo_farmer_id"),
+    "notifications deletion must use recipient_user_id column"
+  );
+
+  // 7. Verify empty demo tables guard
+  assert.ok(
+    sql.includes("IF v_demo_repair_ids IS NOT NULL AND array_length(v_demo_repair_ids, 1) > 0 THEN"),
+    "Must safely guard and skip repair child deletions when no demo repairs exist"
+  );
+
+  // 8. Verify canonical baseline quantities
+  assert.ok(sql.includes("'0433171'"), "Must seed canonical nozzle 0433171");
+  assert.ok(sql.includes("'005556958R1'"), "Must seed canonical filter 005556958R1");
+  assert.ok(sql.includes("'AL120788'"), "Must seed canonical seal kit AL120788");
+  assert.ok(sql.includes("'HY-GARD-15W30'"), "Must seed canonical oil HY-GARD-15W30");
+  assert.ok(sql.includes("'26243171'"), "Must seed canonical starter 26243171");
+
+  // 9. Verify tractor hours reset
+  assert.ok(sql.includes("1240"), "Must restore JD 5050D hours (1240)");
+  assert.ok(sql.includes("3120"), "Must restore Mahindra 575 DI hours (3120)");
+  assert.ok(sql.includes("890"), "Must restore Swaraj 744 FE hours (890)");
+});

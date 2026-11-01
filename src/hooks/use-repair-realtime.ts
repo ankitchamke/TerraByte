@@ -17,6 +17,32 @@ export interface UseRepairTicketRealtimeOptions {
   debounceMs?: number | undefined;
 }
 
+type GlobalBusListener = (msg: { event: string; payload: any }) => void;
+const globalBusListeners = new Set<GlobalBusListener>();
+let globalBusChannelInstance: any = null;
+
+function ensureGlobalBusChannel() {
+  if (globalBusChannelInstance) return;
+  try {
+    // Shared bus channel delivers cross-session broadcast signals (tb-realtime-bus / tb-bus- dispatcher)
+    globalBusChannelInstance = supabase.channel("tb-realtime-bus");
+    globalBusChannelInstance
+      .on("broadcast", { event: "part_handoff" }, (event: any) => {
+        globalBusListeners.forEach((listener) => listener({ event: "part_handoff", payload: event?.payload }));
+      })
+      .on("broadcast", { event: "part_eta_updated" }, (event: any) => {
+        globalBusListeners.forEach((listener) => listener({ event: "part_eta_updated", payload: event?.payload }));
+      })
+      .subscribe((status: string) => {
+        if (status === "CHANNEL_ERROR") {
+          console.warn("[TerraByte Realtime] Global bus channel error, polling remains active.");
+        }
+      });
+  } catch (busErr) {
+    console.warn("[TerraByte Realtime] Global bus subscription warning:", busErr);
+  }
+}
+
 /**
  * Reusable ticket-scoped Supabase Realtime synchronization hook for TerraByte.
  *
@@ -55,58 +81,164 @@ export function useRepairTicketRealtime({
   useEffect(() => {
     if (!enabled || !repairId) return;
 
-    const cleanId = repairId.trim();
-    if (!isUuid(cleanId)) {
-      // Postgres Changes column filters require the exact UUID primary/foreign key
-      return;
+    let isCancelled = false;
+    let channel: any = null;
+    let demoBc: BroadcastChannel | null = null;
+
+    // 1. Cross-tab synchronization for Demo Store & local state mutations
+    if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
+      try {
+        demoBc = new BroadcastChannel("terrabyte_demo_store_sync");
+        demoBc.onmessage = (event) => {
+          if (event.data?.type === "STORE_UPDATED") {
+            triggerDebounced();
+          }
+        };
+      } catch (bcErr) {
+        console.warn("[TerraByte Realtime] BroadcastChannel init warning:", bcErr);
+      }
     }
 
-    // Ticket-scoped channel name ensures dedicated socket multiplexing without collisions
-    const channelName = `ticket-realtime-${cleanId}`;
+    const handleStorage = (event: StorageEvent) => {
+      if (
+        !event.key ||
+        event.key === "terrabyte-demo-v1" ||
+        event.key === "terrabyte_demo_store" ||
+        event.key.startsWith("terrabyte") ||
+        event.key.startsWith("tb")
+      ) {
+        triggerDebounced();
+      }
+    };
+    window.addEventListener("storage", handleStorage);
 
-    const channel = supabase
-      .channel(channelName)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "repair_requests",
-          filter: `id=eq.${cleanId}`,
-        },
-        () => {
+    // 2. Global Realtime Broadcast Bus (delivers signals across all sessions, tabs, and incognito windows)
+    ensureGlobalBusChannel();
+    const handleBusEvent: GlobalBusListener = (msg) => {
+      if (msg.event === "part_handoff") {
+        const payload = msg.payload;
+        const targetRepairId = payload?.repairId ? String(payload.repairId).trim().toLowerCase() : null;
+        const currentId = repairId.trim().toLowerCase();
+        if (
+          !targetRepairId ||
+          targetRepairId === currentId ||
+          targetRepairId.endsWith(currentId) ||
+          currentId.endsWith(targetRepairId)
+        ) {
           triggerDebounced();
         }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "quotes",
-          filter: `repair_request_id=eq.${cleanId}`,
-        },
-        () => {
-          triggerDebounced();
+      } else if (msg.event === "part_eta_updated") {
+        triggerDebounced();
+      }
+    };
+    globalBusListeners.add(handleBusEvent);
+
+    const setupSubscription = async () => {
+      try {
+        const rawId = repairId.trim();
+        let resolvedUuid: string | null = null;
+
+        if (isUuid(rawId)) {
+          resolvedUuid = rawId;
+        } else {
+          // Resolve database UUID for human-readable job number (e.g. TB-4651, TB-5653)
+          try {
+            const { data, error } = await supabase
+              .from("repair_requests")
+              .select("id")
+              .eq("job_number", rawId)
+              .maybeSingle();
+
+            if (!error && data?.id && isUuid(data.id)) {
+              resolvedUuid = data.id;
+            }
+          } catch (lookupErr) {
+            console.warn("[TerraByte Realtime] Failed to resolve repair UUID from job number:", lookupErr);
+          }
         }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "repair_timeline",
-          filter: `repair_request_id=eq.${cleanId}`,
-        },
-        () => {
-          triggerDebounced();
+
+        if (isCancelled || !resolvedUuid) return;
+
+        const cleanId = resolvedUuid;
+        // Ticket-scoped unique channel name ensures dedicated socket multiplexing without collisions
+        const channelName = `ticket-realtime-${cleanId}-${Math.random().toString(36).slice(2, 9)}`;
+
+        try {
+          channel = supabase
+            .channel(channelName)
+            .on(
+              "postgres_changes",
+              {
+                event: "*",
+                schema: "public",
+                table: "repair_requests",
+                filter: `id=eq.${cleanId}`,
+              },
+              () => {
+                triggerDebounced();
+              }
+            )
+            .on(
+              "postgres_changes",
+              {
+                event: "*",
+                schema: "public",
+                table: "quotes",
+                filter: `repair_request_id=eq.${cleanId}`,
+              },
+              () => {
+                triggerDebounced();
+              }
+            )
+            .on(
+              "postgres_changes",
+              {
+                event: "*",
+                schema: "public",
+                table: "quote_items",
+              },
+              () => {
+                triggerDebounced();
+              }
+            )
+            .on(
+              "postgres_changes",
+              {
+                event: "*",
+                schema: "public",
+                table: "repair_timeline",
+                filter: `repair_request_id=eq.${cleanId}`,
+              },
+              () => {
+                triggerDebounced();
+              }
+            )
+            .on(
+              "postgres_changes",
+              {
+                event: "*",
+                schema: "public",
+                table: "service_centre_part_requests",
+                filter: `repair_request_id=eq.${cleanId}`,
+              },
+              () => {
+                triggerDebounced();
+              }
+            )
+            .subscribe((status) => {
+              if (status === "CHANNEL_ERROR") {
+                console.warn(`[TerraByte Realtime] Channel error on ${channelName}, fallback to authoritative polling.`);
+              }
+            });
+        } catch (err) {
+          console.warn(`[TerraByte Realtime] Failed to subscribe channel ${channelName}:`, err);
         }
-      )
-      .subscribe((status) => {
-        if (status === "CHANNEL_ERROR") {
-          console.warn(`[TerraByte Realtime] Channel error on ${channelName}, fallback to authoritative polling.`);
-        }
-      });
+      } catch (globalErr) {
+        console.warn("[TerraByte Realtime] Global setup subscription error:", globalErr);
+      }
+    };
+
+    void setupSubscription();
 
     // Window focus listener ensures fresh state if reconnecting or returning from another tab
     const handleFocus = () => {
@@ -118,12 +250,28 @@ export function useRepairTicketRealtime({
     window.addEventListener("focus", handleFocus);
 
     return () => {
+      isCancelled = true;
       if (timerRef.current) {
         clearTimeout(timerRef.current);
         timerRef.current = null;
       }
       window.removeEventListener("focus", handleFocus);
-      void supabase.removeChannel(channel);
+      window.removeEventListener("storage", handleStorage);
+      globalBusListeners.delete(handleBusEvent);
+      if (demoBc) {
+        try {
+          demoBc.close();
+        } catch {
+          // Ignore
+        }
+      }
+      if (channel) {
+        try {
+          void supabase.removeChannel(channel);
+        } catch (cleanupErr) {
+          console.warn("[TerraByte Realtime] Cleanup error:", cleanupErr);
+        }
+      }
     };
   }, [repairId, enabled, triggerDebounced]);
 }
@@ -186,16 +334,22 @@ export function useRepairListRealtime({
       changeConfig.filter = filter;
     }
 
-    const channel = supabase
-      .channel(channelName)
-      .on("postgres_changes", changeConfig, () => {
-        triggerDebounced();
-      })
-      .subscribe((status) => {
-        if (status === "CHANNEL_ERROR") {
-          console.warn(`[TerraByte Realtime] Channel error on ${channelName}, fallback to authoritative polling.`);
-        }
-      });
+    const uniqueChannelName = `${channelName}-${Math.random().toString(36).slice(2, 9)}`;
+    let channel: any = null;
+    try {
+      channel = supabase
+        .channel(uniqueChannelName)
+        .on("postgres_changes", changeConfig, () => {
+          triggerDebounced();
+        })
+        .subscribe((status) => {
+          if (status === "CHANNEL_ERROR") {
+            console.warn(`[TerraByte Realtime] Channel error on ${uniqueChannelName}, fallback to authoritative polling.`);
+          }
+        });
+    } catch (err) {
+      console.warn(`[TerraByte Realtime] Failed to subscribe channel ${uniqueChannelName}:`, err);
+    }
 
     const handleFocus = () => {
       if (typeof document !== "undefined" && document.visibilityState !== "visible") {
@@ -211,7 +365,136 @@ export function useRepairListRealtime({
         timerRef.current = null;
       }
       window.removeEventListener("focus", handleFocus);
-      void supabase.removeChannel(channel);
+      if (channel) {
+        try {
+          void supabase.removeChannel(channel);
+        } catch {
+          // Ignore
+        }
+      }
     };
   }, [channelName, filter, enabled, triggerDebounced]);
+}
+
+export interface UsePartsDeskRealtimeOptions {
+  onUpdate: () => void | Promise<void>;
+  enabled?: boolean | undefined;
+  debounceMs?: number | undefined;
+}
+
+/**
+ * Service Centre Parts Desk realtime hook.
+ * Keeps technician requisitions, inventory counts, audit movement logs,
+ * and commercial sales current without manual page reload.
+ */
+export function usePartsDeskRealtime({
+  onUpdate,
+  enabled = true,
+  debounceMs = 300,
+}: UsePartsDeskRealtimeOptions): void {
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const callbackRef = useRef(onUpdate);
+  callbackRef.current = onUpdate;
+
+  const triggerDebounced = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+    }
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      void callbackRef.current();
+    }, debounceMs);
+  }, [debounceMs]);
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    let demoBc: BroadcastChannel | null = null;
+    if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
+      try {
+        demoBc = new BroadcastChannel("terrabyte_demo_store_sync");
+        demoBc.onmessage = (event) => {
+          if (event.data?.type === "STORE_UPDATED") {
+            triggerDebounced();
+          }
+        };
+      } catch (bcErr) {
+        console.warn("[TerraByte Realtime] BroadcastChannel init warning:", bcErr);
+      }
+    }
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === "terrabyte_demo_store" || event.key?.startsWith("tb_")) {
+        triggerDebounced();
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+
+    const channelName = `parts-desk-realtime-${Math.random().toString(36).slice(2, 9)}`;
+    let channel: any = null;
+    try {
+      channel = supabase
+        .channel(channelName)
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "service_centre_part_requests" },
+          () => triggerDebounced(),
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "service_centre_parts" },
+          () => triggerDebounced(),
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "service_centre_stock_audit" },
+          () => triggerDebounced(),
+        )
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "service_centre_part_sales" },
+          () => triggerDebounced(),
+        )
+        .subscribe((status) => {
+          if (status === "CHANNEL_ERROR") {
+            console.warn(
+              `[TerraByte Realtime] Channel error on ${channelName}, fallback to authoritative polling.`,
+            );
+          }
+        });
+    } catch (err) {
+      console.warn(`[TerraByte Realtime] Failed to subscribe channel ${channelName}:`, err);
+    }
+
+    const handleFocus = () => {
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") {
+        return;
+      }
+      triggerDebounced();
+    };
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("storage", handleStorage);
+      if (demoBc) {
+        try {
+          demoBc.close();
+        } catch {
+          // Ignore
+        }
+      }
+      if (channel) {
+        try {
+          void supabase.removeChannel(channel);
+        } catch {
+          // Ignore
+        }
+      }
+    };
+  }, [enabled, triggerDebounced]);
 }

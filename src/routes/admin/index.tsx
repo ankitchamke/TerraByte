@@ -1,6 +1,15 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { AlertOctagon, AlertTriangle, ChevronDown, ChevronRight, ChevronUp, Users } from "lucide-react";
+import { AlertOctagon, AlertTriangle, ChevronDown, ChevronRight, ChevronUp, Package, Users, Wrench } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Card, DemoTag, StatusPill } from "@/components/tb";
 import { ago } from "@/lib/tb-store";
 import { useAuth } from "@/lib/auth";
@@ -68,6 +77,10 @@ function Admin() {
   const [error, setError] = useState<string | null>(null);
   const [f, setF] = useState<F>("All");
   const [showAllTechs, setShowAllTechs] = useState(false);
+  const [chooserTech, setChooserTech] = useState<{
+    techName: string;
+    jobs: RepairRequestDetail[];
+  } | null>(null);
   const [, tick] = useState(0);
 
   const hasLoadedRef = useRef(false);
@@ -150,15 +163,33 @@ function Admin() {
   const INITIAL_TECHS_COUNT = 4;
 
   const techWorkload = technicians.map((t) => {
-    const load = open.filter((r) => r.technician_id === t.profile_id).length;
+    const techJobs = open.filter((r) => r.technician_id === t.profile_id);
     return {
       t,
-      load,
+      load: techJobs.length,
+      jobs: techJobs,
       techName: t.profile?.full_name || "Technician",
       workshopName: t.workshop_name || "Workshop",
       isAvailable: Boolean(t.is_available),
     };
   });
+
+  const handleTechCardClick = (tw: { techName: string; load: number; jobs: RepairRequestDetail[] }) => {
+    if (tw.load === 0) {
+      toast.info(`No active jobs currently assigned to ${tw.techName}.`);
+      return;
+    }
+    if (tw.load === 1 && tw.jobs[0]) {
+      const job = tw.jobs[0];
+      const targetId = job.job_number || job.id;
+      void nav({
+        to: "/admin/repair/$id",
+        params: { id: targetId },
+      });
+      return;
+    }
+    setChooserTech({ techName: tw.techName, jobs: tw.jobs });
+  };
 
   const sortedTechWorkload = [...techWorkload].sort((a, b) => b.load - a.load);
   const maxLoad = Math.max(1, ...sortedTechWorkload.map((tw) => tw.load));
@@ -195,7 +226,14 @@ function Admin() {
           </p>
           <h1 className="text-3xl font-bold">Repair operations</h1>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <Link
+            to="/admin/parts-desk"
+            className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-border px-3 text-sm font-semibold hover:bg-muted"
+          >
+            <Package className="h-4 w-4 text-primary" />
+            Parts Desk
+          </Link>
           <Link
             to="/admin/technicians"
             className="inline-flex h-10 items-center gap-1 rounded-lg border border-border px-3 text-sm font-semibold hover:bg-muted"
@@ -376,7 +414,28 @@ function Admin() {
             {visibleTechs.map((tw) => (
               <div
                 key={tw.t.id}
-                className="flex flex-col justify-between rounded-xl border border-border bg-muted/30 p-3 shadow-xs hover:border-primary/40 transition-colors"
+                role="button"
+                tabIndex={tw.load > 0 ? 0 : undefined}
+                aria-label={
+                  tw.load === 1
+                    ? `Open active job for ${tw.techName}`
+                    : tw.load > 1
+                      ? `Choose from ${tw.load} active jobs for ${tw.techName}`
+                      : `${tw.techName} (0 active jobs)`
+                }
+                onClick={() => handleTechCardClick(tw)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    handleTechCardClick(tw);
+                  }
+                }}
+                className={cn(
+                  "flex flex-col justify-between rounded-xl border border-border bg-muted/30 p-3 shadow-xs transition-all text-left",
+                  tw.load > 0
+                    ? "cursor-pointer hover:border-primary/60 hover:bg-muted/50 hover:shadow-sm"
+                    : "cursor-default opacity-80"
+                )}
               >
                 <div>
                   <div className="flex items-start justify-between gap-2">
@@ -407,9 +466,14 @@ function Admin() {
 
                 <div className="mt-3 pt-2 border-t border-border/50">
                   <div className="flex items-baseline justify-between text-xs">
-                    <span className="font-medium text-foreground">
+                    <span className="font-medium text-foreground flex items-center">
                       <b className="font-display text-sm font-bold text-primary mr-1">{tw.load}</b>
-                      {tw.load === 1 ? "active job" : "active jobs"}
+                      <span>{tw.load === 1 ? "active job" : "active jobs"}</span>
+                      {tw.load > 0 && (
+                        <span className="text-[11px] font-semibold text-primary ml-1.5">
+                          {tw.load === 1 ? "· Open →" : "· Choose →"}
+                        </span>
+                      )}
                     </span>
                     <span className="font-mono text-[11px] text-muted-foreground">
                       {Math.round((tw.load / Math.max(1, open.length)) * 100)}% load
@@ -431,6 +495,105 @@ function Admin() {
               </div>
             ))}
           </div>
+
+          {/* Active Job Chooser Dialog for Technicians with Multiple Active Jobs */}
+          <Dialog
+            open={Boolean(chooserTech)}
+            onOpenChange={(open) => !open && setChooserTech(null)}
+          >
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Wrench className="h-5 w-5 text-primary" />
+                  <span>{chooserTech?.techName}'s Active Jobs</span>
+                </DialogTitle>
+                <DialogDescription>
+                  Select an active repair job to open and inspect details, dispatch status, or quotes.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="max-h-[360px] space-y-2 overflow-y-auto py-2 pr-1">
+                {chooserTech?.jobs.map((job) => {
+                  const targetId = job.job_number || job.id;
+                  return (
+                    <div
+                      key={job.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => {
+                        setChooserTech(null);
+                        void nav({
+                          to: "/admin/repair/$id",
+                          params: { id: targetId },
+                        });
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          setChooserTech(null);
+                          void nav({
+                            to: "/admin/repair/$id",
+                            params: { id: targetId },
+                          });
+                        }
+                      }}
+                      className="group flex flex-col gap-1.5 rounded-xl border border-border bg-card p-3 transition-colors hover:border-primary hover:bg-muted/40 cursor-pointer text-left"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono text-xs font-bold text-primary group-hover:underline">
+                          {job.job_number || job.id}
+                        </span>
+                        <span
+                          className={cn(
+                            "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase",
+                            job.status === "IN_PROGRESS"
+                              ? "bg-primary/10 text-primary"
+                              : job.status === "WAITING_FOR_PARTS"
+                                ? "bg-warning/20 text-warning-foreground"
+                                : "bg-muted text-muted-foreground"
+                          )}
+                        >
+                          {job.status.replace(/_/g, " ")}
+                        </span>
+                      </div>
+
+                      <p className="font-semibold text-sm text-foreground">
+                        {job.equipment?.make} {job.equipment?.model}
+                        {job.equipment?.serial_number
+                          ? ` (${job.equipment.serial_number})`
+                          : ""}
+                      </p>
+
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                        <span>
+                          Farmer:{" "}
+                          <strong className="text-foreground">
+                            {job.farmer?.full_name || "Balasaheb Patil"}
+                          </strong>
+                        </span>
+                        <span>
+                          · Location:{" "}
+                          <strong className="text-foreground">
+                            {job.location || "Field site"}
+                          </strong>
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <DialogFooter>
+                <button
+                  type="button"
+                  onClick={() => setChooserTech(null)}
+                  className="rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-muted"
+                >
+                  Cancel
+                </button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
       )}
 

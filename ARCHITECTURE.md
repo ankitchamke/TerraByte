@@ -92,7 +92,7 @@ flowchart TD
 
 ## 3. Relational Schema & Domain Data Model
 
-The application operates across 11 core relational tables in the `public` PostgreSQL schema:
+The application operates across 14 core relational tables in the `public` PostgreSQL schema (including 3 Phase 9.1 spare-parts coordination tables):
 
 ```mermaid
 erDiagram
@@ -212,6 +212,48 @@ erDiagram
         text work_performed
         int downtime_hours
     }
+
+    SERVICE_CENTRE_PARTS {
+        uuid id PK
+        string part_number
+        string name
+        string category
+        string compatible_models
+        int stock_quantity
+        numeric unit_price
+        string location
+        timestamptz updated_at
+    }
+
+    SERVICE_CENTRE_PART_REQUESTS {
+        uuid id PK
+        uuid repair_request_id FK
+        uuid part_id FK
+        uuid technician_id FK
+        int quantity
+        string status
+        text notes
+        timestamptz requested_at
+        timestamptz handed_off_at
+        uuid handed_off_by FK
+    }
+
+    SERVICE_CENTRE_STOCK_AUDIT {
+        uuid id PK
+        uuid part_id FK
+        int change_quantity
+        int previous_stock
+        int new_stock
+        string reason
+        uuid changed_by FK
+        uuid repair_request_id FK
+        uuid part_request_id FK
+        timestamptz created_at
+    }
+
+    SERVICE_CENTRE_PARTS ||--o{ SERVICE_CENTRE_PART_REQUESTS : requested_in
+    SERVICE_CENTRE_PARTS ||--o{ SERVICE_CENTRE_STOCK_AUDIT : audited_in
+    REPAIR_REQUESTS ||--o{ SERVICE_CENTRE_PART_REQUESTS : requisitions
 ```
 
 ---
@@ -242,6 +284,14 @@ Every table enforces PostgreSQL Row Level Security. Security boundaries are eval
 | **`service_history`** | SELECT | Equipment owner, repairing technician, or Admin. |
 | | INSERT | Service Centre Admin or Technician upon repair completion sign-off. |
 | | UPDATE / DELETE| **BLOCKED**: Service history records are permanent, immutable ledgers. |
+| **`service_centre_parts`** | SELECT | `admin` and `technician`. Farmers are strictly denied (42501/0 rows). |
+| | INSERT / UPDATE / DELETE | `admin` only. Depot stock modifications require valid reasons. |
+| **`service_centre_part_requests`** | SELECT | `admin` and assigned `technician` for the associated repair request. Farmers denied. |
+| | INSERT | `admin` or assigned `technician` on active in-flight repairs. |
+| | UPDATE | `admin` (status progression/handoff) or assigned `technician` (cancel own `PENDING` request). |
+| | DELETE | `admin` only. Automatically cascades on repair request deletion. |
+| **`service_centre_stock_audit`** | SELECT | `admin` only. |
+| | INSERT / UPDATE / DELETE | **BLOCKED** from direct table writes; inserted strictly via `SECURITY DEFINER` atomic functions. |
 
 ---
 
@@ -383,3 +433,47 @@ Given unpredictable 3G/4G connectivity in rural agricultural talukas:
 - **Visual Feedback & Optimistic Cues**: Immediate visual state updates upon clicking actions while network queries resolve.
 - **Bounded Payloads**: Active-only query filtering (`{ activeOnly: true }`) eliminates historical records from initial page loads, reducing mobile data transfer by over 90%.
 - **High-Contrast Agricultural Design**: Optimized for direct sunlight usage in the field using high-contrast typography, large touch targets (min 48px), and distinct color semantics (`forestgreen`, `soil amber`, `warning crimson`).
+
+
+---
+
+## 6. Spare-Parts Inventory & Sourcing Coordination Architecture (Phase 9.1)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Tech as Ramesh Kumar (Technician)
+    participant Workbench as Job Workbench (/technician/job/:id)
+    participant PartsDB as PostgreSQL service_centre_parts
+    participant ReqDB as PostgreSQL service_centre_part_requests
+    participant Desk as Parts Desk (/admin/parts-desk)
+    actor Admin as Nagpur Service Centre (Admin)
+    participant AuditDB as PostgreSQL service_centre_stock_audit
+
+    Note over Tech,Desk: Phase 9.1 Depot Pickup Requisition Flow
+    Tech->>Workbench: Inspects parts catalog & checks depot availability
+    Tech->>ReqDB: requestServiceCentrePart(repairId, partId, qty, notes)
+    ReqDB-->>Desk: Real-time requisition signal
+    Note over Admin,Desk: Admin verifies stock on physical shelf
+    Admin->>Desk: Clicks "Confirm Handoff"
+    Desk->>PartsDB: confirm_service_centre_part_handoff(requestId)
+    Note over PartsDB: SELECT ... FOR UPDATE (Row Lock)
+    Note over PartsDB: Verifies stock >= requested qty
+    PartsDB->>PartsDB: Decrements stock (stock_quantity - qty)
+    PartsDB->>ReqDB: Sets status = 'HANDED_OFF', handed_off_at = now()
+    PartsDB->>AuditDB: Logs immutable audit row (previous, new, reason, user)
+    Desk-->>Tech: Dispatches notification: "Parts handed off for TB-xxxx"
+```
+
+### Key Architectural Invariants:
+1. **Stock Non-Negativity & Concurrency Protection**:
+   - Database constraint: `CHECK (stock_quantity >= 0)`.
+   - Atomic procedure: `confirm_service_centre_part_handoff` acquires exclusive row locks (`FOR UPDATE`) on the target part record.
+   - If two technicians compete for the remaining inventory, the second transaction safely receives an exception (`Insufficient stock`) without corrupting state or leaving negative stock.
+2. **Strict Farmer Privacy Quarantine**:
+   - Farmers have zero access to depot inventory records, wholesale acquisition rates, or staff internal notes at the PostgreSQL RLS policy level.
+   - The farmer repair detail view (`/farmer/repair/:id`) never queries `service_centre_parts` or requisition tables.
+   - Delay notices surfaced to farmers rely solely on the high-level `WAITING_FOR_PARTS` repair status with customer-facing delay descriptions and ETAs.
+3. **Repair State Machine Decoupling**:
+   - Requisitioning parts does not silently advance or pause repair tickets.
+   - Technicians explicitly control repair pauses via `WAITING_FOR_PARTS` when parts are unavailable, and resume to `IN_PROGRESS` when parts are picked up and work resumes.

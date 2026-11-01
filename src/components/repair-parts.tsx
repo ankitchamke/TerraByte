@@ -72,7 +72,12 @@ export function QuoteTable({ q }: { q: Quote }) {
   return (
     <div>
       <div className="space-y-2">
-        {q.parts.map((p, i) => (
+        {(!q.parts || q.parts.length === 0) && (
+          <div className="rounded-xl border border-dashed border-border bg-muted/30 p-2.5 text-center text-xs text-muted-foreground">
+            Labour-only quote (no parts or supplies itemized)
+          </div>
+        )}
+        {(q.parts || []).map((p, i) => (
           <div key={i} className="flex items-start justify-between gap-3 rounded-xl bg-muted/60 p-3 text-sm">
             <div className="min-w-0"><p className="font-semibold">{p.name}</p><p className="font-mono text-xs text-muted-foreground">{p.spec}</p><p className="text-xs text-muted-foreground">Qty {p.qty} × {inr(p.price)} · {p.source}</p></div>
             <p className="shrink-0 font-semibold">{inr(p.qty * p.price)}</p>

@@ -20,6 +20,7 @@ import { Route as ServiceCentreRouteImport } from './routes/service-centre'
 import { Route as TechnicianRouteImport } from './routes/technician'
 import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
+import { Route as AdminPartsDeskRouteImport } from './routes/admin/parts-desk'
 import { Route as AdminTechniciansRouteImport } from './routes/admin/technicians'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ApiRouteEstimateRouteImport } from './routes/api/route-estimate'
@@ -91,6 +92,11 @@ const Char91DotwellKnownChar93OauthProtectedResourceRoute =
 const AdminIndexRoute = AdminIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminPartsDeskRoute = AdminPartsDeskRouteImport.update({
+  id: '/parts-desk',
+  path: '/parts-desk',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminTechniciansRoute = AdminTechniciansRouteImport.update({
@@ -185,6 +191,7 @@ export interface FileRoutesByFullPath {
   '/service-centre': typeof ServiceCentreRoute
   '/technician': typeof TechnicianRouteWithChildren
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/admin/parts-desk': typeof AdminPartsDeskRoute
   '/admin/technicians': typeof AdminTechniciansRoute
   '/api/health': typeof ApiHealthRoute
   '/api/route-estimate': typeof ApiRouteEstimateRoute
@@ -211,6 +218,7 @@ export interface FileRoutesByTo {
   '/profile': typeof ProfileRoute
   '/service-centre': typeof ServiceCentreRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/admin/parts-desk': typeof AdminPartsDeskRoute
   '/admin/technicians': typeof AdminTechniciansRoute
   '/api/health': typeof ApiHealthRoute
   '/api/route-estimate': typeof ApiRouteEstimateRoute
@@ -241,6 +249,7 @@ export interface FileRoutesById {
   '/service-centre': typeof ServiceCentreRoute
   '/technician': typeof TechnicianRouteWithChildren
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/admin/parts-desk': typeof AdminPartsDeskRoute
   '/admin/technicians': typeof AdminTechniciansRoute
   '/api/health': typeof ApiHealthRoute
   '/api/route-estimate': typeof ApiRouteEstimateRoute
@@ -272,6 +281,7 @@ export interface FileRouteTypes {
     | '/service-centre'
     | '/technician'
     | '/.well-known/oauth-protected-resource'
+    | '/admin/parts-desk'
     | '/admin/technicians'
     | '/api/health'
     | '/api/route-estimate'
@@ -298,6 +308,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/service-centre'
     | '/.well-known/oauth-protected-resource'
+    | '/admin/parts-desk'
     | '/admin/technicians'
     | '/api/health'
     | '/api/route-estimate'
@@ -327,6 +338,7 @@ export interface FileRouteTypes {
     | '/service-centre'
     | '/technician'
     | '/.well-known/oauth-protected-resource'
+    | '/admin/parts-desk'
     | '/admin/technicians'
     | '/api/health'
     | '/api/route-estimate'
@@ -442,6 +454,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/admin/'
       preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/parts-desk': {
+      id: '/admin/parts-desk'
+      path: '/parts-desk'
+      fullPath: '/admin/parts-desk'
+      preLoaderRoute: typeof AdminPartsDeskRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/technicians': {
@@ -560,12 +579,14 @@ declare module '@tanstack/react-router' {
 }
 
 interface AdminRouteChildren {
+  AdminPartsDeskRoute: typeof AdminPartsDeskRoute
   AdminTechniciansRoute: typeof AdminTechniciansRoute
   AdminIndexRoute: typeof AdminIndexRoute
   AdminRepairIdRoute: typeof AdminRepairIdRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
+  AdminPartsDeskRoute: AdminPartsDeskRoute,
   AdminTechniciansRoute: AdminTechniciansRoute,
   AdminIndexRoute: AdminIndexRoute,
   AdminRepairIdRoute: AdminRepairIdRoute,

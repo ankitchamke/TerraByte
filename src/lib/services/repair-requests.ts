@@ -2,6 +2,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Database, Json } from "@/integrations/supabase/types";
 import { createNotification } from "./notifications";
 import { createServiceHistoryFromRepair } from "./service-history";
+import { requestServiceCentrePart } from "./parts-desk";
 
 export type RepairRequestRow = Database["public"]["Tables"]["repair_requests"]["Row"];
 export type RepairTimelineRow = Database["public"]["Tables"]["repair_timeline"]["Row"];
@@ -1119,12 +1120,19 @@ export interface WaitForPartsInput {
   eta: string;
   revisedCompletion?: string;
   note?: string;
+  partId?: string | null;
+  requestId?: string | null;
+  quantity?: number;
 }
 
 export interface UpdatePartsEtaInput {
   eta: string;
-  revisedCompletion?: string;
-  note?: string;
+  revisedCompletion?: string | undefined;
+  note?: string | undefined;
+  partId?: string | null | undefined;
+  requestId?: string | null | undefined;
+  itemId?: string | null | undefined;
+  partName?: string | null | undefined;
 }
 
 export interface CompleteRepairInput {
@@ -1519,16 +1527,95 @@ export async function waitForParts(
     );
   }
 
+  // If a Service Centre catalog part is requested, delegate to requestServiceCentrePart for requisition,
+  // duplicate prevention, and quote integration.
+  if (input.partId) {
+    try {
+      await requestServiceCentrePart({
+        repairRequestId: repair.id,
+        partId: input.partId,
+        quantity: input.quantity || 1,
+        notes: input.reason.trim(),
+        eta: input.eta.trim(),
+        revisedCompletion: input.revisedCompletion?.trim() || undefined,
+        farmerNote: input.note?.trim() || undefined,
+      });
+      const { data: refreshedRepair } = await supabase
+        .from("repair_requests")
+        .select("*")
+        .eq("id", repair.id)
+        .single();
+      return refreshedRepair || repair;
+    } catch (err: unknown) {
+      console.warn("[TerraByte] requestServiceCentrePart in waitForParts fallback:", err);
+    }
+  }
+
   const now = new Date().toISOString();
-  const partsHoldData = {
+  const existingHold = (repair.parts_hold as Record<string, unknown>) ?? {};
+  const rawItems = existingHold["items"];
+  const rawPart = existingHold["part"] as string | undefined;
+  const existingItems: any[] = Array.isArray(rawItems)
+    ? [...rawItems]
+    : rawPart
+      ? [
+          {
+            id:
+              (existingHold["requestId"] as string | undefined) ||
+              (existingHold["partId"] as string | undefined) ||
+              rawPart,
+            part: rawPart,
+            reason: (existingHold["reason"] as string | undefined) || "Waiting for delivery",
+            eta: (existingHold["eta"] as string | undefined) || "TBD",
+            revisedCompletion: existingHold["revisedCompletion"] as string | null | undefined,
+            status: "PENDING",
+            since: (existingHold["since"] as string | undefined) || now,
+          },
+        ]
+      : [];
+
+  const newItem = {
+    id: input.requestId || input.partId || input.part.trim(),
     part: input.part.trim(),
+    partId: input.partId || null,
+    quantity: input.quantity || 1,
+    reason: input.reason.trim(),
+    eta: input.eta.trim(),
+    revisedCompletion: input.revisedCompletion?.trim() || null,
+    status: "PENDING",
+    since: now,
+  };
+
+  const existingIdx = existingItems.findIndex(
+    (it) =>
+      (newItem.id && it.id === newItem.id) ||
+      (newItem.partId && it.partId === newItem.partId) ||
+      (it.part && it.part.toLowerCase() === newItem.part.toLowerCase()),
+  );
+
+  if (existingIdx >= 0) {
+    existingItems[existingIdx] = { ...existingItems[existingIdx], ...newItem };
+  } else {
+    existingItems.push(newItem);
+  }
+
+  const pendingItems = existingItems.filter((it) => it.status === "PENDING");
+  const summaryPart =
+    pendingItems.length > 1
+      ? `${pendingItems.length} parts (${pendingItems.map((i: any) => i.part).join(", ")})`
+      : input.part.trim();
+
+  const partsHoldData = {
+    part: summaryPart,
     reason: input.reason.trim(),
     eta: input.eta.trim(),
     revisedCompletion: input.revisedCompletion?.trim() || null,
     note: input.note?.trim() || null,
-    since: now,
+    since: (existingHold["since"] as string | undefined) || now,
     updated_at: now,
     resolvedAt: null,
+    items: existingItems,
+    allPartsArrived: pendingItems.length === 0,
   };
 
   let updateQuery = supabase
@@ -1621,17 +1708,45 @@ export async function updatePartsEta(
     throw new Error("Unauthorized: You are not assigned to this repair ticket.");
   }
 
-  if (repair.status !== "WAITING_FOR_PARTS") {
+  const permittedStatuses: RepairStatus[] = [
+    "WAITING_FOR_PARTS",
+    "IN_PROGRESS",
+    "QUOTE_PENDING",
+    "ACCEPTED",
+  ];
+  if (!permittedStatuses.includes(repair.status)) {
     throw new Error(
-      `Cannot update parts ETA: Ticket is in '${repair.status}' status (must be WAITING_FOR_PARTS).`,
+      `Cannot update parts ETA: Ticket is in '${repair.status}' status.`,
     );
   }
 
   const currentHold = (repair.parts_hold as Record<string, unknown>) ?? {};
+  const rawCurrentItems = currentHold["items"];
+  const existingItems: any[] = Array.isArray(rawCurrentItems) ? [...rawCurrentItems] : [];
+
+  if (input.requestId || input.partId || input.itemId || input.partName) {
+    const targetKey = (input.requestId || input.partId || input.itemId || input.partName)!.toLowerCase();
+    const matchIdx = existingItems.findIndex(
+      (it) =>
+        (it.id && it.id.toLowerCase() === targetKey) ||
+        (it.partId && it.partId.toLowerCase() === targetKey) ||
+        (it.part && it.part.toLowerCase() === targetKey) ||
+        (it.part && it.part.toLowerCase().includes(targetKey)),
+    );
+    if (matchIdx >= 0) {
+      existingItems[matchIdx] = { ...existingItems[matchIdx], eta: input.eta.trim() };
+    }
+  } else {
+    existingItems.forEach((it) => {
+      if (it.status === "PENDING") it.eta = input.eta.trim();
+    });
+  }
+
   const updatedHold: Record<string, unknown> = {
     ...currentHold,
     eta: input.eta.trim(),
     updated_at: new Date().toISOString(),
+    ...(existingItems.length > 0 ? { items: existingItems } : {}),
   };
   if (input.revisedCompletion !== undefined) {
     updatedHold["revisedCompletion"] = input.revisedCompletion.trim() || null;
@@ -1646,7 +1761,7 @@ export async function updatePartsEta(
       parts_hold: updatedHold as Json,
     })
     .eq("id", repair.id)
-    .eq("status", "WAITING_FOR_PARTS");
+    .in("status", permittedStatuses);
 
   if (profile.role !== "admin") {
     updateQuery = updateQuery.eq("technician_id", profile.id);
@@ -1682,6 +1797,27 @@ export async function updatePartsEta(
     });
   } catch (notifErr) {
     console.warn("[TerraByte] Warning: Failed to send parts ETA notification:", notifErr);
+  }
+
+  // Broadcast realtime update to open tabs
+  try {
+    void supabase.channel("tb-realtime-bus").send({
+      type: "broadcast",
+      event: "part_eta_updated",
+      payload: { repairId: repair.id },
+    });
+  } catch {
+    // Non-fatal
+  }
+
+  if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
+    try {
+      const bc = new BroadcastChannel("terrabyte_demo_store_sync");
+      bc.postMessage({ type: "STORE_UPDATED", event: "part_eta_updated", repairId: repair.id });
+      bc.close();
+    } catch {
+      // Non-fatal
+    }
   }
 
   return updated;
@@ -1832,6 +1968,45 @@ export async function startTesting(repairRequestId: string): Promise<RepairReque
   if (repair.status !== "IN_PROGRESS") {
     throw new Error(
       `Cannot start testing: Ticket is in '${repair.status}' status (must be IN_PROGRESS).`,
+    );
+  }
+
+  // Verify no unapproved pending quote exists (Requirement 3)
+  const { data: pendingQuote } = await supabase
+    .from("quotes")
+    .select("id, version")
+    .eq("repair_request_id", repair.id)
+    .eq("status", "PENDING")
+    .maybeSingle();
+
+  if (pendingQuote) {
+    throw new Error(
+      `Cannot start testing: Quote v${pendingQuote.version} is awaiting farmer approval. Repair work is locked.`,
+    );
+  }
+
+  // Verify all blocking parts holds/requisitions are cleared (authoritative service_centre_part_requests check)
+  const partsHold = (repair.parts_hold as Record<string, unknown>) || {};
+  const blockerItems = Array.isArray(partsHold["items"])
+    ? (partsHold["items"] as Array<Record<string, unknown>>)
+    : [];
+  let hasPendingParts = blockerItems.some((it) => it["status"] === "PENDING");
+  try {
+    const { data: dbPartRequests } = await supabase
+      .from("service_centre_part_requests")
+      .select("id, status")
+      .eq("repair_request_id", repair.id);
+
+    if (dbPartRequests && dbPartRequests.length > 0) {
+      hasPendingParts = dbPartRequests.some((pr) => pr.status === "PENDING");
+    }
+  } catch {
+    // Non-fatal query fallback
+  }
+
+  if (hasPendingParts) {
+    throw new Error(
+      "Cannot start testing: Blocking parts requisitions are awaiting delivery/handoff.",
     );
   }
 
@@ -2049,6 +2224,45 @@ export async function completeRepair(
   if (repair.status !== "IN_PROGRESS") {
     throw new Error(
       `Cannot complete repair: Ticket is in '${repair.status}' status (must be IN_PROGRESS).`,
+    );
+  }
+
+  // Verify no unapproved pending quote exists (Requirement 3)
+  const { data: pendingQuote } = await supabase
+    .from("quotes")
+    .select("id, version")
+    .eq("repair_request_id", repair.id)
+    .eq("status", "PENDING")
+    .maybeSingle();
+
+  if (pendingQuote) {
+    throw new Error(
+      `Cannot complete repair: Quote v${pendingQuote.version} is awaiting farmer approval. Repair work is locked.`,
+    );
+  }
+
+  // Verify all blocking parts holds/requisitions are cleared (authoritative service_centre_part_requests check)
+  const partsHold = (repair.parts_hold as Record<string, unknown>) || {};
+  const blockerItems = Array.isArray(partsHold["items"])
+    ? (partsHold["items"] as Array<Record<string, unknown>>)
+    : [];
+  let hasPendingParts = blockerItems.some((it) => it["status"] === "PENDING");
+  try {
+    const { data: dbPartRequests } = await supabase
+      .from("service_centre_part_requests")
+      .select("id, status")
+      .eq("repair_request_id", repair.id);
+
+    if (dbPartRequests && dbPartRequests.length > 0) {
+      hasPendingParts = dbPartRequests.some((pr) => pr.status === "PENDING");
+    }
+  } catch {
+    // Non-fatal query fallback
+  }
+
+  if (hasPendingParts) {
+    throw new Error(
+      "Cannot complete repair: Blocking parts requisitions are awaiting delivery/handoff.",
     );
   }
 

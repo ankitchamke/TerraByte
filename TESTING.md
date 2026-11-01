@@ -310,3 +310,71 @@ No phase promotion or production deployment may occur if:
 5. Farmer dashboards render mock data or cross-contaminate data across different farmers.
 6. TypeScript errors (`tsc --noEmit`) or Vite build failures exist.
 7. Secrets or credentials are committed in repository files, or health/telemetry probes bypass authentication or RLS.
+
+---
+
+### Phase 9.1 & 9.2 — Service Centre Parts Pickup, Stock Movements & Sales Verification Suite
+
+| Test ID | Test Case | Target State / Persona | Action / Steps | Expected Result | Verification Method | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :---: |
+| **P9.1-01** | Database schema, constraints, location column, safeupdate compliance & idempotent upsert | `public.service_centre_parts`, `service_centre_part_requests`, `service_centre_stock_audit` | Inspect migration `20261029100000_phase9_1_parts_pickup.sql` | Tables created with `stock_quantity >= 0`, `unit_price >= 0`, `quantity > 0`, `location` column, status check `('PENDING', 'HANDED_OFF', 'CANCELLED')`, audit foreign keys, safeupdate `WHERE` clauses, and idempotent `ON CONFLICT (part_number) DO UPDATE SET`. | `tests/parts-desk.test.mjs` & SQL schema inspection | **PASS** |
+| **P9.1-02** | Strict RLS: Technician assignment authorization & Farmer isolation | Unassigned tech, assigned tech, farmer, admin | Test SELECT, INSERT, UPDATE across roles | Farmers denied SELECT/mutation; technicians view catalog and request parts only for repairs assigned to them; admins have full management. | `tests/parts-desk.test.mjs` & RLS policy audit | **PASS** |
+| **P9.1-03** | Canonical five demo parts population, verified equipment compatibility & depot locations | Demo parts store & catalog | Query parts via `getDemoParts()` | Exactly 5 canonical parts returned (`0433171`, `005556958R1`, `AL120788`, `HY-GARD-15W30`, `26243171`) with verified compatibility and shelf locations. | `tests/parts-desk.test.mjs` catalog completeness test | **PASS** |
+| **P9.1-04** | Multi-field technician part search & filtering across name, SKU, spec, category, model, and shelf location | Technician search modal | Search query simulation | Matches across tractor model, SKU, spec, and physical shelf location. | `tests/parts-desk.test.mjs` multi-field search test | **PASS** |
+| **P9.1-05** | Deterministic stock quantity restoration & request/audit log purging on Reset Demo | `reset_demo_data()` / `resetDemo()` | Trigger demo reset | Baseline stock quantities restored deterministically (3, 8, 2, 5, 1); in-flight requisitions, sales, and stock audits purged. | `tests/parts-desk.test.mjs` deterministic reset test | **PASS** |
+| **P9.1-06** | Concurrency-safe atomic handoff, on-hand vs pending request separation & audit logging | Handoff workflow | Request part, inspect on-hand stock prior to handoff, confirm handoff | On-hand quantity remains distinct until physical handoff; handoff decrements stock atomically; records audit log with `ISSUED_TO_REPAIR`; repeated handoff blocked. | `tests/parts-desk.test.mjs` atomic handoff test | **PASS** |
+| **P9.1-07** | Farmer privacy boundary quarantine from internal stock, costs, and requisitions | Farmer Repair Detail (`/farmer/repair/:id`) | Inspect route code & DOM queries | Zero imports or queries to `service_centre_parts` or requests; zero rendering of depot stock, unit costs, or audit remarks. | `tests/parts-desk.test.mjs` route code audit | **PASS** |
+| **P9.2-01** | Stock movement ledger, receiving deliveries & returns handling | Stock audit ledger, `receiveStock`, `returnPart` | Receive supplier delivery and return unused repair parts | Stock increments correctly, immutable `RECEIVED` and `RETURNED` movements logged with references, net sales adjusted. | `tests/parts-desk.test.mjs` movement test | **PASS** |
+| **P9.2-02** | Quote quantity caps: cumulative sales across requisitions never exceed approved quote lines | Requisitions against approved quote | Multiple requisitions against approved quote line item | Sales capped at approved quote quantity; excess requisitions remain issued to repair without exceeding approved quote line items. | `tests/parts-desk.test.mjs` quota cap test | **PASS** |
+| **P9.2-03** | Repair/service location display in Parts Desk | Parts Desk `/admin/parts-desk` | View technician requests and sales ledger | Displays linked Phase 8 repair location (`Katol, Nagpur`) clearly distinguished from depot shelf location. | `tests/parts-desk.test.mjs` location test | **PASS** |
+| **P9.2-04** | Reset Demo safeupdate compliance & demo-only scoping | `reset_demo_data()` RPC & migrations | Inspect SQL statements in migrations `20261028110000`, `20261029100000`, and `20261029120000` | Every DELETE statement contains an explicit, non-trivial WHERE clause; rejects `WHERE id IS NOT NULL`, `1=1`, `true`; scopes strictly to demo UUIDs and repair IDs. | `tests/cleanup-verification.test.mjs` & `tests/parts-desk.test.mjs` | **PASS** |
+| **P9.2-05** | Reset Demo idempotency, empty table safety & baseline canonical restoration | Store reset & RPC logic | Repeatedly invoke `resetDemo()` sequentially | Deterministically restores canonical 5 parts with stock counts (3, 8, 2, 5, 1); purges requisitions, movements, and sales; bypasses child table deletions safely when demo repair array is empty; zero errors on repeat execution. | `tests/parts-desk.test.mjs` repeat reset test | **PASS** |
+| **P9.2-06** | Real user data preservation & Reset Demo confirmation modal copy alignment | Shell `<AlertDialog />` in `src/components/tb.tsx` | Inspect modal copy and RLS/store boundaries | Modal explicitly clarifies that demo tickets, quotes, parts requisitions, and audit logs are reset while real user data and user accounts are preserved. | `tests/parts-desk.test.mjs` modal verification test | **PASS** |
+
+---
+
+## 9. Phase 9 Manual QA Walkthrough (For Owner Execution)
+
+> [!IMPORTANT]
+> The automated test suite has passed. The following manual QA steps are documented for the owner's verification and have **not** been marked as passed.
+
+### Step 1: Service Centre Parts Desk Overview & Location Verification
+1. Log in as **Nagpur Service Centre** (`admin.nagpur@terrabyte.demo` / `terrabyte2026`).
+2. Navigate to `/admin/parts-desk`:
+   - Under **Technician Requests**, verify each request card displays:
+     - **Service Location**: e.g., *"Katol, Nagpur"* (distinguished from part shelf location).
+     - **Depot Shelf Location**: e.g., *"Depot Shelf A-02"*.
+   - Switch to **Repair Sales & History**:
+     - Verify metrics labeled as **"Fulfilled Quote Value (Sales)"**.
+     - Verify informational disclosure: *"Parts physically issued against farmer-approved quotes. Payment collection is not processed."*
+     - Verify sales table displays linked repair job number and service location.
+
+### Step 2: Receive Stock Delivery
+1. In `/admin/parts-desk` $\rightarrow$ **Depot Inventory**, click **"Receive Stock"**.
+2. Select part (e.g., Fuel Filter), enter quantity `5`, reason *"Supplier delivery"*, and confirm.
+3. Verify on-hand stock increments from 8 to 13 and a `RECEIVED` movement is recorded.
+
+### Step 3: Return Unused Component
+1. In `/admin/parts-desk` $\rightarrow$ **Depot Inventory**, click **"Return Part"**.
+2. Enter repair reference, part, quantity `1`, reason *"Unused spare"*, and confirm.
+3. Verify stock increments and a `RETURNED` movement is recorded.
+
+### Step 4: Technician Parts Requisition from Active Job
+1. Sign in as **Ramesh Kumar** (`tech.nagpur@terrabyte.demo` / `terrabyte2026`).
+2. Open active job on `/technician`.
+3. In QuoteBuilder, verify the new **"Select from Depot Catalog"** dropdown allows selecting listed parts with pre-filled prices and specifications.
+4. Verify RouteEstimateCard and directions button are functional with Phase 8 OSRM routing.
+
+### Step 5: Service Centre Admin Reset Demo Verification
+1. Sign in as **Nagpur Service Centre** (`admin.nagpur@terrabyte.demo` / `terrabyte2026`).
+2. In the top navigation bar, click the circular reset icon (**RotateCcw** / "Reset demo data").
+3. Inspect the confirmation dialog:
+   - Verify heading reads: *"Reset demo data? — TerraByte Demonstration Environment"*.
+   - Verify description states: *"This will clear demo repair tickets, quotes, parts requisitions, and audit logs. Balasaheb's 3 tractors are restored to Operational and Service Centre depot stock is reset to the 5 canonical parts. Any newly created demo records will be removed. Real user data is not affected. Your demo account and login credentials will remain active."*
+4. Click **"Reset Demo Data"**:
+   - Verify the button shows the loading spinner and *"Resetting Demo…"*.
+   - Verify that NO error banner *"DELETE requires a WHERE clause"* appears.
+   - Verify a green success toast appears: *"Demo environment reset to baseline."*
+   - Verify modal closes and the page cleanly re-renders with 0 active tickets, 5 canonical parts (3, 8, 2, 5, 1 on hand), 0 pending requisitions, and 0 stock audit movements.
+5. Click the circular reset icon and confirm **a second consecutive time** (idempotency check):
+   - Verify it resets cleanly again with zero errors.

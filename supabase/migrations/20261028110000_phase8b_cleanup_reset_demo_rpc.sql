@@ -18,6 +18,10 @@ AS $$
 DECLARE
   v_caller_id uuid;
   v_caller_email text;
+  v_demo_farmer_id CONSTANT uuid := '00000000-0000-0000-0001-000000000001'::uuid;
+  v_demo_tech_id CONSTANT uuid := '00000000-0000-0000-0002-000000000001'::uuid;
+  v_demo_admin_id CONSTANT uuid := '00000000-0000-0000-0003-000000000001'::uuid;
+  v_demo_repair_ids uuid[] := '{}';
   v_repairs_deleted int := 0;
   v_equipment_reset int := 0;
   v_notifications_deleted int := 0;
@@ -53,35 +57,75 @@ BEGIN
   END IF;
 
   -- ============================================================================
-  -- 2. PURGE ALL SAMPLE REPAIR REQUESTS & DEPENDENT DATA
-  -- Foreign key ON DELETE CASCADE automatically prunes quotes, quote_items,
-  -- repair_notes, repair_timeline, repair_messages, and repair_dispatch_locations.
+  -- 2. IDENTIFY DEMO REPAIRS (EXCLUSIVELY DEMO-OWNED: BALASAHEB'S TRACTORS & REPAIRS)
+  -- Real user repair tickets are never matched, even if Ramesh Kumar is assigned.
   -- ============================================================================
-  WITH deleted_repairs AS (
-    DELETE FROM public.repair_requests
-    RETURNING id
-  )
-  SELECT count(*) INTO v_repairs_deleted FROM deleted_repairs;
-
-  -- Explicit safety purge for any orphaned child records
-  DELETE FROM public.repair_dispatch_locations;
-  DELETE FROM public.repair_messages;
-  DELETE FROM public.repair_notes;
-  DELETE FROM public.repair_timeline;
-  DELETE FROM public.quote_items;
-  DELETE FROM public.quotes;
+  SELECT COALESCE(ARRAY_AGG(id), '{}') INTO v_demo_repair_ids
+  FROM public.repair_requests
+  WHERE farmer_id = v_demo_farmer_id
+     OR equipment_id IN (
+       SELECT id FROM public.equipment WHERE farmer_id = v_demo_farmer_id
+     );
 
   -- ============================================================================
-  -- 3. PURGE SERVICE HISTORY & NOTIFICATIONS
+  -- 3. SCOPED DELETION OF DEMO REPAIRS & DEPENDENT ACTIVITY
+  -- If no demo repairs exist, safely bypass repair child deletions.
+  -- ============================================================================
+  IF v_demo_repair_ids IS NOT NULL AND array_length(v_demo_repair_ids, 1) > 0 THEN
+    DELETE FROM public.repair_dispatch_locations
+    WHERE repair_request_id = ANY(v_demo_repair_ids);
+
+    DELETE FROM public.repair_messages
+    WHERE repair_request_id = ANY(v_demo_repair_ids);
+
+    DELETE FROM public.repair_notes
+    WHERE repair_request_id = ANY(v_demo_repair_ids);
+
+    DELETE FROM public.repair_timeline
+    WHERE repair_request_id = ANY(v_demo_repair_ids);
+
+    DELETE FROM public.quote_items
+    WHERE quote_id IN (
+      SELECT id FROM public.quotes
+      WHERE repair_request_id = ANY(v_demo_repair_ids)
+    );
+
+    DELETE FROM public.quotes
+    WHERE repair_request_id = ANY(v_demo_repair_ids);
+
+    WITH deleted_repairs AS (
+      DELETE FROM public.repair_requests
+      WHERE id = ANY(v_demo_repair_ids)
+      RETURNING id
+    )
+    SELECT count(*) INTO v_repairs_deleted FROM deleted_repairs;
+  END IF;
+
+  -- ============================================================================
+  -- 4. PURGE DEMO SERVICE HISTORY (ONLY BALASAHEB'S TRACTORS)
   -- ============================================================================
   WITH deleted_history AS (
     DELETE FROM public.service_history
+    WHERE equipment_id IN (
+      SELECT id FROM public.equipment WHERE farmer_id = v_demo_farmer_id
+    )
     RETURNING id
   )
   SELECT count(*) INTO v_service_history_deleted FROM deleted_history;
 
+  -- ============================================================================
+  -- 5. PURGE DEMO NOTIFICATIONS (EXCLUSIVELY DEMO-OWNED)
+  -- ============================================================================
   WITH deleted_notifs AS (
     DELETE FROM public.notifications
+    WHERE recipient_user_id = v_demo_farmer_id
+       OR (
+         v_demo_repair_ids IS NOT NULL AND array_length(v_demo_repair_ids, 1) > 0
+         AND (
+           link_target LIKE '%/repair/' || ANY(SELECT id::text FROM unnest(v_demo_repair_ids) id)
+           OR link_target LIKE '%/job/' || ANY(SELECT id::text FROM unnest(v_demo_repair_ids) id)
+         )
+       )
     RETURNING id
   )
   SELECT count(*) INTO v_notifications_deleted FROM deleted_notifs;

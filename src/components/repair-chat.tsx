@@ -176,29 +176,41 @@ function RepairChatInner({
     void loadMessages();
 
     // Subscribe to realtime changes on repair_messages for this repair
-    const channel = supabase
-      .channel(`repair-chat-${repairId}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "repair_messages",
-        },
-        (payload) => {
-          // If the message belongs to this repair request, refresh
-          const newRow = payload.new as any;
-          if (newRow && (newRow.repair_request_id === repairId || !newRow.repair_request_id)) {
-            void loadMessages();
-          } else {
-            void loadMessages();
+    const channelName = `repair-chat-${repairId}-${Math.random().toString(36).slice(2, 9)}`;
+    let channel: any = null;
+    try {
+      channel = supabase
+        .channel(channelName)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "repair_messages",
+          },
+          (payload) => {
+            // If the message belongs to this repair request, refresh
+            const newRow = payload.new as any;
+            if (newRow && (newRow.repair_request_id === repairId || !newRow.repair_request_id)) {
+              void loadMessages();
+            } else {
+              void loadMessages();
+            }
           }
-        }
-      )
-      .subscribe();
+        )
+        .subscribe();
+    } catch (channelErr) {
+      console.warn("[TerraByte] RepairChat realtime subscription warning:", channelErr);
+    }
 
     return () => {
-      void supabase.removeChannel(channel);
+      if (channel) {
+        try {
+          void supabase.removeChannel(channel);
+        } catch {
+          // Ignore
+        }
+      }
     };
   }, [repairId, loadMessages]);
 

@@ -1,5 +1,16 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { AlertOctagon, AlertTriangle, ChevronDown, ChevronRight, ChevronUp, Package, Users, Wrench } from "lucide-react";
+import {
+  AlertOctagon,
+  AlertTriangle,
+  Building2,
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  Package,
+  Truck,
+  Users,
+  Wrench,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -19,8 +30,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useRepairListRealtime } from "@/hooks/use-repair-realtime";
 import {
   getAdminRepairRequests,
+  normalizeRepairDoorstepUrgency,
+  triageUrgencyComparator,
   type RepairRequestDetail,
 } from "@/lib/services/repair-requests";
+import { AdminTalukaClusters } from "@/components/admin-taluka-clusters";
+import { normalizeNagpurTahsil } from "@/lib/location";
 import {
   getVerifiedTechnicians,
   type VerifiedTechnicianWithProfile,
@@ -81,6 +96,7 @@ function Admin() {
     techName: string;
     jobs: RepairRequestDetail[];
   } | null>(null);
+  const [selectedTahsil, setSelectedTahsil] = useState<string | null>(null);
   const [, tick] = useState(0);
 
   const hasLoadedRef = useRef(false);
@@ -104,10 +120,10 @@ function Admin() {
         setRepairs(repairsData);
         setTechnicians(techsData);
         hasLoadedRef.current = true;
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error("[TerraByte] Failed to load admin operations data:", err);
         if (!hasLoadedRef.current) {
-          setError(err?.message || "Failed to load repair operations");
+          setError(err instanceof Error ? err.message : "Failed to load repair operations");
         }
       } finally {
         setLoading(false);
@@ -139,9 +155,7 @@ function Admin() {
     return () => clearInterval(i);
   }, []);
 
-  const open = repairs.filter(
-    (r) => r.status !== "CANCELLED" && r.status !== "COMPLETED"
-  );
+  const open = repairs.filter((r) => r.status !== "CANCELLED" && r.status !== "COMPLETED");
   const completed = repairs.filter((r) => r.status === "COMPLETED");
   const cancelled = repairs.filter((r) => r.status === "CANCELLED");
   const exceptions = open.filter(checkOverdue);
@@ -152,11 +166,15 @@ function Admin() {
     {
       k: "Active repairs",
       v: open.filter((r) =>
-        ["IN_PROGRESS", "ACCEPTED", "QUOTE_PENDING", "QUOTE_REVISED"].includes(r.status)
+        ["IN_PROGRESS", "ACCEPTED", "QUOTE_PENDING", "QUOTE_REVISED"].includes(r.status),
       ).length,
       tone: "text-primary",
     },
-    { k: "Waiting for parts", v: open.filter(test["Waiting for Parts"]).length, tone: "text-warning-foreground" },
+    {
+      k: "Waiting for parts",
+      v: open.filter(test["Waiting for Parts"]).length,
+      tone: "text-warning-foreground",
+    },
     { k: "Avg. downtime (hrs)", v: "—", tone: "text-foreground" },
   ];
 
@@ -174,7 +192,11 @@ function Admin() {
     };
   });
 
-  const handleTechCardClick = (tw: { techName: string; load: number; jobs: RepairRequestDetail[] }) => {
+  const handleTechCardClick = (tw: {
+    techName: string;
+    load: number;
+    jobs: RepairRequestDetail[];
+  }) => {
     if (tw.load === 0) {
       toast.info(`No active jobs currently assigned to ${tw.techName}.`);
       return;
@@ -197,25 +219,35 @@ function Admin() {
     ? sortedTechWorkload
     : sortedTechWorkload.slice(0, INITIAL_TECHS_COUNT);
 
-  const rows = f === "Completed"
-    ? completed.sort(
-        (a, b) =>
-          new Date(b.status_since || b.created_at).getTime() -
-          new Date(a.status_since || a.created_at).getTime()
-      )
-    : f === "Cancelled"
-    ? cancelled.sort(
-        (a, b) =>
-          new Date(b.status_since || b.created_at).getTime() -
-          new Date(a.status_since || a.created_at).getTime()
-      )
-    : open
-        .filter(test[f])
-        .sort(
+  const baseRows =
+    f === "Completed"
+      ? completed.sort(
           (a, b) =>
-            Number(checkOverdue(b)) - Number(checkOverdue(a)) ||
-            new Date(a.status_since).getTime() - new Date(b.status_since).getTime()
-        );
+            new Date(b.status_since || b.created_at).getTime() -
+            new Date(a.status_since || a.created_at).getTime(),
+        )
+      : f === "Cancelled"
+        ? cancelled.sort(
+            (a, b) =>
+              new Date(b.status_since || b.created_at).getTime() -
+              new Date(a.status_since || a.created_at).getTime(),
+          )
+        : open.filter(test[f]).sort((a, b) => {
+            const urgencyDiff = triageUrgencyComparator(a, b);
+            if (urgencyDiff !== 0) return urgencyDiff;
+            const slaDiff = Number(checkOverdue(b)) - Number(checkOverdue(a));
+            if (slaDiff !== 0) return slaDiff;
+            return new Date(a.status_since).getTime() - new Date(b.status_since).getTime();
+          });
+
+  const rows = baseRows.filter((r) => {
+    if (!selectedTahsil) return true;
+    const tahsil = normalizeNagpurTahsil(r.location);
+    if (selectedTahsil === "Unknown") {
+      return tahsil === null;
+    }
+    return tahsil === selectedTahsil;
+  });
 
   return (
     <div className="space-y-6">
@@ -261,7 +293,10 @@ function Admin() {
           </div>
           <div className="overflow-hidden rounded-2xl border border-border bg-card p-4 space-y-3">
             {[1, 2, 3, 4, 5, 6].map((i) => (
-              <div key={i} className="flex items-center justify-between gap-4 py-2 border-b border-border/40 last:border-0">
+              <div
+                key={i}
+                className="flex items-center justify-between gap-4 py-2 border-b border-border/40 last:border-0"
+              >
                 <Skeleton className="h-4 w-20" />
                 <Skeleton className="h-4 w-32" />
                 <Skeleton className="h-4 w-24 hidden sm:block" />
@@ -274,459 +309,578 @@ function Admin() {
       ) : error ? (
         <Card className="text-destructive">
           <p>Failed to load operations data: {error}</p>
-          <button onClick={() => void loadData()} className="mt-3 inline-block font-semibold underline">
+          <button
+            onClick={() => void loadData()}
+            className="mt-3 inline-block font-semibold underline"
+          >
             Retry
           </button>
         </Card>
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {metrics.map((m) => (
-          <div key={m.k} className="rounded-2xl border border-border bg-card p-4">
-            <p className="text-xs text-muted-foreground">{m.k}</p>
-            <p className={cn("font-display text-4xl font-extrabold", m.tone)}>{m.v}</p>
-          </div>
-        ))}
-      </div>
-      {exceptions.length > 0 && (
-        <div className="rounded-2xl border-2 border-destructive bg-destructive/5 p-4">
-          <p className="mb-2 flex items-center gap-2 font-bold text-destructive">
-            <AlertOctagon className="h-5 w-5" /> {exceptions.length} operational exception
-            {exceptions.length > 1 ? "s" : ""}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {exceptions.map((r) => {
-              const statusSinceMs = new Date(r.status_since).getTime();
-              return (
-                <Link
-                  key={r.id}
-                  to="/admin/repair/$id"
-                  params={{ id: r.job_number || r.id }}
-                  className="rounded-lg bg-card px-3 py-2 text-sm"
-                >
-                  <b className="font-mono">{r.job_number || r.id}</b> ·{" "}
-                  {r.status === "REQUESTED"
-                    ? "unaccepted"
-                    : r.status === "QUOTE_REVISED"
-                    ? "revision awaiting technician"
-                    : r.status.toLowerCase().replace(/_/g, " ")}{" "}
-                  for {ago(statusSinceMs)}
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {cancellationRequests.length > 0 && (
-        <div className="rounded-2xl border-2 border-warning bg-warning/10 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="flex items-center gap-2 font-bold text-warning-foreground">
-              <AlertTriangle className="h-5 w-5" /> {cancellationRequests.length} cancellation request
-              {cancellationRequests.length > 1 ? "s" : ""} pending Service Centre review
-            </p>
-            <button
-              type="button"
-              onClick={() => setF("Cancellation Requests")}
-              className="text-xs font-semibold underline text-warning-foreground hover:opacity-80 cursor-pointer"
-            >
-              Filter queue ({cancellationRequests.length})
-            </button>
-          </div>
-          <div className="mt-2.5 flex flex-wrap gap-2">
-            {cancellationRequests.map((cr) => {
-              const statusSinceMs = new Date(cr.status_since).getTime();
-              const targetId = cr.job_number || cr.id;
-              return (
-                <Link
-                  key={cr.id}
-                  to="/admin/repair/$id"
-                  params={{ id: targetId }}
-                  onClick={(e) => {
-                    if (!e.defaultPrevented && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey) {
-                      e.preventDefault();
-                      void nav({
-                        to: "/admin/repair/$id",
-                        params: { id: targetId },
-                      });
-                    }
-                  }}
-                  className="group flex items-center gap-2 rounded-lg border border-warning/40 bg-card px-3 py-2 text-sm shadow-xs hover:border-warning hover:bg-warning/15 hover:shadow-sm active:scale-[0.99] cursor-pointer transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-warning"
-                >
-                  <b className="font-mono text-foreground underline-offset-2 group-hover:underline">
-                    {targetId}
-                  </b>
-                  <span className="text-muted-foreground">·</span>
-                  <span className="text-xs font-medium text-foreground truncate max-w-[140px]">
-                    {cr.farmer?.full_name || "Farmer"}
-                  </span>
-                  <span className="text-muted-foreground">·</span>
-                  <span className="text-xs text-muted-foreground italic truncate max-w-[180px]">
-                    "{cr.cancellation_reason || "Requested"}"
-                  </span>
-                  <span className="text-xs font-mono text-warning-foreground font-semibold">
-                    {ago(statusSinceMs)}
-                  </span>
-                  <ChevronRight className="h-3.5 w-3.5 text-warning-foreground/70 group-hover:text-warning-foreground group-hover:translate-x-0.5 transition-transform shrink-0" />
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Compact Technician Workload Summary (placed near top of dashboard) */}
-      {sortedTechWorkload.length > 0 && (
-        <div className="space-y-3 rounded-2xl border border-border bg-card p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Users className="h-5 w-5 text-primary" />
-              <h2 className="text-lg font-bold">Technician workload</h2>
-              <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">
-                {sortedTechWorkload.length} active in district
-              </span>
-            </div>
-            {sortedTechWorkload.length > INITIAL_TECHS_COUNT && (
-              <button
-                type="button"
-                onClick={() => setShowAllTechs(!showAllTechs)}
-                className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline cursor-pointer"
-              >
-                {showAllTechs ? (
-                  <>
-                    <ChevronUp className="h-3.5 w-3.5" /> Show top {INITIAL_TECHS_COUNT}
-                  </>
-                ) : (
-                  <>
-                    View all {sortedTechWorkload.length} technicians <ChevronRight className="h-3.5 w-3.5" />
-                  </>
-                )}
-              </button>
-            )}
-          </div>
-
-          <div
-            className={cn(
-              "grid gap-3 sm:grid-cols-2 lg:grid-cols-4",
-              showAllTechs && sortedTechWorkload.length > 8 && "max-h-[420px] overflow-y-auto pr-1"
-            )}
-          >
-            {visibleTechs.map((tw) => (
-              <div
-                key={tw.t.id}
-                role="button"
-                tabIndex={tw.load > 0 ? 0 : undefined}
-                aria-label={
-                  tw.load === 1
-                    ? `Open active job for ${tw.techName}`
-                    : tw.load > 1
-                      ? `Choose from ${tw.load} active jobs for ${tw.techName}`
-                      : `${tw.techName} (0 active jobs)`
-                }
-                onClick={() => handleTechCardClick(tw)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    handleTechCardClick(tw);
-                  }
-                }}
-                className={cn(
-                  "flex flex-col justify-between rounded-xl border border-border bg-muted/30 p-3 shadow-xs transition-all text-left",
-                  tw.load > 0
-                    ? "cursor-pointer hover:border-primary/60 hover:bg-muted/50 hover:shadow-sm"
-                    : "cursor-default opacity-80"
-                )}
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-sm truncate" title={tw.techName}>
-                        {tw.techName}
-                      </p>
-                      <p className="text-xs text-muted-foreground truncate" title={tw.workshopName}>
-                        {tw.workshopName}
-                      </p>
-                    </div>
-                    <span
-                      className={cn(
-                        "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold",
-                        tw.isAvailable ? "bg-success/15 text-success" : "bg-muted text-muted-foreground"
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "h-1.5 w-1.5 rounded-full",
-                          tw.isAvailable ? "bg-success" : "bg-muted-foreground"
-                        )}
-                      />
-                      {tw.isAvailable ? "Online" : "Busy"}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="mt-3 pt-2 border-t border-border/50">
-                  <div className="flex items-baseline justify-between text-xs">
-                    <span className="font-medium text-foreground flex items-center">
-                      <b className="font-display text-sm font-bold text-primary mr-1">{tw.load}</b>
-                      <span>{tw.load === 1 ? "active job" : "active jobs"}</span>
-                      {tw.load > 0 && (
-                        <span className="text-[11px] font-semibold text-primary ml-1.5">
-                          {tw.load === 1 ? "· Open →" : "· Choose →"}
-                        </span>
-                      )}
-                    </span>
-                    <span className="font-mono text-[11px] text-muted-foreground">
-                      {Math.round((tw.load / Math.max(1, open.length)) * 100)}% load
-                    </span>
-                  </div>
-                  <div className="mt-1.5 h-1.5 w-full rounded-full bg-muted overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-primary transition-all duration-300"
-                      style={{
-                        width: `${
-                          tw.load === 0
-                            ? 0
-                            : Math.max(6, Math.min(100, Math.round((tw.load / maxLoad) * 100)))
-                        }%`,
-                      }}
-                    />
-                  </div>
-                </div>
+            {metrics.map((m) => (
+              <div key={m.k} className="rounded-2xl border border-border bg-card p-4">
+                <p className="text-xs text-muted-foreground">{m.k}</p>
+                <p className={cn("font-display text-4xl font-extrabold", m.tone)}>{m.v}</p>
               </div>
             ))}
           </div>
-
-          {/* Active Job Chooser Dialog for Technicians with Multiple Active Jobs */}
-          <Dialog
-            open={Boolean(chooserTech)}
-            onOpenChange={(open) => !open && setChooserTech(null)}
-          >
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle className="flex items-center gap-2">
-                  <Wrench className="h-5 w-5 text-primary" />
-                  <span>{chooserTech?.techName}'s Active Jobs</span>
-                </DialogTitle>
-                <DialogDescription>
-                  Select an active repair job to open and inspect details, dispatch status, or quotes.
-                </DialogDescription>
-              </DialogHeader>
-
-              <div className="max-h-[360px] space-y-2 overflow-y-auto py-2 pr-1">
-                {chooserTech?.jobs.map((job) => {
-                  const targetId = job.job_number || job.id;
+          {exceptions.length > 0 && (
+            <div className="rounded-2xl border-2 border-destructive bg-destructive/5 p-4">
+              <p className="mb-2 flex items-center gap-2 font-bold text-destructive">
+                <AlertOctagon className="h-5 w-5" /> {exceptions.length} operational exception
+                {exceptions.length > 1 ? "s" : ""}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {exceptions.map((r) => {
+                  const statusSinceMs = new Date(r.status_since).getTime();
                   return (
-                    <div
-                      key={job.id}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => {
-                        setChooserTech(null);
-                        void nav({
-                          to: "/admin/repair/$id",
-                          params: { id: targetId },
-                        });
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
+                    <Link
+                      key={r.id}
+                      to="/admin/repair/$id"
+                      params={{ id: r.job_number || r.id }}
+                      className="rounded-lg bg-card px-3 py-2 text-sm"
+                    >
+                      <b className="font-mono">{r.job_number || r.id}</b> ·{" "}
+                      {r.status === "REQUESTED"
+                        ? "unaccepted"
+                        : r.status === "QUOTE_REVISED"
+                          ? "revision awaiting technician"
+                          : r.status.toLowerCase().replace(/_/g, " ")}{" "}
+                      for {ago(statusSinceMs)}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {cancellationRequests.length > 0 && (
+            <div className="rounded-2xl border-2 border-warning bg-warning/10 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="flex items-center gap-2 font-bold text-warning-foreground">
+                  <AlertTriangle className="h-5 w-5" /> {cancellationRequests.length} cancellation
+                  request
+                  {cancellationRequests.length > 1 ? "s" : ""} pending Service Centre review
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setF("Cancellation Requests")}
+                  className="text-xs font-semibold underline text-warning-foreground hover:opacity-80 cursor-pointer"
+                >
+                  Filter queue ({cancellationRequests.length})
+                </button>
+              </div>
+              <div className="mt-2.5 flex flex-wrap gap-2">
+                {cancellationRequests.map((cr) => {
+                  const statusSinceMs = new Date(cr.status_since).getTime();
+                  const targetId = cr.job_number || cr.id;
+                  return (
+                    <Link
+                      key={cr.id}
+                      to="/admin/repair/$id"
+                      params={{ id: targetId }}
+                      onClick={(e) => {
+                        if (
+                          !e.defaultPrevented &&
+                          !e.metaKey &&
+                          !e.ctrlKey &&
+                          !e.shiftKey &&
+                          !e.altKey
+                        ) {
                           e.preventDefault();
-                          setChooserTech(null);
                           void nav({
                             to: "/admin/repair/$id",
                             params: { id: targetId },
                           });
                         }
                       }}
-                      className="group flex flex-col gap-1.5 rounded-xl border border-border bg-card p-3 transition-colors hover:border-primary hover:bg-muted/40 cursor-pointer text-left"
+                      className="group flex items-center gap-2 rounded-lg border border-warning/40 bg-card px-3 py-2 text-sm shadow-xs hover:border-warning hover:bg-warning/15 hover:shadow-sm active:scale-[0.99] cursor-pointer transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-warning"
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-mono text-xs font-bold text-primary group-hover:underline">
-                          {job.job_number || job.id}
-                        </span>
-                        <span
-                          className={cn(
-                            "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase",
-                            job.status === "IN_PROGRESS"
-                              ? "bg-primary/10 text-primary"
-                              : job.status === "WAITING_FOR_PARTS"
-                                ? "bg-warning/20 text-warning-foreground"
-                                : "bg-muted text-muted-foreground"
-                          )}
-                        >
-                          {job.status.replace(/_/g, " ")}
-                        </span>
-                      </div>
-
-                      <p className="font-semibold text-sm text-foreground">
-                        {job.equipment?.make} {job.equipment?.model}
-                        {job.equipment?.serial_number
-                          ? ` (${job.equipment.serial_number})`
-                          : ""}
-                      </p>
-
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                        <span>
-                          Farmer:{" "}
-                          <strong className="text-foreground">
-                            {job.farmer?.full_name || "Balasaheb Patil"}
-                          </strong>
-                        </span>
-                        <span>
-                          · Location:{" "}
-                          <strong className="text-foreground">
-                            {job.location || "Field site"}
-                          </strong>
-                        </span>
-                      </div>
-                    </div>
+                      <b className="font-mono text-foreground underline-offset-2 group-hover:underline">
+                        {targetId}
+                      </b>
+                      <span className="text-muted-foreground">·</span>
+                      <span className="text-xs font-medium text-foreground truncate max-w-[140px]">
+                        {cr.farmer?.full_name || "Farmer"}
+                      </span>
+                      <span className="text-muted-foreground">·</span>
+                      <span className="text-xs text-muted-foreground italic truncate max-w-[180px]">
+                        "{cr.cancellation_reason || "Requested"}"
+                      </span>
+                      <span className="text-xs font-mono text-warning-foreground font-semibold">
+                        {ago(statusSinceMs)}
+                      </span>
+                      <ChevronRight className="h-3.5 w-3.5 text-warning-foreground/70 group-hover:text-warning-foreground group-hover:translate-x-0.5 transition-transform shrink-0" />
+                    </Link>
                   );
                 })}
               </div>
+            </div>
+          )}
 
-              <DialogFooter>
-                <button
-                  type="button"
-                  onClick={() => setChooserTech(null)}
-                  className="rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-muted"
-                >
-                  Cancel
-                </button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </div>
-      )}
-
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        {FILTERS.map((x) => (
-          <button
-            key={x}
-            onClick={() => setF(x)}
-            className={cn(
-              "h-10 shrink-0 rounded-full border px-4 text-sm font-semibold",
-              f === x ? "border-foreground bg-foreground text-background" : "border-border bg-card"
-            )}
-          >
-            {x} <span className="opacity-60">{x === "Completed" ? completed.length : x === "Cancelled" ? cancelled.length : open.filter(test[x]).length}</span>
-          </button>
-        ))}
-      </div>
-      <div className="overflow-x-auto rounded-2xl border border-border bg-card">
-        <table className="w-full min-w-[760px] text-sm">
-          <thead className="border-b border-border text-left font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-            <tr>
-              {["Job", "Machine", "Farmer", "Technician", "Status", "Time in status", ""].map((h) => (
-                <th key={h} className="px-4 py-3 font-normal">
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan={7} className="p-6 text-center text-muted-foreground">
-                  No jobs in this view.
-                </td>
-              </tr>
-            )}
-            {rows.map((r) => {
-              const e = r.equipment;
-              const t = r.technician;
-              const od = checkOverdue(r);
-              const isCancelling = r.status === "CANCELLATION_REQUESTED";
-              const isCompleted = r.status === "COMPLETED";
-              const isCancelled = r.status === "CANCELLED";
-              const statusSinceMs = new Date(r.status_since).getTime();
-              return (
-                <tr
-                  key={r.id}
-                  className={cn(
-                    "border-b border-border last:border-0",
-                    isCancelling
-                      ? "bg-warning/10 border-warning/30 hover:bg-warning/15"
-                      : od
-                      ? "bg-destructive/5"
-                      : isCompleted || isCancelled
-                      ? "hover:bg-muted/40"
-                      : undefined
-                  )}
-                >
-                  <td className="px-4 py-3 font-mono font-semibold">
-                    {isCancelling ? (
-                      <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-warning animate-pulse" />
-                    ) : od ? (
-                      <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-destructive" />
-                    ) : null}
-                    {r.job_number || r.id}
-                  </td>
-                  <td className="px-4 py-3">{e ? `${e.make} ${e.model}` : "Equipment"}</td>
-                  <td className="px-4 py-3">
-                    <div>
-                      <p>{r.farmer?.full_name || "Farmer"}</p>
-                      {isCancelling && r.cancellation_reason ? (
-                        <p
-                          className="text-xs text-warning-foreground font-medium italic truncate max-w-[170px]"
-                          title={r.cancellation_reason}
-                        >
-                          "{r.cancellation_reason}"
-                        </p>
-                      ) : isCancelled && r.cancellation_reason ? (
-                        <p
-                          className="text-xs text-muted-foreground font-medium italic truncate max-w-[170px]"
-                          title={r.cancellation_reason}
-                        >
-                          "{r.cancellation_reason}"
-                        </p>
-                      ) : null}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    {t?.full_name ?? (r.status === "CANCELLED" || r.status === "COMPLETED" ? (
-                      <span className="text-muted-foreground italic">Unassigned</span>
+          {/* Compact Technician Workload Summary (placed near top of dashboard) */}
+          {sortedTechWorkload.length > 0 && (
+            <div className="space-y-3 rounded-2xl border border-border bg-card p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Users className="h-5 w-5 text-primary" />
+                  <h2 className="text-lg font-bold">Technician workload</h2>
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">
+                    {sortedTechWorkload.length} active in district
+                  </span>
+                </div>
+                {sortedTechWorkload.length > INITIAL_TECHS_COUNT && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllTechs(!showAllTechs)}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline cursor-pointer"
+                  >
+                    {showAllTechs ? (
+                      <>
+                        <ChevronUp className="h-3.5 w-3.5" /> Show top {INITIAL_TECHS_COUNT}
+                      </>
                     ) : (
-                      <span className="font-semibold text-destructive">Unassigned</span>
-                    ))}
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusPill r={{ status: r.status, testing: r.is_testing }} audience="staff" />
-                  </td>
-                  <td
+                      <>
+                        View all {sortedTechWorkload.length} technicians{" "}
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+
+              <div
+                className={cn(
+                  "grid gap-3 sm:grid-cols-2 lg:grid-cols-4",
+                  showAllTechs &&
+                    sortedTechWorkload.length > 8 &&
+                    "max-h-[420px] overflow-y-auto pr-1",
+                )}
+              >
+                {visibleTechs.map((tw) => (
+                  <div
+                    key={tw.t.id}
+                    role="button"
+                    tabIndex={tw.load > 0 ? 0 : undefined}
+                    aria-label={
+                      tw.load === 1
+                        ? `Open active job for ${tw.techName}`
+                        : tw.load > 1
+                          ? `Choose from ${tw.load} active jobs for ${tw.techName}`
+                          : `${tw.techName} (0 active jobs)`
+                    }
+                    onClick={() => handleTechCardClick(tw)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        handleTechCardClick(tw);
+                      }
+                    }}
                     className={cn(
-                      "px-4 py-3 font-mono",
-                      isCancelling
-                        ? "font-bold text-warning-foreground"
-                        : od && "font-bold text-destructive"
+                      "flex flex-col justify-between rounded-xl border border-border bg-muted/30 p-3 shadow-xs transition-all text-left",
+                      tw.load > 0
+                        ? "cursor-pointer hover:border-primary/60 hover:bg-muted/50 hover:shadow-sm"
+                        : "cursor-default opacity-80",
                     )}
                   >
-                    {ago(statusSinceMs)}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <Link
-                      to="/admin/repair/$id"
-                      params={{ id: r.job_number || r.id }}
+                    <div>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-sm truncate" title={tw.techName}>
+                            {tw.techName}
+                          </p>
+                          <p
+                            className="text-xs text-muted-foreground truncate"
+                            title={tw.workshopName}
+                          >
+                            {tw.workshopName}
+                          </p>
+                        </div>
+                        <span
+                          className={cn(
+                            "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                            tw.isAvailable
+                              ? "bg-success/15 text-success"
+                              : "bg-muted text-muted-foreground",
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "h-1.5 w-1.5 rounded-full",
+                              tw.isAvailable ? "bg-success" : "bg-muted-foreground",
+                            )}
+                          />
+                          {tw.isAvailable ? "Online" : "Busy"}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 pt-2 border-t border-border/50">
+                      <div className="flex items-baseline justify-between text-xs">
+                        <span className="font-medium text-foreground flex items-center">
+                          <b className="font-display text-sm font-bold text-primary mr-1">
+                            {tw.load}
+                          </b>
+                          <span>{tw.load === 1 ? "active job" : "active jobs"}</span>
+                          {tw.load > 0 && (
+                            <span className="text-[11px] font-semibold text-primary ml-1.5">
+                              {tw.load === 1 ? "· Open →" : "· Choose →"}
+                            </span>
+                          )}
+                        </span>
+                        <span className="font-mono text-[11px] text-muted-foreground">
+                          {Math.round((tw.load / Math.max(1, open.length)) * 100)}% load
+                        </span>
+                      </div>
+                      <div className="mt-1.5 h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-primary transition-all duration-300"
+                          style={{
+                            width: `${
+                              tw.load === 0
+                                ? 0
+                                : Math.max(6, Math.min(100, Math.round((tw.load / maxLoad) * 100)))
+                            }%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Active Job Chooser Dialog for Technicians with Multiple Active Jobs */}
+              <Dialog
+                open={Boolean(chooserTech)}
+                onOpenChange={(open) => !open && setChooserTech(null)}
+              >
+                <DialogContent className="sm:max-w-md">
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                      <Wrench className="h-5 w-5 text-primary" />
+                      <span>{chooserTech?.techName}'s Active Jobs</span>
+                    </DialogTitle>
+                    <DialogDescription>
+                      Select an active repair job to open and inspect details, dispatch status, or
+                      quotes.
+                    </DialogDescription>
+                  </DialogHeader>
+
+                  <div className="max-h-[360px] space-y-2 overflow-y-auto py-2 pr-1">
+                    {chooserTech?.jobs.map((job) => {
+                      const targetId = job.job_number || job.id;
+                      return (
+                        <div
+                          key={job.id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => {
+                            setChooserTech(null);
+                            void nav({
+                              to: "/admin/repair/$id",
+                              params: { id: targetId },
+                            });
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              setChooserTech(null);
+                              void nav({
+                                to: "/admin/repair/$id",
+                                params: { id: targetId },
+                              });
+                            }
+                          }}
+                          className="group flex flex-col gap-1.5 rounded-xl border border-border bg-card p-3 transition-colors hover:border-primary hover:bg-muted/40 cursor-pointer text-left"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-mono text-xs font-bold text-primary group-hover:underline">
+                              {job.job_number || job.id}
+                            </span>
+                            <span
+                              className={cn(
+                                "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase",
+                                job.status === "IN_PROGRESS"
+                                  ? "bg-primary/10 text-primary"
+                                  : job.status === "WAITING_FOR_PARTS"
+                                    ? "bg-warning/20 text-warning-foreground"
+                                    : "bg-muted text-muted-foreground",
+                              )}
+                            >
+                              {job.status.replace(/_/g, " ")}
+                            </span>
+                          </div>
+
+                          <p className="font-semibold text-sm text-foreground">
+                            {job.equipment?.make} {job.equipment?.model}
+                            {job.equipment?.serial_number
+                              ? ` (${job.equipment.serial_number})`
+                              : ""}
+                          </p>
+
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                            <span>
+                              Farmer:{" "}
+                              <strong className="text-foreground">
+                                {job.farmer?.full_name || "Balasaheb Patil"}
+                              </strong>
+                            </span>
+                            <span>
+                              · Location:{" "}
+                              <strong className="text-foreground">
+                                {job.location || "Field site"}
+                              </strong>
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <DialogFooter>
+                    <button
+                      type="button"
+                      onClick={() => setChooserTech(null)}
+                      className="rounded-lg border border-border px-4 py-2 text-sm font-semibold hover:bg-muted"
+                    >
+                      Cancel
+                    </button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
+          )}
+
+          {/* Phase 10.4-D: Taluka Breakdown Clusters Widget */}
+          <AdminTalukaClusters
+            repairs={repairs}
+            selectedTahsil={selectedTahsil}
+            onSelectTahsil={setSelectedTahsil}
+          />
+
+          {selectedTahsil && (
+            <div className="flex items-center justify-between rounded-xl border border-primary/30 bg-primary/5 p-3 text-xs font-semibold text-primary">
+              <span className="flex items-center gap-1.5">
+                <span>Filtering queue by taluka:</span>
+                <span className="rounded bg-primary/15 px-2 py-0.5 text-foreground">
+                  {selectedTahsil === "Unknown" ? "Unknown Area" : selectedTahsil}
+                </span>
+                <span className="text-muted-foreground font-normal">
+                  ({rows.length} {rows.length === 1 ? "repair" : "repairs"} in current tab)
+                </span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedTahsil(null)}
+                className="underline hover:opacity-80 cursor-pointer text-primary"
+              >
+                Clear taluka filter
+              </button>
+            </div>
+          )}
+
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {FILTERS.map((x) => (
+              <button
+                key={x}
+                onClick={() => setF(x)}
+                className={cn(
+                  "h-10 shrink-0 rounded-full border px-4 text-sm font-semibold",
+                  f === x
+                    ? "border-foreground bg-foreground text-background"
+                    : "border-border bg-card",
+                )}
+              >
+                {x}{" "}
+                <span className="opacity-60">
+                  {x === "Completed"
+                    ? completed.length
+                    : x === "Cancelled"
+                      ? cancelled.length
+                      : open.filter(test[x]).length}
+                </span>
+              </button>
+            ))}
+          </div>
+          <div className="overflow-x-auto rounded-2xl border border-border bg-card">
+            <table className="w-full min-w-[760px] text-sm">
+              <thead className="border-b border-border text-left font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+                <tr>
+                  {[
+                    "Job",
+                    "Machine",
+                    "Farmer",
+                    "Technician",
+                    "Status",
+                    "Service & Urgency",
+                    "Time in status",
+                    "",
+                  ].map((h) => (
+                    <th key={h} className="px-4 py-3 font-normal">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="p-6 text-center text-muted-foreground">
+                      No jobs in this view.
+                    </td>
+                  </tr>
+                )}
+                {rows.map((r) => {
+                  const e = r.equipment;
+                  const t = r.technician;
+                  const od = checkOverdue(r);
+                  const isCancelling = r.status === "CANCELLATION_REQUESTED";
+                  const isCompleted = r.status === "COMPLETED";
+                  const isCancelled = r.status === "CANCELLED";
+                  const statusSinceMs = new Date(r.status_since).getTime();
+                  const norm = normalizeRepairDoorstepUrgency(r);
+                  const isCriticalStopped =
+                    norm.urgency_level === "CRITICAL" && norm.is_machine_stopped;
+                  return (
+                    <tr
+                      key={r.id}
                       className={cn(
-                        "inline-flex h-9 items-center gap-1 rounded-lg border px-3 font-semibold transition-colors",
-                        isCancelling
-                          ? "border-warning bg-warning/20 text-warning-foreground hover:bg-warning/30"
-                          : "border-border hover:bg-muted"
+                        "border-b border-border last:border-0",
+                        isCriticalStopped
+                          ? "bg-destructive/10 border-destructive/30 hover:bg-destructive/15"
+                          : isCancelling
+                            ? "bg-warning/10 border-warning/30 hover:bg-warning/15"
+                            : od
+                              ? "bg-destructive/5"
+                              : isCompleted || isCancelled
+                                ? "hover:bg-muted/40"
+                                : undefined,
                       )}
                     >
-                      {isCancelling
-                        ? "Review"
-                        : r.status === "REQUESTED" && !t
-                        ? "Dispatch"
-                        : "Open"} <ChevronRight className="h-4 w-4" />
-                    </Link>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </>
-  )}
-</div>
+                      <td className="px-4 py-3 font-mono font-semibold">
+                        {isCancelling ? (
+                          <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-warning animate-pulse" />
+                        ) : isCriticalStopped ? (
+                          <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-destructive animate-pulse" />
+                        ) : od ? (
+                          <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-destructive" />
+                        ) : null}
+                        {r.job_number || r.id}
+                      </td>
+                      <td className="px-4 py-3">{e ? `${e.make} ${e.model}` : "Equipment"}</td>
+                      <td className="px-4 py-3">
+                        <div>
+                          <p>{r.farmer?.full_name || "Farmer"}</p>
+                          {isCancelling && r.cancellation_reason ? (
+                            <p
+                              className="text-xs text-warning-foreground font-medium italic truncate max-w-[170px]"
+                              title={r.cancellation_reason}
+                            >
+                              "{r.cancellation_reason}"
+                            </p>
+                          ) : isCancelled && r.cancellation_reason ? (
+                            <p
+                              className="text-xs text-muted-foreground font-medium italic truncate max-w-[170px]"
+                              title={r.cancellation_reason}
+                            >
+                              "{r.cancellation_reason}"
+                            </p>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        {t?.full_name ??
+                          (r.status === "CANCELLED" || r.status === "COMPLETED" ? (
+                            <span className="text-muted-foreground italic">Unassigned</span>
+                          ) : (
+                            <span className="font-semibold text-destructive">Unassigned</span>
+                          ))}
+                      </td>
+                      <td className="px-4 py-3">
+                        <StatusPill
+                          r={{ status: r.status, testing: r.is_testing }}
+                          audience="staff"
+                        />
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col gap-1 items-start">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {norm.service_type === "DOORSTEP" ? (
+                              <span className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary">
+                                <Truck className="h-3 w-3" /> Doorstep
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-semibold text-muted-foreground">
+                                <Building2 className="h-3 w-3" /> Workshop
+                              </span>
+                            )}
+                            {norm.is_machine_stopped && (
+                              <span className="inline-flex items-center gap-0.5 rounded-md bg-destructive/15 px-1.5 py-0.5 text-[10px] font-bold text-destructive">
+                                <AlertTriangle className="h-2.5 w-2.5" /> Stopped
+                              </span>
+                            )}
+                          </div>
+                          <span
+                            className={cn(
+                              "inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-semibold",
+                              norm.urgency_level === "CRITICAL"
+                                ? "bg-destructive/15 text-destructive font-bold"
+                                : norm.urgency_level === "HIGH"
+                                  ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 font-bold"
+                                  : norm.urgency_level === "STANDARD"
+                                    ? "bg-blue-500/10 text-blue-700 dark:text-blue-400 font-medium"
+                                    : "bg-muted text-muted-foreground font-normal",
+                            )}
+                          >
+                            {norm.urgency_level === "CRITICAL"
+                              ? "Critical"
+                              : norm.urgency_level === "HIGH"
+                                ? "High"
+                                : norm.urgency_level === "STANDARD"
+                                  ? "Standard"
+                                  : "Flexible"}
+                          </span>
+                        </div>
+                      </td>
+                      <td
+                        className={cn(
+                          "px-4 py-3 font-mono",
+                          isCancelling
+                            ? "font-bold text-warning-foreground"
+                            : od && "font-bold text-destructive",
+                        )}
+                      >
+                        {ago(statusSinceMs)}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <Link
+                          to="/admin/repair/$id"
+                          params={{ id: r.job_number || r.id }}
+                          className={cn(
+                            "inline-flex h-9 items-center gap-1 rounded-lg border px-3 font-semibold transition-colors",
+                            isCancelling
+                              ? "border-warning bg-warning/20 text-warning-foreground hover:bg-warning/30"
+                              : "border-border hover:bg-muted",
+                          )}
+                        >
+                          {isCancelling
+                            ? "Review"
+                            : r.status === "REQUESTED" && !t
+                              ? "Dispatch"
+                              : "Open"}{" "}
+                          <ChevronRight className="h-4 w-4" />
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
   );
 }

@@ -1,23 +1,40 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
+  AlertOctagon,
   ArrowLeft,
   ArrowRight,
   Camera,
   CheckCircle2,
+  Clock,
   CloudOff,
   Loader2,
   MapPin,
   Mic,
   Plus,
+  RotateCcw,
   Sparkles,
+  Square,
   Tractor,
+  TriangleAlert,
+  Wrench,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { btn, Card, input, Label, useOnline } from "@/components/tb";
 import { assess, SYMPTOMS } from "@/lib/assessment";
-import { useAuth } from "@/lib/auth";
+import { supabase } from "@/integrations/supabase/client";
+import {
+  detectSupportedAudioFormat,
+  formatRecordingTime,
+  appendTranscriptToDescription,
+  getMicrophoneErrorMessage,
+  getMicrophoneStream,
+  createAudioActivityTracker,
+  validateRecordingSignal,
+  type AudioActivityTracker,
+  type VoiceRecordingState,
+} from "@/lib/audio-recorder";
 import {
   formatCoarseLocation,
   formatGpsAccuracy,
@@ -27,7 +44,17 @@ import {
 import { ago } from "@/lib/tb-store";
 import { fileToSmallDataUrl } from "@/lib/image";
 import { getFarmerEquipment, type EquipmentRow } from "@/lib/services/equipment";
-import { createRepairRequest } from "@/lib/services/repair-requests";
+import {
+  createRepairRequest,
+  type ServiceType,
+  type UrgencyLevel,
+  isValidServiceType,
+  isValidUrgencyLevel,
+  FARMER_AVAILABILITY_SLOTS,
+  URGENCY_OPTIONS,
+  SERVICE_MODE_OPTIONS,
+} from "@/lib/services/repair-requests";
+export { FARMER_AVAILABILITY_SLOTS, URGENCY_OPTIONS, SERVICE_MODE_OPTIONS };
 import type { Json } from "@/integrations/supabase/types";
 import { meta } from "@/lib/seo";
 import { cn } from "@/lib/utils";
@@ -41,7 +68,7 @@ export const Route = createFileRoute("/farmer/report-breakdown")({
 });
 
 const DRAFT = "terrabyte-breakdown-draft";
-type Draft = {
+export type Draft = {
   step: number;
   equipmentId: string;
   symptoms: string[];
@@ -49,12 +76,16 @@ type Draft = {
   photos: string[];
   village: string;
   tahsil: string;
+  serviceType: ServiceType;
+  urgencyLevel: UrgencyLevel;
+  isMachineStopped: boolean;
+  preferredTimeSlot: string;
+  fieldLandmark: string;
 };
 
 function Report() {
   const nav = useNavigate();
   const online = useOnline();
-  const { profile } = useAuth();
   const { equipment: pre } = Route.useSearch();
 
   const [eq, setEq] = useState<EquipmentRow[]>([]);
@@ -69,11 +100,52 @@ function Report() {
     photos: [],
     village: "",
     tahsil: "",
+    serviceType: "DOORSTEP",
+    urgencyLevel: "STANDARD",
+    isMachineStopped: false,
+    preferredTimeSlot: "Immediate / ASAP",
+    fieldLandmark: "",
   });
   const [restored, setRestored] = useState(false);
-  const [listening, setListening] = useState(false);
+  const [voiceState, setVoiceState] = useState<VoiceRecordingState>("IDLE");
+  const [recordSeconds, setRecordSeconds] = useState(0);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [audioLevel, setAudioLevel] = useState(0);
   const [submitting, setSubmitting] = useState(false);
-  const recRef = useRef<{ stop: () => void } | null>(null);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const audioTrackerRef = useRef<AudioActivityTracker | null>(null);
+  const meterTimerRef = useRef<NodeJS.Timeout | number | null>(null);
+  const timerRef = useRef<NodeJS.Timeout | number | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const cancelRequestedRef = useRef(false);
+  const isTranscribingRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  // Clean up media streams, activity trackers, and timers on unmount
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (timerRef.current) {
+        clearInterval(timerRef.current as NodeJS.Timeout);
+        timerRef.current = null;
+      }
+      if (meterTimerRef.current) {
+        clearInterval(meterTimerRef.current as NodeJS.Timeout);
+        meterTimerRef.current = null;
+      }
+      if (audioTrackerRef.current) {
+        audioTrackerRef.current.cleanup();
+        audioTrackerRef.current = null;
+      }
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+        mediaStreamRef.current = null;
+      }
+    };
+  }, []);
 
   // In-memory one-time GPS capture (Never persisted to localStorage)
   interface CapturedGps {
@@ -199,6 +271,14 @@ function Report() {
             photos: Array.isArray(x.photos) ? x.photos : prev.photos,
             village: typeof x.village === "string" ? x.village : prev.village,
             tahsil: typeof x.tahsil === "string" ? x.tahsil : prev.tahsil,
+            serviceType: isValidServiceType(x.serviceType) ? x.serviceType : "DOORSTEP",
+            urgencyLevel: isValidUrgencyLevel(x.urgencyLevel) ? x.urgencyLevel : "STANDARD",
+            isMachineStopped: typeof x.isMachineStopped === "boolean" ? x.isMachineStopped : false,
+            preferredTimeSlot:
+              typeof x.preferredTimeSlot === "string" && x.preferredTimeSlot.trim().length > 0
+                ? x.preferredTimeSlot
+                : "Immediate / ASAP",
+            fieldLandmark: typeof x.fieldLandmark === "string" ? x.fieldLandmark : "",
           }));
           setRestored(true);
         }
@@ -207,27 +287,6 @@ function Report() {
       }
     }
   }, [pre]);
-
-  // Prefill village from farmer profile only when available (do not infer tahsil)
-  useEffect(() => {
-    if (profile?.village && !d.village) {
-      const raw = localStorage.getItem(DRAFT);
-      if (raw) {
-        try {
-          const parsed = JSON.parse(raw);
-          if (typeof parsed.village === "string" && parsed.village.length > 0) {
-            return;
-          }
-        } catch (_err) {
-          /* ignore parse error */
-        }
-      }
-      setD((prev) => ({
-        ...prev,
-        village: prev.village || profile.village?.trim() || "",
-      }));
-    }
-  }, [profile?.village, d.village]);
 
   useEffect(() => {
     try {
@@ -258,29 +317,234 @@ function Report() {
         : [...d.symptoms, sym],
     });
 
-  const voice = () => {
-    const W = window as unknown as {
-      SpeechRecognition?: new () => any;
-      webkitSpeechRecognition?: new () => any;
-    };
-    const SR = W.SpeechRecognition ?? W.webkitSpeechRecognition;
-    if (!SR) {
-      toast("Voice typing isn't supported on this browser — use your keyboard's mic button.");
+  const cleanupMedia = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current as any);
+      timerRef.current = null;
+    }
+    if (meterTimerRef.current) {
+      clearInterval(meterTimerRef.current as any);
+      meterTimerRef.current = null;
+    }
+    if (audioTrackerRef.current) {
+      audioTrackerRef.current.cleanup();
+      audioTrackerRef.current = null;
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    }
+    mediaRecorderRef.current = null;
+    if (mountedRef.current) {
+      setAudioLevel(0);
+    }
+  };
+
+  const startVoiceRecording = async () => {
+    if (voiceState === "TRANSCRIBING") return;
+    if (
+      typeof window === "undefined" ||
+      !navigator?.mediaDevices?.getUserMedia ||
+      typeof MediaRecorder === "undefined"
+    ) {
+      toast.error("Voice recording is not supported on this browser. Please use keyboard typing.");
       return;
     }
-    if (listening) {
-      recRef.current?.stop();
-      return;
+
+    cleanupMedia();
+    cancelRequestedRef.current = false;
+    audioChunksRef.current = [];
+    setVoiceError(null);
+
+    try {
+      const stream = await getMicrophoneStream();
+
+      if (!mountedRef.current) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+
+      mediaStreamRef.current = stream;
+
+      // Initialize real-time Web Audio API signal activity tracker
+      const tracker = createAudioActivityTracker(stream);
+      audioTrackerRef.current = tracker;
+
+      // Sample microphone level at 10 Hz for live activity meter
+      if (tracker) {
+        meterTimerRef.current = setInterval(() => {
+          if (audioTrackerRef.current && mountedRef.current) {
+            setAudioLevel(audioTrackerRef.current.getCurrentLevel());
+          }
+        }, 100);
+      }
+
+      const format = detectSupportedAudioFormat();
+      const options = format.mimeType ? { mimeType: format.mimeType } : undefined;
+      const recorder = new MediaRecorder(stream, options);
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onerror = () => {
+        if (!mountedRef.current) return;
+        cleanupMedia();
+        setVoiceState("ERROR");
+        setVoiceError("Recording interrupted. Please try again or type below.");
+      };
+
+      recorder.onstop = async () => {
+        if (!mountedRef.current || cancelRequestedRef.current) {
+          cleanupMedia();
+          audioChunksRef.current = [];
+          return;
+        }
+
+        if (isTranscribingRef.current) return;
+
+        // 1. Snapshot activity stats from tracker before stopping audio context
+        const stats = audioTrackerRef.current?.getStats() ?? null;
+
+        // 2. Collect chunks and assemble Blob
+        const chunks = audioChunksRef.current;
+        audioChunksRef.current = [];
+
+        const audioBlob = new Blob(chunks, {
+          type: format.mimeType || "audio/webm",
+        });
+
+        // 3. Clean up tracks and audio context now that data is collected
+        cleanupMedia();
+
+        // 4. Validate recording: duration, container size, and actual signal activity
+        const validation = validateRecordingSignal({
+          durationSeconds: recordSeconds,
+          blobSize: audioBlob.size,
+          activityStats: stats,
+        });
+
+        if (!validation.valid) {
+          setVoiceState("IDLE");
+          toast.error(
+            validation.error ||
+              "No voice was detected. Please check your microphone and speak clearly.",
+          );
+          return;
+        }
+
+        isTranscribingRef.current = true;
+        setVoiceState("TRANSCRIBING");
+
+        try {
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
+
+          if (!session?.access_token) {
+            throw new Error("You must be signed in to transcribe audio.");
+          }
+
+          const formData = new FormData();
+          formData.append("file", audioBlob, `breakdown-voice.${format.extension}`);
+
+          const response = await fetch("/api/transcribe", {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: formData,
+          });
+
+          const data = await response.json().catch(() => ({}));
+
+          if (!response.ok) {
+            throw new Error(data?.error || "Voice transcription failed.");
+          }
+
+          const transcript = typeof data.text === "string" ? data.text.trim() : "";
+          if (!transcript) {
+            toast.info("No recognizable words heard. Please try again or type below.");
+            setVoiceState("IDLE");
+          } else {
+            setD((prev) => ({
+              ...prev,
+              description: appendTranscriptToDescription(prev.description, transcript),
+            }));
+            setVoiceState("SUCCESS");
+            toast.success("Voice transcribed! Review and edit your text below.");
+            setTimeout(() => {
+              if (mountedRef.current) setVoiceState("IDLE");
+            }, 3500);
+          }
+        } catch (err: unknown) {
+          if (!mountedRef.current) return;
+          const msg = err instanceof Error ? err.message : "Voice transcription failed.";
+          setVoiceState("ERROR");
+          setVoiceError(msg);
+          toast.error(msg);
+        } finally {
+          isTranscribingRef.current = false;
+        }
+      };
+
+      mediaRecorderRef.current = recorder;
+      // Start recording without timeslice to produce a coherent continuous audio container
+      recorder.start();
+
+      setVoiceState("RECORDING");
+      setRecordSeconds(0);
+
+      timerRef.current = setInterval(() => {
+        setRecordSeconds((sec) => {
+          if (sec >= 59) {
+            // Auto-stop at 60 seconds
+            stopVoiceRecording();
+            return 60;
+          }
+          return sec + 1;
+        });
+      }, 1000);
+    } catch (err: unknown) {
+      cleanupMedia();
+      const msg = getMicrophoneErrorMessage(err);
+      setVoiceState("ERROR");
+      setVoiceError(msg);
+      toast.error(msg);
     }
-    const rec = new SR();
-    rec.lang = "en-IN";
-    rec.interimResults = false;
-    rec.onresult = (e: any) =>
-      up({ description: (d.description + " " + e.results[0][0].transcript).trim() });
-    rec.onend = () => setListening(false);
-    recRef.current = rec;
-    rec.start();
-    setListening(true);
+  };
+
+  const stopVoiceRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch {
+        cleanupMedia();
+        setVoiceState("IDLE");
+      }
+    } else {
+      cleanupMedia();
+      setVoiceState("IDLE");
+    }
+  };
+
+  const cancelVoiceRecording = () => {
+    cancelRequestedRef.current = true;
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch {
+        // ignore
+      }
+    }
+    cleanupMedia();
+    audioChunksRef.current = [];
+    setVoiceState("IDLE");
+    setVoiceError(null);
+    setRecordSeconds(0);
+    toast.info("Voice recording cancelled.");
   };
 
   const submit = async () => {
@@ -319,11 +583,13 @@ function Report() {
         symptoms: d.symptoms,
         description: d.description.trim().slice(0, 1000),
         photos: d.photos.filter(Boolean),
-        location:
-          formatCoarseLocation(d.village, d.tahsil) ||
-          profile?.village?.trim() ||
-          "On-site / Field",
+        location: formatCoarseLocation(d.village, d.tahsil) || "On-site / Field",
         assessment: assessment as unknown as Json,
+        service_type: d.serviceType,
+        urgency_level: d.urgencyLevel,
+        is_machine_stopped: d.isMachineStopped,
+        preferred_time_slot: d.preferredTimeSlot?.trim() || null,
+        field_landmark: d.serviceType === "DOORSTEP" ? d.fieldLandmark?.trim() || null : null,
         ...(gps
           ? {
               gpsLocation: {
@@ -343,9 +609,10 @@ function Report() {
         to: "/farmer/repair/$id",
         params: { id: repair.job_number || repair.id },
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errObj = err as { message?: string };
       console.error("Failed to create repair request:", err);
-      toast.error(err?.message || "Failed to create repair request. Please try again.");
+      toast.error(errObj?.message || "Failed to create repair request. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -378,7 +645,7 @@ function Report() {
             if (d.step > 1) {
               up({ step: d.step - 1 });
             } else if (pre) {
-              nav({ to: `/farmer/equipment/${pre}` as any });
+              nav({ to: `/farmer/equipment/${pre}` as string });
             } else {
               nav({ to: "/farmer" });
             }
@@ -413,8 +680,13 @@ function Report() {
                 symptoms: [],
                 description: "",
                 photos: [],
-                village: profile?.village?.trim() || "",
+                village: "",
                 tahsil: "",
+                serviceType: "DOORSTEP",
+                urgencyLevel: "STANDARD",
+                isMachineStopped: false,
+                preferredTimeSlot: "Immediate / ASAP",
+                fieldLandmark: "",
               });
               clearGps();
               setRestored(false);
@@ -505,10 +777,55 @@ function Report() {
 
       {d.step === 3 && (
         <div className="space-y-4">
+          {/* Service Delivery Mode Choice */}
+          <div className="space-y-3 rounded-2xl border-2 border-border bg-card p-4">
+            <div className="flex items-center gap-2">
+              <Wrench className="h-5 w-5 text-primary" />
+              <h2 className="text-base font-bold text-foreground">Service Delivery Mode</h2>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Choose how you would like to receive repair assistance for your equipment.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {SERVICE_MODE_OPTIONS.map((opt) => (
+                <button
+                  key={opt.mode}
+                  type="button"
+                  onClick={() => up({ serviceType: opt.mode })}
+                  className={cn(
+                    "flex flex-col items-start rounded-xl border-2 p-3.5 text-left transition-all cursor-pointer",
+                    d.serviceType === opt.mode
+                      ? "border-primary bg-primary/5 shadow-xs"
+                      : "border-border bg-card hover:border-border/80 hover:bg-muted/40",
+                  )}
+                >
+                  <div className="flex w-full items-center justify-between">
+                    <span className="font-bold text-sm text-foreground">{opt.label}</span>
+                    <span
+                      className={cn(
+                        "h-4 w-4 rounded-full border-2 flex items-center justify-center",
+                        d.serviceType === opt.mode
+                          ? "border-primary"
+                          : "border-muted-foreground/40",
+                      )}
+                    >
+                      {d.serviceType === opt.mode && (
+                        <span className="h-2 w-2 rounded-full bg-primary" />
+                      )}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{opt.subtitle}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="space-y-3 rounded-2xl border-2 border-border bg-card p-4">
             <div className="flex items-center gap-2">
               <MapPin className="h-5 w-5 text-primary" />
-              <h2 className="text-base font-bold text-foreground">Breakdown Location</h2>
+              <h2 className="text-base font-bold text-foreground">
+                {d.serviceType === "DOORSTEP" ? "Field Breakdown Location" : "Base Location"}
+              </h2>
             </div>
             <p className="text-xs text-muted-foreground">
               Provide your village and tahsil so the nearest technician can find you.
@@ -540,6 +857,29 @@ function Report() {
                 </select>
               </div>
             </div>
+
+            {/* Field Landmark / Access Instructions (Doorstep only, max 300 chars) */}
+            {d.serviceType === "DOORSTEP" && (
+              <div className="pt-2">
+                <div className="flex items-center justify-between">
+                  <Label>Field Landmark / Plot Access Instructions (Optional)</Label>
+                  <span className="text-[11px] text-muted-foreground font-mono">
+                    {d.fieldLandmark.length}/300
+                  </span>
+                </div>
+                <input
+                  type="text"
+                  maxLength={300}
+                  className={input}
+                  placeholder="e.g. Gate 3 near canal, 500m behind Gram Panchayat water tank, plot #14"
+                  value={d.fieldLandmark}
+                  onChange={(e) => up({ fieldLandmark: e.target.value.slice(0, 300) })}
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Give visual landmarks or mud road directions for the mobile technician.
+                </p>
+              </div>
+            )}
 
             {/* One-time Browser Geolocation Capture */}
             <div className="pt-2 border-t border-border/60">
@@ -619,8 +959,238 @@ function Report() {
             </div>
           </div>
 
-          <div className="space-y-2">
+          {/* Urgency & Machine Status Card */}
+          <div className="space-y-4 rounded-2xl border-2 border-border bg-card p-4">
+            <div className="flex items-center gap-2">
+              <AlertOctagon className="h-5 w-5 text-primary" />
+              <h2 className="text-base font-bold text-foreground">Urgency & Machine Status</h2>
+            </div>
+
+            {/* Machine Stoppage Toggle */}
+            <label
+              className={cn(
+                "flex items-start gap-3 rounded-xl border-2 p-3 cursor-pointer transition-colors",
+                d.isMachineStopped
+                  ? "border-destructive/60 bg-destructive/10"
+                  : "border-border bg-card hover:bg-muted/40",
+              )}
+            >
+              <input
+                type="checkbox"
+                checked={d.isMachineStopped}
+                onChange={(e) => up({ isMachineStopped: e.target.checked })}
+                className="mt-1 h-4 w-4 rounded border-border text-destructive focus:ring-destructive cursor-pointer"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-foreground flex items-center gap-1.5">
+                  Machine is completely stopped / immobile
+                  {d.isMachineStopped && (
+                    <span className="rounded-full bg-destructive/20 px-2 py-0.5 text-[10px] font-semibold text-destructive">
+                      HALTED IN FIELD
+                    </span>
+                  )}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Check if equipment cannot run or drive safely (e.g. engine stalled, axle/hydraulic
+                  failure in field).
+                </p>
+              </div>
+            </label>
+
+            {/* Operational Urgency Level */}
+            <div className="space-y-2">
+              <Label>Operational Urgency</Label>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {URGENCY_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.level}
+                    type="button"
+                    onClick={() => up({ urgencyLevel: opt.level })}
+                    className={cn(
+                      "flex flex-col items-start rounded-xl border-2 p-3 text-left transition-all cursor-pointer",
+                      d.urgencyLevel === opt.level
+                        ? opt.level === "CRITICAL"
+                          ? "border-destructive bg-destructive/10"
+                          : opt.level === "HIGH"
+                            ? "border-warning bg-warning/10"
+                            : "border-primary bg-primary/5"
+                        : "border-border bg-card hover:border-border/80 hover:bg-muted/30",
+                    )}
+                  >
+                    <div className="flex w-full items-center justify-between">
+                      <span className="font-bold text-sm text-foreground">{opt.title}</span>
+                      <span
+                        className={cn(
+                          "h-3.5 w-3.5 rounded-full border-2 flex items-center justify-center",
+                          d.urgencyLevel === opt.level
+                            ? "border-current"
+                            : "border-muted-foreground/40",
+                        )}
+                      >
+                        {d.urgencyLevel === opt.level && (
+                          <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                        )}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-muted-foreground">{opt.description}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Farmer Availability Window */}
+            <div className="space-y-2 pt-2 border-t border-border/60">
+              <div className="flex items-center gap-1.5">
+                <Clock className="h-4 w-4 text-muted-foreground" />
+                <Label>Your Availability / Preferred Timing</Label>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {FARMER_AVAILABILITY_SLOTS.map((slot) => (
+                  <button
+                    key={slot}
+                    type="button"
+                    onClick={() => up({ preferredTimeSlot: slot })}
+                    className={cn(
+                      "rounded-lg border px-3 py-2 text-xs font-semibold text-center transition-colors cursor-pointer",
+                      d.preferredTimeSlot === slot
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border bg-card text-foreground hover:bg-muted",
+                    )}
+                  >
+                    {slot}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
             <Label>Problem Description</Label>
+
+            {/* Voice Transcription Controls (Groq Whisper Large V3) */}
+            <div className="space-y-2">
+              {(voiceState === "IDLE" || voiceState === "SUCCESS") && (
+                <button
+                  type="button"
+                  onClick={startVoiceRecording}
+                  className={cn(
+                    btn.ghost,
+                    "w-full flex items-center justify-center gap-2 border-2 border-border/70 hover:border-primary/50 text-foreground py-2.5 rounded-xl transition-colors",
+                  )}
+                >
+                  <Mic className="h-5 w-5 text-primary shrink-0" />
+                  <span className="font-semibold text-sm">
+                    {voiceState === "SUCCESS"
+                      ? "Record more voice (Hindi / Marathi / English)"
+                      : "Speak in Hindi, Marathi, or English"}
+                  </span>
+                </button>
+              )}
+
+              {voiceState === "RECORDING" && (
+                <div className="rounded-xl border-2 border-destructive/40 bg-destructive/10 p-3 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="inline-flex items-center gap-2 text-sm font-semibold text-destructive">
+                      <span className="h-2.5 w-2.5 rounded-full bg-destructive animate-ping" />
+                      Recording Voice ({formatRecordingTime(recordSeconds)} / 1:00)
+                    </span>
+                    <span className="text-xs text-muted-foreground font-mono">
+                      {recordSeconds < 5
+                        ? `Min 5s (${5 - recordSeconds}s left)`
+                        : "Whisper Large V3"}
+                    </span>
+                  </div>
+
+                  {/* Live Microphone Signal Activity Meter */}
+                  <div className="space-y-1 py-0.5">
+                    <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                      <span>Mic Activity</span>
+                      <span
+                        className={
+                          audioLevel > 0.02 ? "text-success font-semibold" : "text-muted-foreground"
+                        }
+                      >
+                        {audioLevel > 0.02 ? "Voice Signal Detected" : "Listening for voice…"}
+                      </span>
+                    </div>
+                    <div className="h-2 w-full bg-background/80 rounded-full overflow-hidden border border-border/50">
+                      <div
+                        className={cn(
+                          "h-full transition-all duration-75 rounded-full",
+                          audioLevel > 0.02 ? "bg-success" : "bg-muted-foreground/30",
+                        )}
+                        style={{
+                          width: `${Math.min(100, Math.max(3, Math.round(audioLevel * 220)))}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <p className="text-xs text-muted-foreground">
+                    Speak clearly in Hindi, Marathi, or English (minimum 5 seconds). Tap Stop when
+                    finished.
+                  </p>
+                  <div className="flex items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={stopVoiceRecording}
+                      className={cn(
+                        btn.urgent,
+                        "flex-1 flex items-center justify-center gap-2 text-sm py-2",
+                      )}
+                    >
+                      <Square className="h-4 w-4 fill-current" /> Stop & Transcribe
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelVoiceRecording}
+                      className={cn(
+                        btn.ghost,
+                        "flex items-center justify-center gap-1.5 text-sm py-2 px-3 border border-border hover:bg-muted",
+                      )}
+                    >
+                      <X className="h-4 w-4" /> Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {voiceState === "TRANSCRIBING" && (
+                <div className="rounded-xl border-2 border-primary/30 bg-primary/5 p-3 flex items-center justify-center gap-2.5 text-sm font-medium text-foreground">
+                  <Loader2 className="h-5 w-5 animate-spin text-primary shrink-0" />
+                  <span>Transcribing voice with Whisper Large V3…</span>
+                </div>
+              )}
+
+              {voiceState === "ERROR" && voiceError && (
+                <div className="rounded-xl border-2 border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive space-y-2">
+                  <div className="flex items-start gap-2">
+                    <TriangleAlert className="h-4 w-4 shrink-0 mt-0.5" />
+                    <p className="leading-relaxed flex-1 font-medium">{voiceError}</p>
+                  </div>
+                  <div className="flex items-center gap-2 justify-end pt-1">
+                    <button
+                      type="button"
+                      onClick={startVoiceRecording}
+                      className="font-semibold underline text-foreground hover:text-primary flex items-center gap-1"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" /> Retry Voice
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setVoiceState("IDLE");
+                        setVoiceError(null);
+                      }}
+                      className="text-muted-foreground hover:text-foreground underline ml-3"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <textarea
               rows={5}
               maxLength={1000}
@@ -629,12 +1199,9 @@ function Report() {
               value={d.description}
               onChange={(e) => up({ description: e.target.value })}
             />
-            <button onClick={voice} className={cn(listening ? btn.urgent : btn.ghost, "w-full")}>
-              <Mic className="h-5 w-5" />
-              {listening ? "Listening… tap to stop" : "Speak instead of typing"}
-            </button>
-            <p className="text-sm text-muted-foreground">
-              Optional, but it helps the technician come prepared.
+            <p className="text-xs text-muted-foreground">
+              Review and edit your description before continuing. Keyboard typing is always
+              available.
             </p>
           </div>
         </div>
@@ -680,31 +1247,80 @@ function Report() {
       )}
 
       {d.step === 5 && (
-        <Card className="space-y-2">
-          <p>
-            <b>Machine:</b>{" "}
-            {selectedEquipment ? `${selectedEquipment.make} ${selectedEquipment.model}` : "—"}
-          </p>
-          <p>
-            <b>Symptoms:</b> {d.symptoms.join(", ")}
-          </p>
-          <p>
-            <b>Location:</b> {formatCoarseLocation(d.village, d.tahsil) || "On-site / Field"}
-            {gps ? (
-              <span className="ml-2 inline-flex items-center gap-1 rounded-md bg-success/15 px-2 py-0.5 text-xs font-semibold text-success">
-                <MapPin className="h-3 w-3" /> Exact GPS attached ({formatGpsAccuracy(gps.accuracy)}
-                )
-              </span>
-            ) : null}
-          </p>
-          {d.description && (
+        <Card className="space-y-3">
+          <div className="flex items-center justify-between border-b border-border/60 pb-2">
+            <h3 className="font-bold text-base text-foreground">Review Breakdown Summary</h3>
+            <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
+              Step 5 of 5
+            </span>
+          </div>
+
+          <div className="space-y-2 text-sm">
             <p>
-              <b>Description:</b> {d.description}
+              <b>Machine:</b>{" "}
+              {selectedEquipment ? `${selectedEquipment.make} ${selectedEquipment.model}` : "—"}
             </p>
-          )}
-          <p>
-            <b>Photos:</b> {d.photos.length}
-          </p>
+            <p>
+              <b>Service Mode:</b>{" "}
+              <span className="font-semibold text-foreground">
+                {d.serviceType === "DOORSTEP" ? "Doorstep / On-Field Service" : "Workshop Drop-off"}
+              </span>
+            </p>
+            <p>
+              <b>Urgency:</b>{" "}
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 font-semibold",
+                  d.urgencyLevel === "CRITICAL"
+                    ? "text-destructive"
+                    : d.urgencyLevel === "HIGH"
+                      ? "text-warning-foreground"
+                      : "text-foreground",
+                )}
+              >
+                {d.urgencyLevel}
+                {d.isMachineStopped && " · Immobile in field"}
+              </span>
+            </p>
+            <p>
+              <b>Machine Stoppage:</b>{" "}
+              {d.isMachineStopped ? (
+                <span className="inline-flex items-center gap-1 font-semibold text-destructive">
+                  <AlertOctagon className="h-3.5 w-3.5" /> Completely stopped / halted in field
+                </span>
+              ) : (
+                <span className="text-muted-foreground">Mobile / Can operate safely</span>
+              )}
+            </p>
+            <p>
+              <b>Preferred Availability:</b> {d.preferredTimeSlot || "Immediate / ASAP"}
+            </p>
+            <p>
+              <b>Location:</b> {formatCoarseLocation(d.village, d.tahsil) || "On-site / Field"}
+              {gps ? (
+                <span className="ml-2 inline-flex items-center gap-1 rounded-md bg-success/15 px-2 py-0.5 text-xs font-semibold text-success">
+                  <MapPin className="h-3 w-3" /> Exact GPS attached (
+                  {formatGpsAccuracy(gps.accuracy)})
+                </span>
+              ) : null}
+            </p>
+            {d.serviceType === "DOORSTEP" && d.fieldLandmark ? (
+              <p>
+                <b>Field Landmark:</b> <span className="italic">"{d.fieldLandmark}"</span>
+              </p>
+            ) : null}
+            <p>
+              <b>Symptoms:</b> {d.symptoms.join(", ")}
+            </p>
+            {d.description && (
+              <p>
+                <b>Description:</b> {d.description}
+              </p>
+            )}
+            <p>
+              <b>Photos:</b> {d.photos.length} attached
+            </p>
+          </div>
         </Card>
       )}
 

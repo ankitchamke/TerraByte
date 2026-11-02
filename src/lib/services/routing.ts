@@ -1,4 +1,4 @@
-import { isValidGpsCoordinate } from "../location.ts";
+import { isValidGpsCoordinate, computeApproximateRoadDistance } from "../location.ts";
 
 export interface GpsPoint {
   latitude: number;
@@ -265,5 +265,67 @@ export async function computeGoogleRoute(
       throw new Error("Google Routes API request timed out. Please try again.");
     }
     throw err;
+  }
+}
+
+export interface ResolvedTravelDistance {
+  distanceKm: number;
+  durationMinutes: number;
+  durationFormatted: string;
+  isEstimate: boolean;
+  routingMode: "osrm_driving" | "rural_road_fallback";
+}
+
+/**
+ * Resolves driving distance and duration between two points with bounded OSRM timeout
+ * and automatic fallback to rural road approximation.
+ */
+export async function resolveDrivingDistance(
+  origin: GpsPoint,
+  destination: GpsPoint,
+  options?: {
+    timeoutMs?: number | undefined;
+    fetchFn?: typeof fetch | undefined;
+    skipOsrm?: boolean | undefined;
+  },
+): Promise<ResolvedTravelDistance> {
+  if (options?.skipOsrm) {
+    const approx = computeApproximateRoadDistance(origin, destination);
+    return {
+      distanceKm: approx.distanceKm,
+      durationMinutes: approx.durationMinutes,
+      durationFormatted: approx.durationFormatted,
+      isEstimate: true,
+      routingMode: "rural_road_fallback",
+    };
+  }
+
+  const timeoutMs = options?.timeoutMs ?? 2500;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const osrmRes = await computeOsrmRoute(origin, destination, async (url, init) => {
+      const fetchCall = options?.fetchFn || fetch;
+      return fetchCall(url, { ...init, signal: controller.signal });
+    });
+    clearTimeout(timer);
+    return {
+      distanceKm: osrmRes.distanceKm,
+      durationMinutes: osrmRes.durationMinutes,
+      durationFormatted: osrmRes.durationFormatted,
+      isEstimate: false,
+      routingMode: "osrm_driving",
+    };
+  } catch {
+    clearTimeout(timer);
+    const approx = computeApproximateRoadDistance(origin, destination);
+    return {
+      distanceKm: approx.distanceKm,
+      durationMinutes: approx.durationMinutes,
+      durationFormatted: approx.durationFormatted,
+      isEstimate: true,
+      routingMode: "rural_road_fallback",
+    };
   }
 }

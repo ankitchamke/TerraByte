@@ -1,6 +1,33 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { createNotification } from "./notifications";
+import {
+  isValidGpsCoordinate,
+  getNagpurTahsilCentroid,
+  normalizeNagpurTahsil,
+  computeApproximateRoadDistance,
+  type GpsPoint,
+  type DistanceSource,
+  type NagpurTahsil,
+} from "../location.ts";
+import { normalizeRepairDoorstepUrgency } from "./doorstep-service.ts";
+import { resolveDrivingDistance } from "./routing.ts";
+
+import {
+  computeTechnicianDispatchScore,
+  type ComputeTechnicianDispatchScoreInput,
+  type TechnicianDispatchScoreBreakdown,
+  type ScoredTechnicianMatch as ScoredTechnicianMatchGeneric,
+  type GetEligibleTechniciansOptions,
+} from "./technician-dispatch.ts";
+
+export type {
+  ComputeTechnicianDispatchScoreInput,
+  TechnicianDispatchScoreBreakdown,
+  GetEligibleTechniciansOptions,
+};
+export { computeTechnicianDispatchScore };
+export * from "./circuit-optimizer.ts";
 
 export type TechnicianProfileRow = Database["public"]["Tables"]["technician_profiles"]["Row"];
 export type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
@@ -10,13 +37,7 @@ export interface VerifiedTechnicianWithProfile extends TechnicianProfileRow {
   profile: Pick<ProfileRow, "id" | "full_name" | "phone" | "village"> | null;
 }
 
-export interface ScoredTechnicianMatch {
-  technician: VerifiedTechnicianWithProfile;
-  score: number;
-  brandMatch: boolean;
-  skillMatch: boolean;
-  reasons: string[];
-}
+export type ScoredTechnicianMatch = ScoredTechnicianMatchGeneric<VerifiedTechnicianWithProfile>;
 
 export interface AssignTechnicianInput {
   repair_request_id: string;
@@ -81,13 +102,14 @@ async function getAuthenticatedProfile(): Promise<{ id: string; role: string }> 
 
 /**
  * Fetches and ranks eligible verified technicians for a specific repair request.
- * - Only approved technicians (`is_verified = true`) are returned.
- * - Technicians who have declined the job (`declined_by`) are excluded.
- * - Ranked using multi-factor scoring: brand specialization (40), skill match (30),
- *   current availability (20), and travel ETA proximity (up to 10).
+ * - Only approved technicians (is_verified = true) are returned.
+ * - Technicians who have declined the job (declined_by) are excluded.
+ * - Ranked using multi-factor adaptive scoring: proximity / ETA, availability, active workload,
+ *   brand specialization, repair skill, doorstep mobile capability, and operational urgency.
  */
 export async function getEligibleTechnicians(
   repairRequestId: string,
+  options?: GetEligibleTechniciansOptions,
 ): Promise<ScoredTechnicianMatch[]> {
   if (!repairRequestId) throw new Error("Repair request ID is required.");
 
@@ -113,12 +135,44 @@ export async function getEligibleTechnicians(
     throw new Error("Repair request not found or inaccessible.");
   }
 
-  const make = (repair.equipment as any)?.make ?? "";
-  const assessment = (repair.assessment as any) ?? {};
-  const targetSkill = assessment.skill ?? "";
+  const equipment = (repair as unknown as { equipment?: { make?: string } | null }).equipment;
+  const make = equipment?.make ?? "";
+  const assessment = (repair.assessment as Record<string, unknown> | null) ?? {};
+  const targetSkill = typeof assessment["skill"] === "string" ? assessment["skill"] : "";
   const declinedBy = new Set(repair.declined_by ?? []);
 
-  // 2. Query all verified technicians from PostgreSQL
+  // Phase 10.2 doorstep service and urgency attributes
+  const doorstep = normalizeRepairDoorstepUrgency(repair);
+  const isCriticalStopped = doorstep.urgency_level === "CRITICAL" && doorstep.is_machine_stopped;
+
+  // 2. Resolve farmer coordinates (exact GPS or tahsil centroid)
+  let farmerPoint: GpsPoint | null = null;
+  let distanceSource: DistanceSource = "unknown";
+
+  try {
+    const { data: dispatchLoc } = await supabase
+      .from("repair_dispatch_locations")
+      .select("latitude, longitude, accuracy")
+      .eq("repair_request_id", repair.id)
+      .maybeSingle();
+
+    if (dispatchLoc && isValidGpsCoordinate(dispatchLoc.latitude, dispatchLoc.longitude)) {
+      farmerPoint = { latitude: dispatchLoc.latitude, longitude: dispatchLoc.longitude };
+      distanceSource = "exact_gps";
+    }
+  } catch {
+    // RLS or missing table gracefully falls through to coarse location
+  }
+
+  if (!farmerPoint && repair.location) {
+    const centroid = getNagpurTahsilCentroid(repair.location);
+    if (centroid) {
+      farmerPoint = centroid;
+      distanceSource = "tahsil_centroid";
+    }
+  }
+
+  // 3. Query all verified technicians from PostgreSQL
   const { data: techRows, error: techError } = await supabase
     .from("technician_profiles")
     .select("*, profile:profile_id(id, full_name, phone, village)")
@@ -130,40 +184,221 @@ export async function getEligibleTechnicians(
 
   const verifiedTechs = (techRows as unknown as VerifiedTechnicianWithProfile[]) ?? [];
 
-  // 3. Score and rank candidates (matching algorithm helper)
-  const matches: ScoredTechnicianMatch[] = verifiedTechs
-    .filter(
-      (t) =>
-        Boolean(t.is_verified) &&
-        Boolean(t.profile) &&
-        Boolean(t.profile?.full_name?.trim()) &&
-        t.profile?.full_name !== "Former Member" &&
-        !declinedBy.has(t.profile_id),
-    )
-    .map((t) => {
-      const brandMatch = Boolean(make && t.brands && t.brands.includes(make));
-      const skillMatch = Boolean(targetSkill && t.skills && t.skills.includes(targetSkill));
-      const reasons: string[] = [];
+  // 4. Query active repair workload and active circuits across technicians in a single query
+  const activeJobCounts = new Map<string, number>();
+  const techAssignedTahsilCounts = new Map<string, Map<NagpurTahsil, number>>();
 
-      if (brandMatch) reasons.push(`${make} specialist`);
-      if (skillMatch) reasons.push(`${targetSkill} expert`);
-      if (t.is_available) reasons.push("Available now");
+  // Resolve normalized tahsil for the current repair ticket (if recognized)
+  const currentRepairTahsil = normalizeNagpurTahsil(repair.location);
 
-      const proximityScore = Math.max(0, 10 - (t.eta_minutes ?? 45) / 10);
-      const score =
-        (brandMatch ? 40 : 0) + (skillMatch ? 30 : 0) + (t.is_available ? 20 : 0) + proximityScore;
+  try {
+    const { data: activeRepairs } = await supabase
+      .from("repair_requests")
+      .select("id, technician_id, location, service_type")
+      .in("status", ["ACCEPTED", "IN_PROGRESS", "WAITING_FOR_PARTS"]);
 
-      return {
-        technician: t,
-        score: Math.round(score),
-        brandMatch,
-        skillMatch,
-        reasons,
-      };
-    })
-    .sort((a, b) => b.score - a.score);
+    for (const r of activeRepairs || []) {
+      if (r.technician_id) {
+        activeJobCounts.set(r.technician_id, (activeJobCounts.get(r.technician_id) || 0) + 1);
 
-  return matches;
+        // Detect in-area doorstep circuits by normalized tahsil
+        const sType = r.service_type || "DOORSTEP";
+        if (sType === "DOORSTEP" && r.location) {
+          const stopTahsil = normalizeNagpurTahsil(r.location);
+          if (stopTahsil) {
+            let tahsilMap = techAssignedTahsilCounts.get(r.technician_id);
+            if (!tahsilMap) {
+              tahsilMap = new Map<NagpurTahsil, number>();
+              techAssignedTahsilCounts.set(r.technician_id, tahsilMap);
+            }
+            tahsilMap.set(stopTahsil, (tahsilMap.get(stopTahsil) || 0) + 1);
+          }
+        }
+      }
+    }
+  } catch {
+    // non-fatal if active workload query fails
+  }
+
+  // 5. Score and rank candidates using adaptive location-aware model
+  const eligibleTechs = verifiedTechs.filter(
+    (t) =>
+      Boolean(t.is_verified) &&
+      Boolean(t.profile) &&
+      Boolean(t.profile?.full_name?.trim()) &&
+      t.profile?.full_name !== "Former Member" &&
+      !declinedBy.has(t.profile_id),
+  );
+
+  const preliminaryMatches: ScoredTechnicianMatch[] = eligibleTechs.map((t) => {
+    const brandMatch = Boolean(make && t.brands && t.brands.includes(make));
+    const skillMatch = Boolean(targetSkill && t.skills && t.skills.includes(targetSkill));
+
+    // Technician location resolution (workshop coordinates or tahsil centroid)
+    let techPoint: GpsPoint | null = null;
+    const wLat = t.workshop_latitude;
+    const wLng = t.workshop_longitude;
+    if (typeof wLat === "number" && typeof wLng === "number" && isValidGpsCoordinate(wLat, wLng)) {
+      techPoint = { latitude: wLat, longitude: wLng };
+    } else {
+      const techLoc = t.profile?.village || t.workshop_name;
+      techPoint = getNagpurTahsilCentroid(techLoc);
+    }
+
+    // Doorstep capability & travel radius defaults for backward compatibility
+    const isDoorstepCapable = t.is_doorstep_capable ?? true;
+    const maxRadiusKm = t.max_travel_radius_km ?? 40;
+    const doorstepMatch = doorstep.service_type === "DOORSTEP" ? isDoorstepCapable : true;
+
+    // Distance computation (Haversine approximate road distance)
+    let distanceKm: number | null = null;
+    let estimatedDriveMinutes: number | null = null;
+    let isWithinRadius = true;
+
+    if (farmerPoint && techPoint) {
+      const approx = computeApproximateRoadDistance(techPoint, farmerPoint);
+      distanceKm = approx.distanceKm;
+      estimatedDriveMinutes = approx.durationMinutes;
+
+      if (doorstep.service_type === "DOORSTEP" && distanceKm > maxRadiusKm) {
+        isWithinRadius = false;
+      }
+    }
+
+    const activeJobCount = activeJobCounts.get(t.profile_id) ?? 0;
+
+    const breakdown = computeTechnicianDispatchScore({
+      isCriticalStopped,
+      brandMatch,
+      skillMatch,
+      isAvailable: Boolean(t.is_available),
+      activeJobCount,
+      distanceKm,
+      isWithinRadius,
+      serviceType: doorstep.service_type,
+      isDoorstepCapable,
+    });
+
+    // Human-readable recommendation reasons
+    const reasons: string[] = [];
+    if (brandMatch) reasons.push(`${make} specialist`);
+    if (skillMatch) reasons.push(`${targetSkill} expert`);
+
+    if (t.is_available) {
+      if (activeJobCount === 0) reasons.push("Available now (0 active jobs)");
+      else if (activeJobCount === 1) reasons.push("Available (1 active job)");
+      else reasons.push(`Available (${activeJobCount} active jobs)`);
+    } else {
+      reasons.push("Currently unavailable");
+    }
+
+    if (distanceKm !== null && estimatedDriveMinutes !== null) {
+      const approxTag = distanceSource === "tahsil_centroid" ? " (approx)" : "";
+      reasons.push(`${distanceKm} km · ~${estimatedDriveMinutes} min drive${approxTag}`);
+    }
+
+    if (doorstep.service_type === "DOORSTEP") {
+      if (isDoorstepCapable) {
+        reasons.push("Mobile field service");
+      } else {
+        reasons.push("Workshop depot only");
+      }
+    }
+
+    if (!isWithinRadius && distanceKm !== null) {
+      reasons.push(`Outside standard travel radius (${distanceKm} km > ${maxRadiusKm} km)`);
+    }
+
+    // Detect if technician already has an active doorstep circuit in the same tahsil
+    let hasInAreaCircuit = false;
+    let inAreaTahsil: string | null = null;
+    let inAreaExplanation: string | null = null;
+    let inAreaStopCount = 0;
+
+    if (currentRepairTahsil) {
+      const tahsilMap = techAssignedTahsilCounts.get(t.profile_id);
+      const stopCount = tahsilMap ? tahsilMap.get(currentRepairTahsil) || 0 : 0;
+      if (stopCount > 0) {
+        hasInAreaCircuit = true;
+        inAreaTahsil = currentRepairTahsil;
+        inAreaStopCount = stopCount;
+        inAreaExplanation =
+          stopCount > 1
+            ? `Already scheduled in ${currentRepairTahsil} today (${stopCount} stops)`
+            : `Already scheduled in ${currentRepairTahsil} today`;
+        reasons.push(inAreaExplanation);
+      }
+    }
+
+    if (isCriticalStopped && breakdown.proximityScore >= 32) {
+      reasons.push("Rapid dispatch proximity match");
+    }
+
+    return {
+      technician: t,
+      score: breakdown.score,
+      brandMatch,
+      skillMatch,
+      reasons,
+      distanceKm,
+      estimatedDriveMinutes,
+      distanceSource,
+      activeJobCount,
+      doorstepMatch,
+      isUrgencyWeighted: isCriticalStopped,
+      isWithinRadius,
+      hasInAreaCircuit,
+      inAreaTahsil,
+      inAreaExplanation,
+      inAreaStopCount,
+    };
+  });
+
+  // Sort candidates by score descending, using in-area circuit as gentle deterministic tie-breaker
+  preliminaryMatches.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    const bInArea = Boolean(b.hasInAreaCircuit);
+    const aInArea = Boolean(a.hasInAreaCircuit);
+    if (bInArea !== aInArea) return Number(bInArea) - Number(aInArea);
+    return 0;
+  });
+
+  // 6. Progressive refinement for top 3 candidates via OSRM (bounded timeout, non-blocking)
+  if (!options?.skipOsrm && farmerPoint && distanceSource === "exact_gps") {
+    const topCandidates = preliminaryMatches.slice(0, 3);
+    await Promise.allSettled(
+      topCandidates.map(async (m) => {
+        if (m.distanceKm !== null && farmerPoint) {
+          const tPoint = isValidGpsCoordinate(
+            m.technician.workshop_latitude,
+            m.technician.workshop_longitude,
+          )
+            ? {
+                latitude: m.technician.workshop_latitude as number,
+                longitude: m.technician.workshop_longitude as number,
+              }
+            : getNagpurTahsilCentroid(m.technician.profile?.village || m.technician.workshop_name);
+
+          if (tPoint) {
+            const resolveOpts: {
+              timeoutMs?: number | undefined;
+              fetchFn?: typeof fetch | undefined;
+            } = {
+              timeoutMs: options?.osrmTimeoutMs ?? 2000,
+            };
+            if (options?.fetchFn) {
+              resolveOpts.fetchFn = options.fetchFn;
+            }
+            const resolved = await resolveDrivingDistance(tPoint, farmerPoint, resolveOpts);
+            m.distanceKm = resolved.distanceKm;
+            m.estimatedDriveMinutes = resolved.durationMinutes;
+          }
+        }
+      }),
+    );
+  }
+
+  return preliminaryMatches;
 }
 
 /**
@@ -236,7 +471,9 @@ export async function assignTechnician(input: AssignTechnicianInput): Promise<Re
     throw new Error("Technician profile not found. Please select a valid registered technician.");
   }
 
-  const techProfile = (techRecord as any).profile;
+  const techProfile = (
+    techRecord as unknown as { profile: { id: string; full_name: string; role: string } | null }
+  ).profile;
   if (!techProfile || techProfile.role !== "technician") {
     throw new Error("Invalid assignment: Selected user profile is not a registered technician.");
   }

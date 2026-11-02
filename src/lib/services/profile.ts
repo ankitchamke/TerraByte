@@ -30,14 +30,42 @@ export async function updateProfile(input: UpdateProfileInput): Promise<void> {
     throw new Error("Full name is required.");
   }
 
+  const updateData: {
+    full_name: string;
+    phone?: string | null;
+    village?: string | null;
+    updated_at: string;
+  } = {
+    full_name: trimmedName,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (input.phone !== undefined) {
+    updateData.phone = input.phone?.trim() || null;
+  }
+
+  if (input.village !== undefined) {
+    const trimmedVillage = input.village?.trim();
+    if (trimmedVillage) {
+      updateData.village = trimmedVillage;
+    } else {
+      // Do not overwrite an existing saved farmer profile location with an empty value
+      const { data: existingProfile } = await supabase
+        .from("profiles")
+        .select("village")
+        .or(`auth_user_id.eq.${user.id},id.eq.${user.id}`)
+        .maybeSingle();
+
+      if (!existingProfile?.village) {
+        updateData.village = null;
+      }
+      // If existingProfile has a saved village, leave it unchanged
+    }
+  }
+
   const { error } = await supabase
     .from("profiles")
-    .update({
-      full_name: trimmedName,
-      phone: input.phone?.trim() || null,
-      village: input.village?.trim() || null,
-      updated_at: new Date().toISOString(),
-    })
+    .update(updateData)
     .or(`auth_user_id.eq.${user.id},id.eq.${user.id}`);
 
   if (error) {
@@ -49,7 +77,9 @@ export async function updateProfile(input: UpdateProfileInput): Promise<void> {
 /**
  * Updates the authenticated technician's workshop details in public.technician_profiles.
  */
-export async function updateTechnicianWorkshop(input: UpdateTechnicianWorkshopInput): Promise<void> {
+export async function updateTechnicianWorkshop(
+  input: UpdateTechnicianWorkshopInput,
+): Promise<void> {
   const {
     data: { user },
     error: authError,
@@ -137,12 +167,12 @@ export async function deleteUserAccount(): Promise<void> {
     const msg = error.message || "";
     if (msg.includes("active repair requests in progress")) {
       throw new Error(
-        "Cannot delete your account while you have active repair requests in progress. Please complete or cancel all open repairs before deleting your account."
+        "Cannot delete your account while you have active repair requests in progress. Please complete or cancel all open repairs before deleting your account.",
       );
     }
     if (msg.includes("assigned to active repair jobs")) {
       throw new Error(
-        "Cannot delete your account while you are assigned to active repair jobs. Please complete or resolve all open jobs before deleting your account."
+        "Cannot delete your account while you are assigned to active repair jobs. Please complete or resolve all open jobs before deleting your account.",
       );
     }
     if (msg.includes("Demo evaluation accounts cannot be deleted")) {
@@ -154,7 +184,12 @@ export async function deleteUserAccount(): Promise<void> {
     throw new Error(error.message || "Failed to delete account. Please try again.");
   }
 
-  if (data && typeof data === "object" && "success" in data && !(data as any).success) {
+  if (
+    data &&
+    typeof data === "object" &&
+    "success" in data &&
+    !(data as { success?: boolean }).success
+  ) {
     throw new Error((data as { message?: string }).message || "Failed to delete account.");
   }
 }

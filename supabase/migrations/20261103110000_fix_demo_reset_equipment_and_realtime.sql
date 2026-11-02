@@ -254,8 +254,8 @@ BEGIN
     id, farmer_id, type, make, model, year, serial_number, operating_hours, photo_url, status, demo_code
   ) VALUES
     ('00000000-0000-0000-0010-000000000001'::uuid, v_demo_farmer_id, 'Tractor', 'Mahindra', '575 DI', 2021, 'MH575-21-0048821', 1240, NULL, 'Operational', 'e1'),
-    ('00000000-0000-0000-0010-000000000002'::uuid, v_demo_farmer_id, 'Harvester', 'Kubota', 'DC-68G', 2023, 'KBDC68-23-7710', 3120, NULL, 'Operational', 'e2'),
-    ('00000000-0000-0000-0010-000000000003'::uuid, v_demo_farmer_id, 'Pump', 'Kirloskar', 'KDS 5HP', 2019, 'KIR-5HP-19-3321', 890, NULL, 'Operational', 'e3')
+    ('00000000-0000-0000-0010-000000000002'::uuid, v_demo_farmer_id, 'Power Tiller', 'VST Shakti', '130 DI', 2023, 'VST130-23-009112', 3120, NULL, 'Operational', 'e2'),
+    ('00000000-0000-0000-0010-000000000003'::uuid, v_demo_farmer_id, 'Harvester', 'John Deere', 'W70', 2020, 'JD-W70-20-00192', 890, NULL, 'Operational', 'e3')
   ON CONFLICT (id) DO UPDATE SET
     farmer_id = EXCLUDED.farmer_id,
     type = EXCLUDED.type,

@@ -40,10 +40,10 @@ test("BUG 1: Migration 20261103110000 defines safe, scoped deletion of non-canon
   assert.ok(
     sql.includes("Mahindra") &&
       sql.includes("575 DI") &&
-      sql.includes("Kubota") &&
-      sql.includes("DC-68G") &&
-      sql.includes("Kirloskar") &&
-      sql.includes("KDS 5HP"),
+      sql.includes("VST Shakti") &&
+      sql.includes("130 DI") &&
+      sql.includes("John Deere") &&
+      sql.includes("W70"),
     "Migration must restore all 3 canonical machinery fixtures",
   );
   assert.ok(

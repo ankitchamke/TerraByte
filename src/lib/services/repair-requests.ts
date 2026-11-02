@@ -54,6 +54,7 @@ export interface RepairRequestWithEquipment extends RepairRequestRow {
   equipment: EquipmentRow | null;
   technician?: Pick<ProfileRow, "id" | "full_name" | "phone" | "village"> | null;
   farmer?: Pick<ProfileRow, "id" | "full_name" | "phone" | "village"> | null;
+  repair_dispatch_locations?: RepairDispatchLocation | RepairDispatchLocation[] | null;
 }
 
 export type RepairTimelineWithActor = RepairTimelineRow & {
@@ -486,13 +487,25 @@ export async function getTechnicianRepairRequests(): Promise<RepairRequestWithEq
   const { data, error } = await supabase
     .from("repair_requests")
     .select(
-      "*, equipment(*), farmer:farmer_id(id, full_name, phone, village), technician:technician_id(id, full_name, phone, village)",
+      "*, equipment(*), farmer:farmer_id(id, full_name, phone, village), technician:technician_id(id, full_name, phone, village), repair_dispatch_locations(id, repair_request_id, latitude, longitude, accuracy, captured_at, created_at)",
     )
     .eq("technician_id", profile.id)
     .order("created_at", { ascending: false });
 
   if (error) {
-    throw new Error(`Failed to load technician repair requests: ${error.message}`);
+    // Resilient fallback query without embedded location if schema cache has issues
+    const fallback = await supabase
+      .from("repair_requests")
+      .select(
+        "*, equipment(*), farmer:farmer_id(id, full_name, phone, village), technician:technician_id(id, full_name, phone, village)",
+      )
+      .eq("technician_id", profile.id)
+      .order("created_at", { ascending: false });
+
+    if (fallback.error) {
+      throw new Error(`Failed to load technician repair requests: ${fallback.error.message}`);
+    }
+    return (fallback.data as RepairRequestWithEquipment[]) ?? [];
   }
 
   return (data as RepairRequestWithEquipment[]) ?? [];
@@ -2503,5 +2516,52 @@ export async function getRepairDispatchLocation(
   } catch (err) {
     console.warn("[TerraByte] Warning: Failed to query repair dispatch location:", err);
     return null;
+  }
+}
+
+/**
+ * Fetches private GPS dispatch locations in batch for a list of repair request IDs.
+ * Governed by RLS: Returns locations for tickets where caller is authorized (farmer, assigned technician, or admin).
+ * Maps each record strictly to its corresponding repair_request_id.
+ */
+export async function getRepairDispatchLocations(
+  repairRequestIds: string[],
+): Promise<Record<string, RepairDispatchLocation>> {
+  if (!repairRequestIds || repairRequestIds.length === 0) return {};
+
+  const validIds = Array.from(
+    new Set(
+      repairRequestIds
+        .filter((id) => Boolean(id && typeof id === "string"))
+        .map((id) => id.trim())
+        .filter((id) => id.length > 0),
+    ),
+  );
+  if (validIds.length === 0) return {};
+
+  try {
+    const { data, error } = await supabase
+      .from("repair_dispatch_locations")
+      .select("id, repair_request_id, latitude, longitude, accuracy, captured_at, created_at")
+      .in("repair_request_id", validIds);
+
+    if (error || !data) {
+      console.warn(
+        "[TerraByte] Warning: Failed to query repair dispatch locations in batch:",
+        error,
+      );
+      return {};
+    }
+
+    const mapping: Record<string, RepairDispatchLocation> = {};
+    for (const row of data) {
+      if (row.repair_request_id) {
+        mapping[row.repair_request_id] = row as RepairDispatchLocation;
+      }
+    }
+    return mapping;
+  } catch (err) {
+    console.warn("[TerraByte] Warning: Error querying repair dispatch locations in batch:", err);
+    return {};
   }
 }

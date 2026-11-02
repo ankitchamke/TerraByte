@@ -1248,6 +1248,13 @@ function AdminRepair() {
                                   Rank #{idx + 1}
                                 </span>
                               )}
+
+                              {/* Phase 10.4-D: In-Area Circuit badge */}
+                              {m.hasInAreaCircuit && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
+                                  <Navigation className="h-3 w-3" /> In-Area Circuit
+                                </span>
+                              )}
                             </div>
 
                             <p className="text-xs text-muted-foreground mt-0.5">
@@ -1354,6 +1361,13 @@ function AdminRepair() {
                                 ⚠️ Outside {m.technician.max_travel_radius_km ?? 40} km radius
                               </span>
                             )}
+
+                          {m.hasInAreaCircuit && m.inAreaExplanation && (
+                            <span className="rounded-md bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 font-semibold text-emerald-700 dark:text-emerald-400 text-[11px] flex items-center gap-1">
+                              <Navigation className="h-3 w-3 shrink-0" />
+                              {m.inAreaExplanation}
+                            </span>
+                          )}
                         </div>
 
                         {/* Reasons */}
@@ -2348,6 +2362,13 @@ function AdminRepair() {
                       : `${confirmAssignModal.activeJobCount} active jobs`}
                   </span>
                 </div>
+
+                {confirmAssignModal.hasInAreaCircuit && (
+                  <p className="flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400 font-semibold bg-emerald-500/10 p-2 rounded-lg border border-emerald-500/20">
+                    <Navigation className="h-3.5 w-3.5 shrink-0" />
+                    {confirmAssignModal.inAreaExplanation || "Already scheduled in this area today"}
+                  </p>
+                )}
               </div>
 
               {confirmAssignModal.activeJobCount >= 2 && (

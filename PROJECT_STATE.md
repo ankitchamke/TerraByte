@@ -2,7 +2,7 @@
 
 ## 1. Current Phase & Engineering Status
 
-- **Status**: **COMPLETE — PHASE 10.3 LOCATION-AWARE TECHNICIAN DISPATCH IMPLEMENTED AND VERIFIED**
+- **Status**: **COMPLETE — ALL PHASES (PHASES 1 THROUGH 10.4 COMPLETE)**
 - **Branch**: `phase-10` (Connected to Lovable; no destructive Git history operations)
 - **Official Problem Statement**: **"One-Stop Agricultural Equipment Repair"**
 - **Domain**: AgriTech · Agricultural Machinery Maintenance & Operational Coordination
@@ -19,9 +19,10 @@
   - **Phase 10.1 — Multilingual Voice Transcription (Groq Whisper Large V3)**: **COMPLETE** (Serverless transcription, silence detection, 5s minimum duration, Hindi/Marathi script preservation)
   - **Phase 10.1.1 — Staff-Side On-Demand Translation (Chrome Built-in AI)**: **COMPLETE** (Chrome Native Translator & Language Detector API, 6-direction translation between English, Hindi, and Marathi, on-demand staff UI)
   - **Phase 10.2 — Doorstep Service Intake & Operational Urgency**: **COMPLETE** (Subphases 10.2-A through 10.2-D: schema migration, domain validation, wizard intake, staff triage & visibility, remote migration applied, 46 automated tests)
-  - **Phase 10.3 — Location-Aware Technician Dispatch & Recommendation Engine**: **COMPLETE** (Subphases 10.3-A through 10.3-D: schema migration, 14 Nagpur tahsil centroids, adaptive scoring matrix, workload scaling, Service Centre & Farmer UI cards, manual confirmation modal, 30 dispatch automated tests)
-- **Current Milestone**: Phase 10.3 fully complete, tested, and verified across 142 automated tests in the test suite (10 dispatch UI, 20 dispatch engine & math, 46 doorstep urgency, 15 Chrome translator, 10 on-demand translation, 35 voice transcription, 6 cleanup verification).
-- **Next Phase**: Phase 10.4 — Multi-Job Field Route Planning & Traveling Technician Circuits.
+  - **Phase 10.3 — Location-Aware Technician Dispatch & Recommendation Engine**: **COMPLETE** (Subphases 10.3-A through 10.3-D: schema migration applied remotely, 14 Nagpur tahsil centroids, adaptive scoring matrix, workload scaling, Service Centre & Farmer UI cards, manual confirmation modal, 30 dispatch automated tests)
+  - **Phase 10.4 — Multi-Job Field Route Planning & Traveling Technician Circuits**: **COMPLETE** (Subphases 10.4-A through 10.4-D: Architecture Review, Multi-Stop Circuit Engine, Technician Daily Circuit UX, Farmer Locality Hardening, Service Centre Taluka Clustering & In-Area Dispatch Integration; 65 automated Phase 10.4 tests, 248 total tests)
+- **Current Milestone**: Phase 10.4 fully completed, tested, and verified across 248 automated tests in the test suite (20 taluka clustering & in-area circuit, 11 farmer locality, 25 circuit optimizer, 20 circuit UI, 10 dispatch UI, 20 dispatch engine & math, 46 doorstep urgency, 15 Chrome translator, 10 on-demand translation, 35 voice transcription, 6 cleanup verification).
+- **Next Phase**: Post-Phase 10 Continuous Monitoring & Evaluation.
 
 ---
 
@@ -45,6 +46,16 @@
 - **Phase 5.4 (Cancellation Approval Workflow)**: Added `CANCELLATION_REQUESTED` enum and tracking columns; hardened RLS policies; Admin Cancellation Review Card; technician work-hold banners.
 - **Phase 5.5 (Communication & Quote Revision)**: `public.repair_messages` table with real-time chat (`<RepairChat />`); quote revision lifecycle preserving farmer clarification notes while diffing line-by-line item changes (`<QuoteComparison />`).
 - **Phase 5.6 (Handover & Completion Polish)**: Canonical completion lifecycle verified: `IN_PROGRESS` $\rightarrow$ `TESTING` $\rightarrow$ `COMPLETED` $\rightarrow$ permanent `service_history`. Dedicated "Completed" and "Cancelled" dashboard tabs.
+
+### Farmer Locality Hardening & Neutral Initialization
+
+- **Removed Auto-Populated Defaults**: Eradicated automatic prefilling of `profile.village` (`"Katol, Nagpur"`) into the breakdown intake form (`src/routes/farmer/report-breakdown.tsx`).
+- **Clean Form Initialization**: New breakdown tickets start with strictly empty village/locality and unselected tahsil dropdown (`"Select Tahsil..."`).
+- **Reset State Hygiene**: "Start over" clears village to `""` rather than restoring profile village.
+- **Safe Unknown Fallback**: Submission without locality submits canonical fallback `"On-site / Field"` without fabricating or assuming a tahsil.
+- **Profile Location Preservation**: Enforced in `src/lib/services/profile.ts` that existing saved farmer locations are never overwritten with empty/null values.
+- **Registration Form Validation**: Validates required `village` field on farmer signup (`src/routes/register/farmer.tsx`) preventing whitespace/empty submissions.
+- **Localization & GPS Independence**: Full Devanagari Marathi/Hindi script preservation; GPS capture operates completely independent of manual text fields.
 
 ### Phase 6 — Production Readiness & Account Hardening
 
@@ -131,7 +142,55 @@
 - **Subphase 10.3-D (End-to-End Verification & Documentation)**:
   - 30 automated tests passing across `tests/technician-dispatch.test.mjs` (20) and `tests/dispatch-ui.test.mjs` (10).
   - 142 / 142 tests passing across all test suites in the repository.
+  - Remote Supabase migration `20261103100000_phase10_3_technician_dispatch.sql` applied and verified.
   - Verified manual human assignment authority, privacy boundaries, emergency highlighting, and zero regressions.
+
+### Phase 10.4 — Multi-Job Field Route Planning & Traveling Technician Circuits
+
+- **Subphase 10.4-A (Read-Only Roadmap & Architecture Review)**:
+  - Conducted read-only inspection of Phase 10.3 assets, routing algorithms, and technician workflows.
+  - Formulated 4-part subphase breakdown: Architecture (A), Domain Engine (B), Technician UX (C), and Service Centre Clustering (D).
+- **Subphase 10.4-B (Multi-Stop Circuit Optimization Engine)**:
+  - Created `src/lib/services/circuit-optimizer.ts`:
+    - Pure, deterministic Traveling Technician itinerary optimizer (`optimizeCircuitStops`).
+    - Emergency priority pinning: `CRITICAL` + `is_machine_stopped` repairs are strictly prioritized at head of circuit.
+    - Nearest-neighbor ordering followed by 2-opt refinement to minimize cumulative road kilometers.
+    - Full circuit metrics calculation (`calculateCircuitMetrics` and `calculateCircuitMetricsWithRouting`): individual legs, cumulative distance/time, and return-to-depot closure.
+    - Emergency detour cost analysis (`calculateDetourCost`): evaluates marginal detour in $O(N)$ without re-routing entire circuit, respecting emergency priority partitions.
+    - Geographic tahsil clustering (`clusterRepairsByTahsil`): aggregates open doorstep repairs across the 14 official Nagpur tahsils, isolates unresolvable locations to "Unknown", and excludes workshop drop-offs.
+  - Verified across 25 automated tests in `tests/circuit-optimizer.test.mjs`. Zero UI disruption, zero schema modifications.
+- **Subphase 10.4-C (Technician Daily Field Circuit UX)**:
+  - Created `src/components/technician-circuit-card.tsx`:
+    - Strict visibility gate: Renders ONLY when technician has $\ge 2$ active assigned doorstep repairs (`service_type === 'DOORSTEP'` and status in `ACCEPTED`, `QUOTE_PENDING`, `QUOTE_REVISED`, `IN_PROGRESS`, `WAITING_FOR_PARTS`).
+    - Workshop drop-offs and inactive requests are strictly excluded; hidden state (`return null`) for 0 or 1 doorstep jobs.
+    - Sequential topological itinerary: `Depot Origin → Stop #1 → Stop #2 → ... → Return to Depot Closure`.
+    - Per-leg transit metrics (`distanceFormatted` and `durationFormatted`) and per-stop cumulative road distance.
+    - Primary CTA: **"Navigate to Stop #1"** launching Google Maps Directions URL to exact coordinates (or Search query to coarse village when GPS is missing).
+    - Emergency breakdown notification banner: Automatically surfaces when a `CRITICAL` + `is_machine_stopped` job is present, highlighting Stop #1 priority adjustment and marginal detour impact (`+... km detour · +... mins`), with an idempotent acknowledge/dismiss button.
+    - Landmark & access instructions preserved and displayed for rural field finds.
+    - Privacy: Zero raw numeric GPS coordinates rendered into plain user text.
+  - Integrated into technician workbench (`src/routes/technician/index.tsx`) above `Section title="Active jobs"`.
+  - Verified across 20 automated tests in `tests/circuit-ui.test.mjs` verifying navigation accuracy, exact GPS precedence, batch dispatch location resolution, zero-distance edge cases, and privacy boundaries. Production build and TypeScript compile cleanly.
+- **Subphase 10.4-D (Service Centre Taluka Clustering & Dispatch Dashboard Integration)**:
+  - Created `src/components/admin-taluka-clusters.tsx`:
+    - Groups open, unassigned doorstep repair requests (`status === 'REQUESTED'`, `!technician_id`, `service_type === 'DOORSTEP'`) into geographic Nagpur taluka cards using `clusterRepairsByTahsil`.
+    - Real-time tally of active taluka clusters, total unassigned doorstep volume, and critical stopped machines.
+    - Prominent Emergency Alert banner highlighting critical field stoppages with immediate taluka attribution.
+    - Visual urgency breakdown chips (`Critical`, `High`, `Standard`, `Flexible`) and direct ticket shortcut pills.
+    - Interactive cluster click-to-filter syncing with operations table filter state; active selection indicator and "Show all clusters" reset button.
+    - Clean empty-state reassurance when all doorstep repairs are assigned or in progress.
+    - Zero exposure of raw GPS coordinates; strictly renders normalized taluka names.
+  - Integrated into Service Centre Operations Board (`src/routes/admin/index.tsx`) between KPI cards and filter tabs.
+  - Upgraded Technician Recommendation Engine (`src/lib/services/technicians.ts` & `src/lib/services/technician-dispatch.ts`):
+    - Added In-Area Circuit detection: checks whether candidate technician already has an active doorstep job in the same normalized tahsil.
+    - Piggybacks on existing technician active-job query with zero additional network requests.
+    - Deterministic tie-breaker: prefers technicians already operating in the same taluka when dispatch match scores are tied, preserving all 100-point score invariants.
+  - Enhanced Service Centre Repair Detail (`src/routes/admin/repair/$id.tsx`):
+    - Displays prominent emerald `In-Area Circuit` badge (`Navigation` icon) and concise explanation (e.g. `"Already scheduled in Katol today"`).
+    - Highlights in-area circuit context in the manual assignment confirmation modal.
+  - Extended Tahsil Normalization (`src/lib/location.ts`):
+    - Added Devanagari script aliases for all 14 Nagpur tahsils (e.g. काटोल, सावनेर, उमरेड, कलमेश्वर, रामटेक).
+  - Verified across 20 automated tests in `tests/taluka-clustering.test.mjs`.
 
 ---
 
@@ -143,9 +202,9 @@
 | **Machinery Fleet**          | Tractors, harvesters, tillers, pumps; Chassis/Serial tracking, Status                                                                                                                                                                                                                                                           | CAN bus J1939 telematics dongle integration                      |
 | **Breakdown Intake**         | 5-step wizard, symptom chips, Groq Whisper voice transcription (5s min, silence detection), field photos, Doorstep vs Workshop selector, 4-tier urgency assessment, machine stoppage flag, availability slots, field landmark instructions                                                                                      | Offline BackgroundSync ServiceWorker queue                       |
 | **Diagnostic Intake**        | Rule-based symptom assessment, severity, parts categories, safety tips, MCP server                                                                                                                                                                                                                                              | Multimodal Gemini 2.5 Vision image defect classification         |
-| **Multilingual Support**     | Groq Whisper Large V3 transcription (Hindi/Marathi/English script preserved), Chrome Native Translator & Language Detector API for staff-side on-demand translation                                                                                                                                                             | Automated bidirectional voice translation during calls           |
-| **Doorstep & Logistics**     | Doorstep/Workshop intake, stoppage detection, preferred timing, field landmark notes, staff triage queue sorting (Critical Stopped > Urgency > SLA Overdue > FIFO), emergency stoppage banners, OSRM driving route estimation, Google Maps directions                                                                           | Multi-stop circuit route planning for daily travelling mechanics |
-| **Technician Dispatch**      | Location-aware adaptive recommendation engine (Nagpur tahsil centroids, OSRM driving distance with rural road fallback, active workload scaling, emergency stoppage weighting, doorstep travel radius cutoff, manual assignment confirmation modal, privacy-safe farmer view)                                                   | Real-time GPS technician live turn-by-turn map tracking          |
+| **Multilingual Support**     | Groq Whisper Large V3 transcription (Hindi/Marathi/English script preserved), Chrome Native Translator & Language Detector API for staff-side on-demand translation, Devanagari tahsil normalization                                                                                                                           | Automated bidirectional voice translation during calls           |
+| **Doorstep & Logistics**     | Doorstep/Workshop intake, stoppage detection, preferred timing, field landmark notes, staff triage queue sorting (Critical Stopped > Urgency > SLA Overdue > FIFO), emergency stoppage banners, OSRM driving route estimation, Google Maps directions, multi-stop daily field circuit optimization, Service Centre taluka clustering | Live vehicle telematics IoT sensor telemetry                     |
+| **Technician Dispatch**      | Location-aware adaptive recommendation engine (Nagpur tahsil centroids, OSRM driving distance with rural road fallback, active workload scaling, emergency stoppage weighting, doorstep travel radius cutoff, in-area circuit match & tie-breaking, manual assignment confirmation modal, privacy-safe farmer view)            | Real-time GPS technician live turn-by-turn map tracking          |
 | **Quotation & Pricing**      | Itemized parts, labour, taxes, versioning, Quote v1 vs v2 comparison diff, Depot catalog picker                                                                                                                                                                                                                                 | Integrated UPI / Razorpay escrow payment gateway                 |
 | **Repair Operations**        | 7-step stepper, parts-on-hold delay tracking, load testing, complete & sign-off                                                                                                                                                                                                                                                 | Video inspection live stream call                                |
 | **Communications**           | Ticket-scoped chat (`repair_messages`), unread tracking, read receipts                                                                                                                                                                                                                                                          | Voice note audio messaging, WhatsApp webhook bot                 |
@@ -171,28 +230,30 @@
    - Proximity is weighted highest (40%) during critical field stoppages, whereas brand specialization is weighted highest (30%) during routine repairs.
    - Unrecognized regional locations strictly return `null` and never silently default to Nagpur city.
    - Farmer exact GPS coordinates and technician private coordinates are never leaked to unassigned roles or rendered in farmer views.
-6. **Language & Translation Integrity**:
+6. **Circuit & Field Route Canon**:
+   - Sequential Traveling Technician circuits pin `CRITICAL` + `is_machine_stopped` field breakdowns at Stop #1.
+   - The circuit card renders on the technician workbench only when $\ge 2$ active doorstep repairs are assigned.
+   - Service Centre taluka clustering displays open, unassigned doorstep repairs to highlight regional demand concentrations.
+   - In-area circuit operates as a gentle, deterministic tie-breaker for candidate technicians already operating in that taluka, preserving 0-100 score bounds.
+7. **Language & Translation Integrity**:
    - Voice transcription preserves spoken Hindi and Marathi Devanagari script without unsolicited machine translation.
    - Translation is strictly on-demand, staff-initiated, on-device via Chrome Native APIs, and never overwrites original farmer text in `repairs.description`.
-7. **Inventory Ownership**: Stock is owned by the central Service Centre (Nagpur Central Command). Technicians request parts from this depot for assigned repairs; stock is decremented atomically upon physical handoff (`ISSUED_TO_REPAIR`).
-8. **Farmer Privacy Boundary**: Farmers receive high-level repair delay and ETA updates (`WAITING_FOR_PARTS`), but internal depot stock counts, wholesale costs, supplier origins, and staff audit notes are strictly quarantined at the database RLS level.
-9. **Demo Account Authorization**: Reset Demo capabilities are strictly restricted on the backend via dual-key authorization to the 3 designated evaluation personas:
+8. **Inventory Ownership**: Stock is owned by the central Service Centre (Nagpur Central Command). Technicians request parts from this depot for assigned repairs; stock is decremented atomically upon physical handoff (`ISSUED_TO_REPAIR`).
+9. **Farmer Privacy Boundary**: Farmers receive high-level repair delay and ETA updates (`WAITING_FOR_PARTS`), but internal depot stock counts, wholesale costs, supplier origins, and staff audit notes are strictly quarantined at the database RLS level.
+10. **Demo Account Authorization**: Reset Demo capabilities are strictly restricted on the backend via dual-key authorization to the 3 designated evaluation personas:
    - `farmer.nagpur@terrabyte.demo` (Balasaheb Patil)
    - `tech.nagpur@terrabyte.demo` (Ramesh Kumar)
    - `admin.nagpur@terrabyte.demo` (Nagpur Service Centre)
-10. **Real User Isolation**: Real user data is strictly isolated by RLS and cannot be modified or cleared by demo reset operations.
-11. **Assistive AI Boundary**: Machine diagnostics use rule-based reasoning with transparent markers. AI provides decision support; farmers and technicians retain final operational authority.
+11. **Real User Isolation**: Real user data is strictly isolated by RLS and cannot be modified or cleared by demo reset operations.
+12. **Assistive AI Boundary**: Machine diagnostics use rule-based reasoning with transparent markers. AI provides decision support; farmers and technicians retain final operational authority.
 
 ---
 
-## 5. Known Limitations & Phase 10.4 Scope
+## 5. Completed Phase 10 Scope & Future Horizons
 
-### Known Limitations in Phase 10.3
-
-- **Single-Leg Travel Estimation**: Driving distance calculates technician base/workshop to field breakdown origin; does not yet chain multiple sequential field visits into a multi-stop traveling circuit.
-- **Migration Pending Maintenance Window**: Migration `20261103100000_phase10_3_technician_dispatch.sql` is staged locally and backward-compatible. Runtime fallback currently resolves technician locations via profile village/tahsil until applied in production.
-
-### Future Work for Phase 10.4 (Multi-Job Traveling Route Optimization)
-
-1. **Multi-Job Field Route Planning**: Group nearby doorstep requests in the same taluka cluster (e.g. Katol or Saoner) into daily field visit circuits for traveling mechanics.
-2. **Dynamic Circuit Re-Ordering**: Dynamically re-order field visit sequences based on urgent stoppage notifications during an active day route.
+### Completed in Phase 10.4
+- **Multi-Job Field Route Planning**: Group nearby doorstep requests in the same taluka cluster (e.g. Katol or Saoner) into daily field visit circuits for traveling mechanics.
+- **Dynamic Circuit Itinerary & Emergency Re-Ordering**: Sequential itinerary with nearest-neighbor and 2-opt refinement, emergency breakdown pinning at Stop #1, per-leg driving metrics, and marginal detour cost calculations.
+- **Service Centre Taluka Breakdown Clusters**: Live dashboard widget on `/admin` grouping open, unassigned doorstep repairs by normalized Nagpur tahsil with interactive filtering and critical stoppage alerts.
+- **In-Area Circuit Dispatch Bonus**: Intelligent recommendation tie-breaker prioritizing mechanics already operating within the destination taluka today.
+- **Farmer Locality Neutrality**: Clean form initialization without assumed Katol defaults; Devanagari script normalization for all 14 Nagpur tahsils.

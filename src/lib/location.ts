@@ -82,6 +82,24 @@ export function normalizeNagpurTahsil(input?: string | null): NagpurTahsil | nul
   if (clean.includes("bhiwapur")) return "Bhiwapur";
   if (clean.includes("kuhi")) return "Kuhi";
 
+  // Devanagari Marathi / Hindi Tahsil aliases
+  if (clean.includes("काटोल")) return "Katol";
+  if (clean.includes("सावनेर")) return "Saoner";
+  if (clean.includes("उमरेड") || clean.includes("उमरेर")) return "Umred";
+  if (clean.includes("नरखेड")) return "Narkhed";
+  if (clean.includes("कळमेश्वर") || clean.includes("कलमेश्वर")) return "Kalmeshwar";
+  if (clean.includes("रामटेक")) return "Ramtek";
+  if (clean.includes("कामठी")) return "Kamptee";
+  if (clean.includes("हिंगणा")) return "Hingna";
+  if (clean.includes("पारशिवणी") || clean.includes("पारशिवनी")) return "Parseoni";
+  if (clean.includes("मौदा")) return "Mauda";
+  if (clean.includes("भिवापूर")) return "Bhiwapur";
+  if (clean.includes("कुही")) return "Kuhi";
+  if (clean.includes("नागपूर") && clean.includes("ग्रामीण")) return "Nagpur (Rural)";
+  if (clean.includes("नागपूर") && (clean.includes("शहर") || clean.includes("नागरी")))
+    return "Nagpur (Urban)";
+  if (clean === "नागपूर") return "Nagpur (Urban)";
+
   for (const t of NAGPUR_TAHSILS) {
     if (t.toLowerCase() === clean) return t;
   }

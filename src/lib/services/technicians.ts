@@ -4,9 +4,11 @@ import { createNotification } from "./notifications";
 import {
   isValidGpsCoordinate,
   getNagpurTahsilCentroid,
+  normalizeNagpurTahsil,
   computeApproximateRoadDistance,
   type GpsPoint,
   type DistanceSource,
+  type NagpurTahsil,
 } from "../location.ts";
 import { normalizeRepairDoorstepUrgency } from "./doorstep-service.ts";
 import { resolveDrivingDistance } from "./routing.ts";
@@ -25,6 +27,7 @@ export type {
   GetEligibleTechniciansOptions,
 };
 export { computeTechnicianDispatchScore };
+export * from "./circuit-optimizer.ts";
 
 export type TechnicianProfileRow = Database["public"]["Tables"]["technician_profiles"]["Row"];
 export type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
@@ -181,17 +184,36 @@ export async function getEligibleTechnicians(
 
   const verifiedTechs = (techRows as unknown as VerifiedTechnicianWithProfile[]) ?? [];
 
-  // 4. Query active repair workload across technicians in a single query
+  // 4. Query active repair workload and active circuits across technicians in a single query
   const activeJobCounts = new Map<string, number>();
+  const techAssignedTahsilCounts = new Map<string, Map<NagpurTahsil, number>>();
+
+  // Resolve normalized tahsil for the current repair ticket (if recognized)
+  const currentRepairTahsil = normalizeNagpurTahsil(repair.location);
+
   try {
     const { data: activeRepairs } = await supabase
       .from("repair_requests")
-      .select("technician_id")
+      .select("id, technician_id, location, service_type")
       .in("status", ["ACCEPTED", "IN_PROGRESS", "WAITING_FOR_PARTS"]);
 
     for (const r of activeRepairs || []) {
       if (r.technician_id) {
         activeJobCounts.set(r.technician_id, (activeJobCounts.get(r.technician_id) || 0) + 1);
+
+        // Detect in-area doorstep circuits by normalized tahsil
+        const sType = r.service_type || "DOORSTEP";
+        if (sType === "DOORSTEP" && r.location) {
+          const stopTahsil = normalizeNagpurTahsil(r.location);
+          if (stopTahsil) {
+            let tahsilMap = techAssignedTahsilCounts.get(r.technician_id);
+            if (!tahsilMap) {
+              tahsilMap = new Map<NagpurTahsil, number>();
+              techAssignedTahsilCounts.set(r.technician_id, tahsilMap);
+            }
+            tahsilMap.set(stopTahsil, (tahsilMap.get(stopTahsil) || 0) + 1);
+          }
+        }
       }
     }
   } catch {
@@ -287,6 +309,27 @@ export async function getEligibleTechnicians(
       reasons.push(`Outside standard travel radius (${distanceKm} km > ${maxRadiusKm} km)`);
     }
 
+    // Detect if technician already has an active doorstep circuit in the same tahsil
+    let hasInAreaCircuit = false;
+    let inAreaTahsil: string | null = null;
+    let inAreaExplanation: string | null = null;
+    let inAreaStopCount = 0;
+
+    if (currentRepairTahsil) {
+      const tahsilMap = techAssignedTahsilCounts.get(t.profile_id);
+      const stopCount = tahsilMap ? tahsilMap.get(currentRepairTahsil) || 0 : 0;
+      if (stopCount > 0) {
+        hasInAreaCircuit = true;
+        inAreaTahsil = currentRepairTahsil;
+        inAreaStopCount = stopCount;
+        inAreaExplanation =
+          stopCount > 1
+            ? `Already scheduled in ${currentRepairTahsil} today (${stopCount} stops)`
+            : `Already scheduled in ${currentRepairTahsil} today`;
+        reasons.push(inAreaExplanation);
+      }
+    }
+
     if (isCriticalStopped && breakdown.proximityScore >= 32) {
       reasons.push("Rapid dispatch proximity match");
     }
@@ -304,11 +347,21 @@ export async function getEligibleTechnicians(
       doorstepMatch,
       isUrgencyWeighted: isCriticalStopped,
       isWithinRadius,
+      hasInAreaCircuit,
+      inAreaTahsil,
+      inAreaExplanation,
+      inAreaStopCount,
     };
   });
 
-  // Sort candidates by score descending
-  preliminaryMatches.sort((a, b) => b.score - a.score);
+  // Sort candidates by score descending, using in-area circuit as gentle deterministic tie-breaker
+  preliminaryMatches.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    const bInArea = Boolean(b.hasInAreaCircuit);
+    const aInArea = Boolean(a.hasInAreaCircuit);
+    if (bInArea !== aInArea) return Number(bInArea) - Number(aInArea);
+    return 0;
+  });
 
   // 6. Progressive refinement for top 3 candidates via OSRM (bounded timeout, non-blocking)
   if (!options?.skipOsrm && farmerPoint && distanceSource === "exact_gps") {

@@ -34,6 +34,8 @@ import {
   triageUrgencyComparator,
   type RepairRequestDetail,
 } from "@/lib/services/repair-requests";
+import { AdminTalukaClusters } from "@/components/admin-taluka-clusters";
+import { normalizeNagpurTahsil } from "@/lib/location";
 import {
   getVerifiedTechnicians,
   type VerifiedTechnicianWithProfile,
@@ -94,6 +96,7 @@ function Admin() {
     techName: string;
     jobs: RepairRequestDetail[];
   } | null>(null);
+  const [selectedTahsil, setSelectedTahsil] = useState<string | null>(null);
   const [, tick] = useState(0);
 
   const hasLoadedRef = useRef(false);
@@ -117,10 +120,10 @@ function Admin() {
         setRepairs(repairsData);
         setTechnicians(techsData);
         hasLoadedRef.current = true;
-      } catch (err: any) {
+      } catch (err: unknown) {
         console.error("[TerraByte] Failed to load admin operations data:", err);
         if (!hasLoadedRef.current) {
-          setError(err?.message || "Failed to load repair operations");
+          setError(err instanceof Error ? err.message : "Failed to load repair operations");
         }
       } finally {
         setLoading(false);
@@ -216,7 +219,7 @@ function Admin() {
     ? sortedTechWorkload
     : sortedTechWorkload.slice(0, INITIAL_TECHS_COUNT);
 
-  const rows =
+  const baseRows =
     f === "Completed"
       ? completed.sort(
           (a, b) =>
@@ -236,6 +239,15 @@ function Admin() {
             if (slaDiff !== 0) return slaDiff;
             return new Date(a.status_since).getTime() - new Date(b.status_since).getTime();
           });
+
+  const rows = baseRows.filter((r) => {
+    if (!selectedTahsil) return true;
+    const tahsil = normalizeNagpurTahsil(r.location);
+    if (selectedTahsil === "Unknown") {
+      return tahsil === null;
+    }
+    return tahsil === selectedTahsil;
+  });
 
   return (
     <div className="space-y-6">
@@ -638,6 +650,34 @@ function Admin() {
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
+            </div>
+          )}
+
+          {/* Phase 10.4-D: Taluka Breakdown Clusters Widget */}
+          <AdminTalukaClusters
+            repairs={repairs}
+            selectedTahsil={selectedTahsil}
+            onSelectTahsil={setSelectedTahsil}
+          />
+
+          {selectedTahsil && (
+            <div className="flex items-center justify-between rounded-xl border border-primary/30 bg-primary/5 p-3 text-xs font-semibold text-primary">
+              <span className="flex items-center gap-1.5">
+                <span>Filtering queue by taluka:</span>
+                <span className="rounded bg-primary/15 px-2 py-0.5 text-foreground">
+                  {selectedTahsil === "Unknown" ? "Unknown Area" : selectedTahsil}
+                </span>
+                <span className="text-muted-foreground font-normal">
+                  ({rows.length} {rows.length === 1 ? "repair" : "repairs"} in current tab)
+                </span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedTahsil(null)}
+                className="underline hover:opacity-80 cursor-pointer text-primary"
+              >
+                Clear taluka filter
+              </button>
             </div>
           )}
 

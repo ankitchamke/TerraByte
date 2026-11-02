@@ -42,6 +42,11 @@ export interface ScoredTechnicianMatch<T = unknown> {
   doorstepMatch: boolean;
   isUrgencyWeighted: boolean;
   isWithinRadius: boolean;
+  // Phase 10.4-D In-Area Circuit Fields
+  hasInAreaCircuit?: boolean;
+  inAreaTahsil?: string | null;
+  inAreaExplanation?: string | null;
+  inAreaStopCount?: number;
 }
 
 export interface GetEligibleTechniciansOptions {

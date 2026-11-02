@@ -3,6 +3,7 @@ import { AlertTriangle, Building2, ChevronRight, Clock, Inbox, Truck } from "luc
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Card, DemoTag, StatusPill } from "@/components/tb";
+import { TechnicianCircuitCard } from "@/components/technician-circuit-card";
 import { ago } from "@/lib/tb-store";
 import { useAuth } from "@/lib/auth";
 import { meta } from "@/lib/seo";
@@ -51,10 +52,10 @@ function TechHome() {
       }
       setRepairs(repairsData);
       hasLoadedRef.current = true;
-    } catch (err: any) {
+    } catch (err) {
       console.error("[TerraByte] Failed to load technician data:", err);
       if (!hasLoadedRef.current) {
-        setError(err?.message || "Failed to load technician jobs");
+        setError(err instanceof Error ? err.message : "Failed to load technician jobs");
       }
     } finally {
       setLoading(false);
@@ -77,8 +78,8 @@ function TechHome() {
       await updateTechnicianAvailability(v);
       setAvailable(v);
       toast.success(v ? "Status updated to Online" : "Status updated to Busy");
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to update availability");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update availability");
     }
   };
 
@@ -166,6 +167,9 @@ function TechHome() {
           onHold
         />
       )}
+      {/* Phase 10.4-C: Multi-Job Daily Field Circuit (rendered when >= 2 active doorstep jobs) */}
+      <TechnicianCircuitCard activeRepairs={active} techProfile={techProfile} />
+
       <Section title={`Active jobs (${active.length})`} list={active} empty="No active jobs." />
       {done.length > 0 && <Section title={`Completed (${done.length})`} list={done} empty="" />}
       {cancelled.length > 0 && (

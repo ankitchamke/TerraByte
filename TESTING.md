@@ -572,3 +572,105 @@ No phase promotion or production deployment may occur if:
 | **Demo Data Reset & Hygiene**   | 6 automated tests in `tests/cleanup-verification.test.mjs` verifying dual-key 3-persona baseline restoration.                                          | **VERIFIED** |
 | **TypeScript Type Safety**      | `npx tsc --noEmit` executed with 0 errors across entire repository.                                                                                    | **VERIFIED** |
 | **Production Build**            | `npm run build` executed with Vite and Nitro Vercel web preset; all client and SSR bundles built cleanly.                                              | **VERIFIED** |
+
+---
+
+## 16. Phase 10.4-B Multi-Stop Circuit Optimization Engine Verification Matrix
+
+| Test ID       | Test Scenario                 | Verified Behavior                                                                                  |  Status  |
+| :------------ | :---------------------------- | :------------------------------------------------------------------------------------------------- | :------: |
+| **P10.4B-01** | Zero-stop circuit             | Returns empty itinerary, 0 stops, 0 legs, 0 distance/duration.                                     | **PASS** |
+| **P10.4B-02** | Single-stop circuit           | Generates exactly 2 legs (outbound and depot-return); total distance is exact round-trip.          | **PASS** |
+| **P10.4B-03** | Multiple-stop circuit         | Generates $N+1$ legs, monotonic cumulative distances, correct 1-based sequence numbers.            | **PASS** |
+| **P10.4B-04** | Depot return-leg              | Final leg closes the loop to workshop depot with exact depot coordinates.                          | **PASS** |
+| **P10.4B-05** | Nearest-neighbor ordering     | Visited stops ordered by proximity from current waypoint (Kalmeshwar before Saoner from Katol).    | **PASS** |
+| **P10.4B-06** | 2-opt refinement              | Unwinds crossing paths; total circuit distance $\le$ unoptimized candidate permutations.           | **PASS** |
+| **P10.4B-07** | Emergency stoppage priority   | `CRITICAL` + `is_machine_stopped` repairs are strictly pinned at Stop #1 regardless of distance.   | **PASS** |
+| **P10.4B-08** | Multiple emergency stops      | Emergency partition placed at head of route; sorted internally by distance from depot.             | **PASS** |
+| **P10.4B-09** | Deterministic stability       | Repeated optimization passes produce identical stop sequences and metrics every time.              | **PASS** |
+| **P10.4B-10** | Equal-distance tie-breaking   | Co-located or equidistant stops break ties deterministically by stop ID string order.              | **PASS** |
+| **P10.4B-11** | Missing GPS fallback          | Resolves stop coordinates via Nagpur tahsil centroid (`distanceSource: 'tahsil_centroid'`).        | **PASS** |
+| **P10.4B-12** | Unknown tahsil handling       | Preserves unresolvable stops at end of group with default fallback distance (never dropped).       | **PASS** |
+| **P10.4B-13** | Approximate metrics           | Sync calculation flags `routingMode: 'rural_road_fallback'`, `isEstimate: true`.                   | **PASS** |
+| **P10.4B-14** | OSRM integration & cache      | Async routing flags `routingMode: 'osrm_driving'`, memoizes legs to avoid duplicate fetches.       | **PASS** |
+| **P10.4B-15** | Best insertion position       | Evaluates marginal detour cost in $O(N)$ and finds optimal insertion slot.                         | **PASS** |
+| **P10.4B-16** | Detour distance calculation   | `additionalDistanceKm` equals new total distance minus previous total distance.                    | **PASS** |
+| **P10.4B-17** | Detour duration calculation   | `additionalDurationMinutes` equals new total time minus previous total time.                       | **PASS** |
+| **P10.4B-18** | Zero additional detour        | Co-located waypoint addition computes exactly 0 km additional travel distance.                     | **PASS** |
+| **P10.4B-19** | Tahsil clustering             | Aggregates open repairs by 14 official Nagpur tahsils, tallies critical stoppages, maps centroids. | **PASS** |
+| **P10.4B-20** | Workshop exclusion            | Ignores `service_type === 'WORKSHOP'` requests from traveling circuit clusters.                    | **PASS** |
+| **P10.4B-21** | OSRM network resilience       | Falls back to rural road approximation if OSRM endpoint times out or throws error.                 | **PASS** |
+| **P10.4B-22** | Null/undefined safety         | `clusterRepairsByTahsil` gracefully handles null, undefined, or empty repair arrays.               | **PASS** |
+| **P10.4B-23** | Supabase relations extraction | Extracts nested `farmer.full_name` and `equipment.make`/`model` into clean normalized stop.        | **PASS** |
+| **P10.4B-24** | Routine stop detour insertion | Routine stop inserted into circuit with existing emergency stops preserves emergency priority.     | **PASS** |
+| **P10.4B-25** | Formatted string metrics      | Formats cumulative and leg metrics as `"X km"` / `"X hr Y mins"` without NaN or float artifacts.   | **PASS** |
+
+---
+
+## 17. Phase 10.4-C Technician Daily Field Circuit UX Verification Matrix
+
+| Test ID       | Test Scenario                 | Verified Behavior                                                                                                     | Test File                   |  Status  |
+| :------------ | :---------------------------- | :-------------------------------------------------------------------------------------------------------------------- | :-------------------------- | :------: |
+| **P10.4C-01** | Visibility threshold          | Activates circuit card when technician has $\ge 2$ active assigned doorstep repairs (`service_type === 'DOORSTEP'`).  | `tests/circuit-ui.test.mjs` | **PASS** |
+| **P10.4C-02** | Hidden state (< 2 stops)      | Component returns `null` when eligible doorstep count is 0 or 1.                                                      | `tests/circuit-ui.test.mjs` | **PASS** |
+| **P10.4C-03** | Workshop exclusion            | Repairs with `service_type === 'WORKSHOP'` are strictly excluded from the circuit threshold.                          | `tests/circuit-ui.test.mjs` | **PASS** |
+| **P10.4C-04** | Status filtering              | Non-active doorstep repair statuses (`REQUESTED`, `COMPLETED`, `CANCELLED`) are excluded.                             | `tests/circuit-ui.test.mjs` | **PASS** |
+| **P10.4C-05** | Sequential itinerary          | Renders Depot Origin, Stop #1, Stop #2, and closes at Depot with $N+1$ transit legs.                                  | `tests/circuit-ui.test.mjs` | **PASS** |
+| **P10.4C-06** | Monotonic cumulative distance | Cumulative distance values increase monotonically across sequential stops.                                            | `tests/circuit-ui.test.mjs` | **PASS** |
+| **P10.4C-07** | Emergency prioritization      | `CRITICAL` + `is_machine_stopped` breakdown is always pinned as Stop #1 regardless of depot distance.                 | `tests/circuit-ui.test.mjs` | **PASS** |
+| **P10.4C-08** | Emergency breakdown banner    | Surfaces notification banner and computes marginal detour metrics (`calculateDetourCost`).                            | `tests/circuit-ui.test.mjs` | **PASS** |
+| **P10.4C-09** | Banner acknowledgment         | Acknowledge action dismisses banner idempotently without causing re-render loops or re-ordering stops.                | `tests/circuit-ui.test.mjs` | **PASS** |
+| **P10.4C-10** | GPS navigation URL            | Generates Google Maps Directions URL targeting exact coordinates (`buildGoogleMapsDirectionsUrl`).                    | `tests/circuit-ui.test.mjs` | **PASS** |
+| **P10.4C-11** | Coarse navigation fallback    | Generates Google Maps Search URL with location query when GPS coordinates are absent.                                 | `tests/circuit-ui.test.mjs` | **PASS** |
+| **P10.4C-12** | Privacy protection            | Plaintext JSX never renders raw numeric latitude/longitude coordinates to the user.                                   | `tests/circuit-ui.test.mjs` | **PASS** |
+| **P10.4C-13** | Component contract AST        | Verifies export of `TechnicianCircuitCard`, testids, badges, landmark instructions, and depot completion card.        | `tests/circuit-ui.test.mjs` | **PASS** |
+| **P10.4C-14** | Workbench integration AST     | Verifies `TechnicianCircuitCard` import and placement above Active Jobs section in `src/routes/technician/index.tsx`. | `tests/circuit-ui.test.mjs` | **PASS** |
+| **P10.4C-15** | Coordinate mapping isolation  | Maps coordinates strictly by repair ID, preventing cross-contamination across stops.                                  | `tests/circuit-ui.test.mjs` | **PASS** |
+| **P10.4C-16** | Destination URL ordering      | Formats Google Maps directions with latitude strictly preceding longitude (`destination=lat,lng`).                    | `tests/circuit-ui.test.mjs` | **PASS** |
+| **P10.4C-17** | Exact GPS precedence          | Exact captured GPS takes precedence over tahsil-centroid fallback for routing and navigation.                         | `tests/circuit-ui.test.mjs` | **PASS** |
+| **P10.4C-18** | Missing GPS fallback          | Generates coarse search URL rather than misleading directions when GPS is absent.                                     | `tests/circuit-ui.test.mjs` | **PASS** |
+| **P10.4C-19** | Zero distance resolution      | Zero distance (0 m) evaluates legitimately when waypoints genuinely share coordinates (e.g. testing from same spot).  | `tests/circuit-ui.test.mjs` | **PASS** |
+| **P10.4C-20** | Batch dispatch resolution AST | Verifies batch loading of dispatch locations and location accuracy badges in `TechnicianCircuitCard`.                 | `tests/circuit-ui.test.mjs` | **PASS** |
+
+---
+
+### 16. Farmer Locality Hardening & Neutral Intake Matrix
+
+| Test ID       | Area / Component                                | Verification Criteria                | Expected Result                                                                                 | Automated Test Suite             | Status   |
+| :------------ | :---------------------------------------------- | :----------------------------------- | :---------------------------------------------------------------------------------------------- | :------------------------------- | :------- |
+| **P10.4-L01** | Breakdown Intake Form (`report-breakdown.tsx`)  | New breakdown ticket initialization  | Starts with empty `village: ""` and `tahsil: ""`; never auto-prefills Katol or profile village  | `tests/farmer-locality.test.mjs` | **PASS** |
+| **P10.4-L02** | Breakdown Intake Form (`report-breakdown.tsx`)  | "Start over" reset handler           | Resets `village: ""` without restoring profile village                                          | `tests/farmer-locality.test.mjs` | **PASS** |
+| **P10.4-L03** | Breakdown Submission Payload                    | Missing locality fallback            | Submits `formatCoarseLocation` or `"On-site / Field"` without profile village substitution      | `tests/farmer-locality.test.mjs` | **PASS** |
+| **P10.4-L04** | Profile Service (`src/lib/services/profile.ts`) | Profile location preservation        | `updateProfile` protects existing saved farmer location and never overwrites it with empty/null | `tests/farmer-locality.test.mjs` | **PASS** |
+| **P10.4-L05** | Farmer Registration (`register/farmer.tsx`)     | Locality required validation         | Enforces non-empty village validation and blocks whitespace/empty submissions                   | `tests/farmer-locality.test.mjs` | **PASS** |
+| **P10.4-L06** | Centroid & Dispatch Engine (`location.ts`)      | Unknown location centroid resolution | `"On-site / Field"` strictly returns `null` centroid; Katol centroid calculation remains intact | `tests/farmer-locality.test.mjs` | **PASS** |
+| **P10.4-L07** | Multilingual & Localization                     | Marathi and Hindi Devanagari text    | Preserves Marathi and Hindi village names without corruption or unexpected transliteration      | `tests/farmer-locality.test.mjs` | **PASS** |
+| **P10.4-L08** | GPS Capture Independence                        | Browser geolocation vs village text  | GPS capture attaches coordinates independently whether locality input is filled or empty        | `tests/farmer-locality.test.mjs` | **PASS** |
+
+---
+
+## 18. Phase 10.4-D Service Centre Taluka Clustering & In-Area Circuit Matrix
+
+| Test ID       | Test Scenario                     | Verified Behavior                                                                                                             | Test File                       |  Status  |
+| :------------ | :-------------------------------- | :---------------------------------------------------------------------------------------------------------------------------- | :------------------------------ | :------: |
+| **P10.4-T01** | Multi-repair grouping             | Multiple doorstep repairs in one tahsil (e.g. Katol) are grouped together into a single cluster.                              | `tests/taluka-clustering.test.mjs` | **PASS** |
+| **P10.4-T02** | Inter-tahsil separation           | Repairs across distinct tahsils (Katol, Saoner, Umred) are partitioned into separate taluka buckets.                          | `tests/taluka-clustering.test.mjs` | **PASS** |
+| **P10.4-T03** | Unknown locality grouping         | Unrecognized village/field strings explicitly group under "Unknown" without fabricating coordinates.                         | `tests/taluka-clustering.test.mjs` | **PASS** |
+| **P10.4-T04** | Missing locality safety           | Empty or null locality strings are safely placed into "Unknown" and never silently defaulted to Nagpur city.                   | `tests/taluka-clustering.test.mjs` | **PASS** |
+| **P10.4-T05** | Workshop request exclusion        | Requests with `service_type === 'WORKSHOP'` are strictly excluded from field dispatch clusters.                                | `tests/taluka-clustering.test.mjs` | **PASS** |
+| **P10.4-T06** | Status filtering AST              | Completed and cancelled repairs are filtered out before clustering (`status === 'REQUESTED' && !technician_id`).               | `tests/taluka-clustering.test.mjs` | **PASS** |
+| **P10.4-T07** | Critical stoppage ranking         | Clusters with critical stopped machines are prioritized at the top of the cluster triage display.                             | `tests/taluka-clustering.test.mjs` | **PASS** |
+| **P10.4-T08** | Devanagari script normalization   | Marathi and Hindi script strings (काटोल, सावनेर, उमरेड, कलमेश्वर) normalize accurately to canonical English tahsil names.     | `tests/taluka-clustering.test.mjs` | **PASS** |
+| **P10.4-T09** | Empty state handling              | When zero eligible open doorstep repairs exist, empty state renders cleanly with checkmark reassurance.                        | `tests/taluka-clustering.test.mjs` | **PASS** |
+| **P10.4-T10** | In-area circuit match             | Sets `hasInAreaCircuit = true` when candidate technician already has an active doorstep job in the same normalized tahsil.    | `tests/taluka-clustering.test.mjs` | **PASS** |
+| **P10.4-T11** | Out-of-area circuit isolation     | Technician with active jobs in a different tahsil receives `hasInAreaCircuit = false` and no in-area bonus.                   | `tests/taluka-clustering.test.mjs` | **PASS** |
+| **P10.4-T12** | Unknown tahsil match exclusion    | Repairs with unresolvable/Unknown tahsil never grant in-area circuit bonuses to any technician.                               | `tests/taluka-clustering.test.mjs` | **PASS** |
+| **P10.4-T13** | Idle technician circuit status    | Technicians with 0 active jobs evaluate cleanly to `hasInAreaCircuit = false`.                                                | `tests/taluka-clustering.test.mjs` | **PASS** |
+| **P10.4-T14** | Single query batch counting       | Groups all active stops in the existing technician workload query with zero extra round-trips.                                 | `tests/taluka-clustering.test.mjs` | **PASS** |
+| **P10.4-T15** | Explanation string formatting     | Formats concise reasons (e.g. "Already scheduled in Katol today" or "2 stops scheduled in Katol today").                     | `tests/taluka-clustering.test.mjs` | **PASS** |
+| **P10.4-T16** | 0-100 dispatch score invariant    | In-area circuit operates as a tie-breaker; existing dispatch score boundaries remain strictly within [0, 100].                | `tests/taluka-clustering.test.mjs` | **PASS** |
+| **P10.4-T17** | Deterministic tie-breaking        | Equal-score candidates are ordered deterministically by in-area circuit match without distorting emergency weighting.         | `tests/taluka-clustering.test.mjs` | **PASS** |
+| **P10.4-T18** | Admin index AST verification      | Verifies `AdminTalukaClusters` integration, selected tahsil state, and table filtering in `src/routes/admin/index.tsx`.       | `tests/taluka-clustering.test.mjs` | **PASS** |
+| **P10.4-T19** | Admin repair detail AST           | Verifies In-Area Circuit badge, explanation chip, and confirmation modal note in `src/routes/admin/repair/$id.tsx`.           | `tests/taluka-clustering.test.mjs` | **PASS** |
+| **P10.4-T20** | GPS privacy enforcement           | Raw GPS coordinates are strictly quarantined; only normalized tahsil names and count badges render in clustering cards.        | `tests/taluka-clustering.test.mjs` | **PASS** |
+

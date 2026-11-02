@@ -9,9 +9,16 @@ export const Route = createFileRoute("/register/farmer")({
   head: () => ({
     meta: [
       { title: "Register as a farmer — TerraByte" },
-      { name: "description", content: "Create a TerraByte farmer account to report equipment breakdowns and track repairs." },
+      {
+        name: "description",
+        content:
+          "Create a TerraByte farmer account to report equipment breakdowns and track repairs.",
+      },
       { property: "og:title", content: "Register as a farmer — TerraByte" },
-      { property: "og:description", content: "Report breakdowns, approve quotes and track repairs on your machines." },
+      {
+        property: "og:description",
+        content: "Report breakdowns, approve quotes and track repairs on your machines.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
@@ -39,6 +46,13 @@ function FarmerRegister() {
     e.preventDefault();
     setErr("");
     setExistingAccount(false);
+
+    const trimmedVillage = f.village.trim();
+    if (!trimmedVillage) {
+      setErr("Village or area is required.");
+      return;
+    }
+
     setBusy(true);
     const targetEmail = f.email.trim();
     const { data, error } = await supabase.auth.signUp({
@@ -46,12 +60,20 @@ function FarmerRegister() {
       password: f.password,
       options: {
         emailRedirectTo: `${window.location.origin}/auth/confirm`,
-        data: { role: "farmer", full_name: f.name, village: f.village, phone: f.phone },
+        data: {
+          role: "farmer",
+          full_name: f.name.trim(),
+          village: trimmedVillage,
+          phone: f.phone.trim() || undefined,
+        },
       },
     });
     setBusy(false);
     if (error) {
-      if (error.message.toLowerCase().includes("already registered") || (error as { code?: string }).code === "user_already_exists") {
+      if (
+        error.message.toLowerCase().includes("already registered") ||
+        (error as { code?: string }).code === "user_already_exists"
+      ) {
         setErr("An account with this email address already exists.");
         setExistingAccount(true);
         return;
@@ -98,13 +120,17 @@ function FarmerRegister() {
   return (
     <AuthLayout>
       <h2 className="font-display text-3xl font-bold">Register as a farmer</h2>
-      <p className="mt-1 text-muted-foreground">Report breakdowns and get your machine back to work faster.</p>
+      <p className="mt-1 text-muted-foreground">
+        Report breakdowns and get your machine back to work faster.
+      </p>
       {sent ? (
         <div className="mt-6 rounded-2xl border border-border bg-card p-5 space-y-4">
           <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm leading-relaxed">
             <p className="font-semibold text-foreground">Check your email to verify your account</p>
             <p className="mt-1 text-muted-foreground">
-              We have sent a verification link to <strong className="text-foreground">{registeredEmail}</strong>. Please click the link to confirm your email before signing in.
+              We have sent a verification link to{" "}
+              <strong className="text-foreground">{registeredEmail}</strong>. Please click the link
+              to confirm your email before signing in.
             </p>
           </div>
 
@@ -133,17 +159,48 @@ function FarmerRegister() {
         </div>
       ) : (
         <form onSubmit={submit} className="mt-6 space-y-4">
-          <Field label="Full name" required value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />
-          <Field label="Village / area" required value={f.village} onChange={(e) => setF({ ...f, village: e.target.value })} />
-          <Field label="Phone number" type="tel" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} />
-          <Field label="Email" type="email" autoComplete="email" required value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} />
-          <Field label="Password" type="password" autoComplete="new-password" minLength={8} required value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} />
+          <Field
+            label="Full name"
+            required
+            value={f.name}
+            onChange={(e) => setF({ ...f, name: e.target.value })}
+          />
+          <Field
+            label="Village / area"
+            required
+            value={f.village}
+            onChange={(e) => setF({ ...f, village: e.target.value })}
+          />
+          <Field
+            label="Phone number"
+            type="tel"
+            value={f.phone}
+            onChange={(e) => setF({ ...f, phone: e.target.value })}
+          />
+          <Field
+            label="Email"
+            type="email"
+            autoComplete="email"
+            required
+            value={f.email}
+            onChange={(e) => setF({ ...f, email: e.target.value })}
+          />
+          <Field
+            label="Password"
+            type="password"
+            autoComplete="new-password"
+            minLength={8}
+            required
+            value={f.password}
+            onChange={(e) => setF({ ...f, password: e.target.value })}
+          />
           <FormError>{err}</FormError>
           {existingAccount && (
             <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 text-sm space-y-2">
               <p className="font-semibold text-foreground">Sign in to your existing account</p>
               <p className="text-xs text-muted-foreground">
-                An account with <strong className="text-foreground">{f.email.trim()}</strong> is already registered. Please sign in below:
+                An account with <strong className="text-foreground">{f.email.trim()}</strong> is
+                already registered. Please sign in below:
               </p>
               <Link
                 to="/login"
@@ -153,12 +210,20 @@ function FarmerRegister() {
               </Link>
             </div>
           )}
-          <button disabled={busy} className="h-14 w-full rounded-xl bg-primary text-lg font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60">
+          <button
+            disabled={busy}
+            className="h-14 w-full rounded-xl bg-primary text-lg font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-60"
+          >
             {busy ? "Creating account…" : "Create farmer account"}
           </button>
         </form>
       )}
-      <p className="mt-6 text-sm text-muted-foreground">Already registered? <Link to="/login" className="font-semibold text-primary">Sign in</Link></p>
+      <p className="mt-6 text-sm text-muted-foreground">
+        Already registered?{" "}
+        <Link to="/login" className="font-semibold text-primary">
+          Sign in
+        </Link>
+      </p>
     </AuthLayout>
   );
 }

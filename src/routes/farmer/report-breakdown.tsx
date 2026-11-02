@@ -23,7 +23,6 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { btn, Card, input, Label, useOnline } from "@/components/tb";
 import { assess, SYMPTOMS } from "@/lib/assessment";
-import { useAuth } from "@/lib/auth";
 import { supabase } from "@/integrations/supabase/client";
 import {
   detectSupportedAudioFormat,
@@ -87,7 +86,6 @@ export type Draft = {
 function Report() {
   const nav = useNavigate();
   const online = useOnline();
-  const { profile } = useAuth();
   const { equipment: pre } = Route.useSearch();
 
   const [eq, setEq] = useState<EquipmentRow[]>([]);
@@ -131,11 +129,11 @@ function Report() {
     return () => {
       mountedRef.current = false;
       if (timerRef.current) {
-        clearInterval(timerRef.current as any);
+        clearInterval(timerRef.current as NodeJS.Timeout);
         timerRef.current = null;
       }
       if (meterTimerRef.current) {
-        clearInterval(meterTimerRef.current as any);
+        clearInterval(meterTimerRef.current as NodeJS.Timeout);
         meterTimerRef.current = null;
       }
       if (audioTrackerRef.current) {
@@ -289,27 +287,6 @@ function Report() {
       }
     }
   }, [pre]);
-
-  // Prefill village from farmer profile only when available (do not infer tahsil)
-  useEffect(() => {
-    if (profile?.village && !d.village) {
-      const raw = localStorage.getItem(DRAFT);
-      if (raw) {
-        try {
-          const parsed = JSON.parse(raw);
-          if (typeof parsed.village === "string" && parsed.village.length > 0) {
-            return;
-          }
-        } catch (_err) {
-          /* ignore parse error */
-        }
-      }
-      setD((prev) => ({
-        ...prev,
-        village: prev.village || profile.village?.trim() || "",
-      }));
-    }
-  }, [profile?.village, d.village]);
 
   useEffect(() => {
     try {
@@ -606,10 +583,7 @@ function Report() {
         symptoms: d.symptoms,
         description: d.description.trim().slice(0, 1000),
         photos: d.photos.filter(Boolean),
-        location:
-          formatCoarseLocation(d.village, d.tahsil) ||
-          profile?.village?.trim() ||
-          "On-site / Field",
+        location: formatCoarseLocation(d.village, d.tahsil) || "On-site / Field",
         assessment: assessment as unknown as Json,
         service_type: d.serviceType,
         urgency_level: d.urgencyLevel,
@@ -635,9 +609,10 @@ function Report() {
         to: "/farmer/repair/$id",
         params: { id: repair.job_number || repair.id },
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errObj = err as { message?: string };
       console.error("Failed to create repair request:", err);
-      toast.error(err?.message || "Failed to create repair request. Please try again.");
+      toast.error(errObj?.message || "Failed to create repair request. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -670,7 +645,7 @@ function Report() {
             if (d.step > 1) {
               up({ step: d.step - 1 });
             } else if (pre) {
-              nav({ to: `/farmer/equipment/${pre}` as any });
+              nav({ to: `/farmer/equipment/${pre}` as string });
             } else {
               nav({ to: "/farmer" });
             }
@@ -705,7 +680,7 @@ function Report() {
                 symptoms: [],
                 description: "",
                 photos: [],
-                village: profile?.village?.trim() || "",
+                village: "",
                 tahsil: "",
                 serviceType: "DOORSTEP",
                 urgencyLevel: "STANDARD",

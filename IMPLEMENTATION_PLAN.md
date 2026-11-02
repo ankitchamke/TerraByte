@@ -26,7 +26,7 @@ flowchart TD
     P101 --> P1011["PHASE 10.1.1: Staff On-Demand Translation<br/>(STATUS: COMPLETE)"]
     P1011 --> P102["PHASE 10.2: Doorstep Service Intake & Urgency<br/>(STATUS: COMPLETE)"]
     P102 --> P103["PHASE 10.3: Location-Aware Technician Dispatch<br/>(STATUS: COMPLETE)"]
-    P103 -.-> P104["PHASE 10.4: Multi-Job Field Route Planning<br/>(STATUS: SCOPED / NEXT)"]
+    P103 --> P104["PHASE 10.4: Multi-Job Field Route Planning<br/>(STATUS: COMPLETE)"]
 ```
 
 ---
@@ -634,4 +634,63 @@ flowchart TD
      - 30 automated tests passing across `tests/technician-dispatch.test.mjs` (20) and `tests/dispatch-ui.test.mjs` (10).
      - 142 / 142 tests passing across all test suites in the repository.
      - Production build verified with Vite and Nitro Vercel preset.
+     - Applied remote Supabase migration `20261103100000_phase10_3_technician_dispatch.sql` on linked project `hwdrypkvszwrcraujctw`.
      - Updated `PROJECT_STATE.md`, `IMPLEMENTATION_PLAN.md`, and `TESTING.md`.
+
+---
+
+### PHASE 10.4 — Multi-Job Field Route Planning & Traveling Technician Circuits
+
+- **Status**: **COMPLETE**
+- **Objective**: Optimize daily traveling routes for mobile technicians handling multiple doorstep breakdown visits in Nagpur District, prioritizing emergency machine stoppages, calculating sequential itinerary metrics, computing detour insertion costs, and clustering open requests by tahsil.
+- **Subphases**:
+  1. **Subphase 10.4-A: Read-Only Roadmap & Architecture Review** (**COMPLETE**)
+     - Inspected Phase 10.3 assets, routing algorithms, technician daily feeds, and operational constraints.
+     - Designed 4-part modular roadmap: Architecture (A), Domain Optimizer (B), Technician Route UX (C), and Service Centre Clustering (D).
+  2. **Subphase 10.4-B: Multi-Stop Circuit Optimization Engine** (**COMPLETE**)
+     - Built pure, deterministic domain service in `src/lib/services/circuit-optimizer.ts`:
+       - `optimizeCircuitStops`: Sequential Traveling Technician itinerary optimizer with emergency priority pinning (`CRITICAL` + `is_machine_stopped`), nearest-neighbor ordering, and 2-opt refinement.
+       - `calculateCircuitMetrics` & `calculateCircuitMetricsWithRouting`: Complete circuit closure (Depot $\rightarrow$ Stop 1 $\rightarrow$ ... $\rightarrow$ Stop N $\rightarrow$ Depot) with per-leg distance/time, cumulative stats, and OSRM/rural road fallback indicators.
+       - `calculateDetourCost`: Marginal detour distance/time evaluation in $O(N)$ for inserting newly reported breakdowns into active routes without full circuit recomputation.
+       - `clusterRepairsByTahsil`: Aggregates open doorstep requests into official Nagpur tahsil clusters, excludes workshop drop-offs, and isolates unresolvable locations to an explicit "Unknown" group.
+     - Verified across 25 automated tests in `tests/circuit-optimizer.test.mjs`.
+  3. **Subphase 10.4-C: Technician Daily Route UX & Sequential Navigation** (**COMPLETE**)
+     - Built dedicated Daily Field Circuit component `src/components/technician-circuit-card.tsx`:
+       - Conditionally activated when technician has $\ge 2$ active assigned doorstep repairs (`service_type === 'DOORSTEP'` and status in `ACCEPTED`, `QUOTE_PENDING`, `QUOTE_REVISED`, `IN_PROGRESS`, `WAITING_FOR_PARTS`).
+       - Hidden state when $< 2$ active doorstep repairs (e.g. 0 or 1, or workshop-only jobs).
+       - Full topological itinerary display: `Workshop Depot → Stop #1 → Stop #2 → ... → Return to Depot`.
+       - Per-leg transit metrics, cumulative kilometers per stop, urgency badge, machine stoppage flag, and field landmark instructions.
+       - Quick Metrics Bar: Total Stops count, Total Circuit distance, and Estimated Drive Time with routing mode attribution.
+       - Primary action: **"Navigate to Stop #1"** button opening Google Maps Directions URL (exact GPS) or Google Maps Search URL (coarse location fallback).
+       - Emergency breakdown banner: Surfaces automatically for active `CRITICAL` + `is_machine_stopped` repairs, displaying prioritized sequence adjustment, marginal detour cost (`calculateDetourCost`), and idempotent dismiss action.
+       - Strict privacy boundaries: No raw numeric coordinates in visible UI text.
+     - Integrated into `/technician` workbench (`src/routes/technician/index.tsx`) above `Section title="Active jobs"`.
+     - Verified across 20 automated tests in `tests/circuit-ui.test.mjs`.
+  4. **Farmer Locality Hardening & Neutral Intake Flow** (**COMPLETE**)
+     - Eradicated auto-prefill of `profile.village` from `report-breakdown.tsx`; initialized new draft with empty strings.
+     - Updated "Start over" action to reset village to `""` without assuming profile defaults.
+     - Fallback on submit uses `formatCoarseLocation(d.village, d.tahsil) || "On-site / Field"` without defaulting to Katol.
+     - Hardened `updateProfile` in `src/lib/services/profile.ts` to safeguard existing saved farmer locations against empty/null overwriting.
+     - Added trimmed validation guard to farmer registration (`src/routes/register/farmer.tsx`).
+     - Verified Devanagari script preservation and independent GPS capture.
+     - 11 dedicated automated tests in `tests/farmer-locality.test.mjs`.
+  5. **Subphase 10.4-D: Service Centre Taluka Clustering & Dispatch Dashboard** (**COMPLETE**)
+     - Built `src/components/admin-taluka-clusters.tsx`:
+       - Groups open, unassigned doorstep repair requests into geographic Nagpur taluka cards using `clusterRepairsByTahsil`.
+       - Header metrics: Active taluka count, total doorstep requests, critical stopped machines.
+       - Prominent emergency stoppage alert banner with immediate taluka attribution.
+       - Urgency breakdown chips (Critical, High, Standard, Flexible) and quick-filter interaction.
+       - Interactive click-to-filter syncs with operations queue table with active cluster indicator and reset action.
+       - Privacy: Zero exposure of raw GPS coordinates; strictly renders normalized taluka names.
+     - Integrated into `/admin` Operations Board (`src/routes/admin/index.tsx`) between KPI summary and filter tabs.
+     - Upgraded Technician Recommendation Engine (`src/lib/services/technicians.ts` & `src/lib/services/technician-dispatch.ts`):
+       - Detects if candidate technician already has an active doorstep job in the same normalized tahsil (`hasInAreaCircuit`).
+       - Piggybacks on existing single active-job query with zero extra network round-trips.
+       - Acts as a gentle, deterministic tie-breaker for equal scores without distorting the 100-point scoring matrix.
+     - Enhanced Service Centre Repair Detail (`src/routes/admin/repair/$id.tsx`):
+       - Displays emerald `In-Area Circuit` badge (`Navigation` icon) and concise explanation (e.g. `"Already scheduled in Katol today"`).
+       - Shows in-area circuit note in manual assignment confirmation dialog.
+     - Extended Tahsil Normalization (`src/lib/location.ts`):
+       - Added Devanagari script aliases for all 14 Nagpur tahsils.
+     - Verified across 20 automated tests in `tests/taluka-clustering.test.mjs`.
+     - 248 / 248 total tests passing across entire project test suite. Production build and TypeScript compile cleanly.

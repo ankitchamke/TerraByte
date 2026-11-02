@@ -26,6 +26,7 @@ export interface ResetDemoResponse {
   message: string;
   details?: {
     repairs_deleted?: number;
+    equipment_deleted?: number;
     equipment_reset?: number;
     service_history_deleted?: number;
     notifications_deleted?: number;

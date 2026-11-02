@@ -3,6 +3,7 @@ import type { Database, Json } from "@/integrations/supabase/types";
 import { createNotification } from "./notifications";
 import { createServiceHistoryFromRepair } from "./service-history";
 import { requestServiceCentrePart } from "./parts-desk";
+import { broadcastRepairWorkflowEvent } from "@/hooks/use-repair-realtime";
 
 export type RepairRequestRow = Database["public"]["Tables"]["repair_requests"]["Row"];
 export type RepairTimelineRow = Database["public"]["Tables"]["repair_timeline"]["Row"];
@@ -689,6 +690,11 @@ export async function cancelRepairRequest(
     console.warn("[TerraByte] Warning: Failed to dispatch cancellation notification:", notifErr);
   }
 
+  broadcastRepairWorkflowEvent("cancellation_approved", repair.id, {
+    jobNumber: repair.job_number,
+    status: "CANCELLED",
+  });
+
   return updated;
 }
 
@@ -812,6 +818,13 @@ export async function requestCancellation(
       notifErr,
     );
   }
+
+  broadcastRepairWorkflowEvent("cancellation_requested", repair.id, {
+    jobNumber: repair.job_number,
+    status: "CANCELLATION_REQUESTED",
+    reason: trimmedReason,
+    note: trimmedNote,
+  });
 
   return updated;
 }
@@ -940,6 +953,12 @@ export async function approveCancellation(
     );
   }
 
+  broadcastRepairWorkflowEvent("cancellation_approved", repair.id, {
+    jobNumber: repair.job_number,
+    status: "CANCELLED",
+    adminResponse,
+  });
+
   return updated;
 }
 
@@ -1056,6 +1075,12 @@ export async function rejectCancellation(
       notifErr,
     );
   }
+
+  broadcastRepairWorkflowEvent("cancellation_declined", repair.id, {
+    jobNumber: repair.job_number,
+    status: targetStatus,
+    adminResponse,
+  });
 
   return updated;
 }

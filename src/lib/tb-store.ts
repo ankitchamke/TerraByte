@@ -173,13 +173,13 @@ export interface Repair {
   completion?: { notes: string; photo?: string | undefined; at: number };
   verifiedAt?: number;
   location: string;
-  cancellation_previous_status?: RepairStatus;
-  cancellationPreviousStatus?: RepairStatus;
-  cancellation_reason?: string;
-  cancellationReason?: string;
-  cancellation_note?: string;
-  cancellation_requested_at?: string | number;
-  cancellation_admin_response?: string;
+  cancellation_previous_status?: RepairStatus | undefined;
+  cancellationPreviousStatus?: RepairStatus | undefined;
+  cancellation_reason?: string | undefined;
+  cancellationReason?: string | undefined;
+  cancellation_note?: string | undefined;
+  cancellation_requested_at?: string | number | undefined;
+  cancellation_admin_response?: string | undefined;
   service_type?: "DOORSTEP" | "WORKSHOP";
   serviceType?: "DOORSTEP" | "WORKSHOP";
   urgency_level?: "CRITICAL" | "HIGH" | "STANDARD" | "FLEXIBLE";
@@ -535,6 +535,17 @@ function set(fn: (s: TBState) => TBState) {
       /* ignore */
     }
   }
+  if (typeof window !== "undefined") {
+    try {
+      window.dispatchEvent(
+        new CustomEvent("terrabyte:repair_updated", {
+          detail: { timestamp: Date.now() },
+        }),
+      );
+    } catch {
+      /* ignore */
+    }
+  }
   listeners.forEach((l) => l());
 }
 const serverSnap = state;
@@ -637,6 +648,13 @@ function patchRepair(
     const base = { ...s, repairs: s.repairs.map((x) => (x.id === id ? nr : x)) };
     return { ...base, ...(extra ? extra(base, nr) : {}) };
   });
+}
+export function patchDemoRepair(
+  id: string,
+  fn: (r: Repair, s: TBState) => Partial<Repair>,
+  extra?: (s: TBState, r: Repair) => Partial<TBState>,
+) {
+  patchRepair(id, fn, extra);
 }
 const tl = (r: Repair, e: Omit<TimelineEntry, "at">) => [...r.timeline, { ...e, at: Date.now() }];
 const eqName = (s: TBState, r: Repair) => {
@@ -1224,6 +1242,103 @@ export const actions = {
         ),
       };
     });
+  },
+  requestCancellation(id: string, reason: string, note?: string) {
+    patchRepair(
+      id,
+      (r) => ({
+        status: "CANCELLATION_REQUESTED",
+        cancellation_previous_status: r.status,
+        cancellationPreviousStatus: r.status,
+        cancellation_reason: reason,
+        cancellationReason: reason,
+        cancellation_note: note,
+        cancellation_requested_at: Date.now(),
+        timeline: tl(r, {
+          status: "CANCELLATION_REQUESTED",
+          by: "farmer",
+          note: note ? `Cancellation requested: ${reason} — ${note}` : `Cancellation requested: ${reason}`,
+        }),
+      }),
+      (s) => ({
+        notifications: notify(s, {
+          role: "admin",
+          text: `Cancellation requested for ${id}: ${reason}.`,
+          link: `/admin/repair/${id}`,
+        }),
+      }),
+    );
+  },
+  approveCancellation(id: string, response?: string) {
+    const adminResp = response || "Cancellation approved by Service Centre";
+    patchRepair(
+      id,
+      (r) => ({
+        status: "CANCELLED",
+        cancellation_admin_response: adminResp,
+        timeline: tl(r, {
+          status: "CANCELLED",
+          by: "admin",
+          note: `Cancellation approved by Service Centre: ${adminResp}`,
+        }),
+      }),
+      (s, r) => {
+        let notifs = notify(s, {
+          role: "farmer",
+          userId: r.farmerId,
+          text: `Cancellation approved for ${id}. Repair cancelled.`,
+          link: `/farmer/repair/${id}`,
+        });
+        if (r.technicianId) {
+          notifs = notify({ ...s, notifications: notifs }, {
+            role: "technician",
+            userId: r.technicianId,
+            text: `Cancellation approved for ${id}. Repair cancelled.`,
+            link: `/technician/job/${id}`,
+          });
+        }
+        return {
+          equipment: s.equipment.map((e) =>
+            e.id === r.equipmentId ? { ...e, status: "Operational" as const } : e,
+          ),
+          notifications: notifs,
+        };
+      },
+    );
+  },
+  rejectCancellation(id: string, response: string) {
+    patchRepair(
+      id,
+      (r) => {
+        const prevStatus: RepairStatus = r.cancellation_previous_status || r.cancellationPreviousStatus || "ACCEPTED";
+        return {
+          status: prevStatus,
+          cancellation_admin_response: response,
+          timeline: tl(r, {
+            status: prevStatus,
+            by: "admin",
+            note: `Cancellation request declined by Service Centre: ${response}`,
+          }),
+        };
+      },
+      (s, r) => {
+        let notifs = notify(s, {
+          role: "farmer",
+          userId: r.farmerId,
+          text: `Cancellation request for ${id} was declined by Service Centre: ${response}.`,
+          link: `/farmer/repair/${id}`,
+        });
+        if (r.technicianId) {
+          notifs = notify({ ...s, notifications: notifs }, {
+            role: "technician",
+            userId: r.technicianId,
+            text: `Cancellation request for ${id} was declined. Work resumed.`,
+            link: `/technician/job/${id}`,
+          });
+        }
+        return { notifications: notifs };
+      },
+    );
   },
   reassign(id: string, techId: string) {
     patchRepair(

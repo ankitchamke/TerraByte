@@ -202,11 +202,29 @@ function RepairHub() {
             clarification_note: demo.clarification || null,
             parts_hold: demo.parts || null,
             completion_details: demo.completion || null,
-            cancellation_reason: (demo as any).cancellation?.reason || null,
-            cancellation_note: (demo as any).cancellation?.note || null,
-            cancellation_requested_at: (demo as any).cancellation?.requestedAt
-              ? new Date((demo as any).cancellation.requestedAt).toISOString()
-              : null,
+            cancellation_reason:
+              demo.cancellation_reason ||
+              (demo as any).cancellationReason ||
+              (demo as any).cancellation?.reason ||
+              null,
+            cancellation_note:
+              demo.cancellation_note ||
+              (demo as any).cancellationNote ||
+              (demo as any).cancellation?.note ||
+              null,
+            cancellation_previous_status:
+              demo.cancellation_previous_status ||
+              (demo as any).cancellationPreviousStatus ||
+              null,
+            cancellation_admin_response:
+              demo.cancellation_admin_response ||
+              (demo as any).cancellationAdminResponse ||
+              null,
+            cancellation_requested_at: demo.cancellation_requested_at
+              ? new Date(demo.cancellation_requested_at).toISOString()
+              : (demo as any).cancellation?.requestedAt
+                ? new Date((demo as any).cancellation.requestedAt).toISOString()
+                : null,
             service_type: demo.service_type || demo.serviceType || "DOORSTEP",
             urgency_level: demo.urgency_level || demo.urgencyLevel || "STANDARD",
             is_machine_stopped: Boolean(demo.is_machine_stopped ?? demo.isMachineStopped),
@@ -553,19 +571,32 @@ function RepairHub() {
     setCancellationError(null);
 
     try {
+      const isDb = isUuid(r.id);
       if (isUnassignedRequested) {
-        await cancelRepairRequest(r.id, {
-          reason: cancellationReason,
-          note: cancellationNote.trim() || undefined,
-        });
+        if (isDb) {
+          await cancelRepairRequest(r.id, {
+            reason: cancellationReason,
+            note: cancellationNote.trim() || undefined,
+          });
+        } else {
+          actions.cancel(r.job_number || r.id);
+        }
         toast.success("Repair request cancelled.");
         setCancellationDialogOpen(false);
         await navigate({ to: "/farmer" });
       } else {
-        await requestCancellation(r.id, {
-          reason: cancellationReason,
-          note: cancellationNote.trim() || undefined,
-        });
+        if (isDb) {
+          await requestCancellation(r.id, {
+            reason: cancellationReason,
+            note: cancellationNote.trim() || undefined,
+          });
+        } else {
+          actions.requestCancellation(
+            r.job_number || r.id,
+            cancellationReason,
+            cancellationNote.trim() || undefined,
+          );
+        }
         toast.success("Cancellation request submitted. Service Centre has been notified.");
         setCancellationDialogOpen(false);
         await loadData();

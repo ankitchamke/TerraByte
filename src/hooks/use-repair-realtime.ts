@@ -17,6 +17,22 @@ export interface UseRepairTicketRealtimeOptions {
   debounceMs?: number | undefined;
 }
 
+export const WORKFLOW_REALTIME_EVENTS = [
+  "part_handoff",
+  "part_eta_updated",
+  "cancellation_requested",
+  "cancellation_approved",
+  "cancellation_declined",
+  "quote_created",
+  "quote_revised",
+  "quote_approved",
+  "quote_rejected",
+  "repair_updated",
+  "message_sent",
+] as const;
+
+export type WorkflowRealtimeEvent = (typeof WORKFLOW_REALTIME_EVENTS)[number];
+
 type GlobalBusListener = (msg: { event: string; payload: any }) => void;
 const globalBusListeners = new Set<GlobalBusListener>();
 let globalBusChannelInstance: any = null;
@@ -24,22 +40,79 @@ let globalBusChannelInstance: any = null;
 function ensureGlobalBusChannel() {
   if (globalBusChannelInstance) return;
   try {
-    // Shared bus channel delivers cross-session broadcast signals (tb-realtime-bus / tb-bus- dispatcher)
+    // Shared bus channel delivers cross-session broadcast signals (tb-bus- dispatcher for event: "part_handoff" and workflow events)
     globalBusChannelInstance = supabase.channel("tb-realtime-bus");
-    globalBusChannelInstance
-      .on("broadcast", { event: "part_handoff" }, (event: any) => {
-        globalBusListeners.forEach((listener) => listener({ event: "part_handoff", payload: event?.payload }));
-      })
-      .on("broadcast", { event: "part_eta_updated" }, (event: any) => {
-        globalBusListeners.forEach((listener) => listener({ event: "part_eta_updated", payload: event?.payload }));
-      })
-      .subscribe((status: string) => {
-        if (status === "CHANNEL_ERROR") {
-          console.warn("[TerraByte Realtime] Global bus channel error, polling remains active.");
-        }
+    WORKFLOW_REALTIME_EVENTS.forEach((evt) => {
+      globalBusChannelInstance.on("broadcast", { event: evt }, (event: any) => {
+        globalBusListeners.forEach((listener) => listener({ event: evt, payload: event?.payload }));
       });
+    });
+    globalBusChannelInstance.subscribe((status: string) => {
+      if (status === "CHANNEL_ERROR") {
+        console.warn("[TerraByte Realtime] Global bus channel error.");
+      }
+    });
   } catch (busErr) {
     console.warn("[TerraByte Realtime] Global bus subscription warning:", busErr);
+  }
+}
+
+/**
+ * Emits a realtime workflow event across Supabase Realtime broadcast,
+ * local BroadcastChannel, and in-memory DOM event bus.
+ */
+export function broadcastRepairWorkflowEvent(
+  event: WorkflowRealtimeEvent | string,
+  repairId: string,
+  extra?: Record<string, any>,
+): void {
+  if (!repairId) return;
+
+  const payload = {
+    repairId,
+    timestamp: Date.now(),
+    ...(extra || {}),
+  };
+
+  // 1. Supabase Realtime socket broadcast (multiplexed across separate tabs/browsers/sessions)
+  try {
+    ensureGlobalBusChannel();
+    const channel = globalBusChannelInstance || supabase.channel("tb-realtime-bus");
+    void channel.send({
+      type: "broadcast",
+      event,
+      payload,
+    });
+  } catch (err) {
+    console.warn("[TerraByte Realtime] Bus send error:", err);
+  }
+
+  // 2. BroadcastChannel for same-origin tabs & local state synchronization
+  if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
+    try {
+      const bc = new BroadcastChannel("terrabyte_demo_store_sync");
+      bc.postMessage({
+        type: "STORE_UPDATED",
+        event,
+        ...payload,
+      });
+      bc.close();
+    } catch {
+      // Ignore
+    }
+  }
+
+  // 3. Same-tab DOM event for zero-delay component reaction
+  if (typeof window !== "undefined") {
+    try {
+      window.dispatchEvent(
+        new CustomEvent("terrabyte:repair_updated", {
+          detail: { event, ...payload },
+        }),
+      );
+    } catch {
+      // Ignore
+    }
   }
 }
 
@@ -90,13 +163,55 @@ export function useRepairTicketRealtime({
       try {
         demoBc = new BroadcastChannel("terrabyte_demo_store_sync");
         demoBc.onmessage = (event) => {
-          if (event.data?.type === "STORE_UPDATED") {
-            triggerDebounced();
+          if (
+            event.data?.type === "STORE_UPDATED" ||
+            event.data?.type === "REPAIR_UPDATED"
+          ) {
+            const targetRepairId = event.data?.repairId
+              ? String(event.data.repairId).trim().toLowerCase()
+              : null;
+            const targetJobNumber = event.data?.jobNumber
+              ? String(event.data.jobNumber).trim().toLowerCase()
+              : null;
+            const currentId = repairId.trim().toLowerCase();
+            if (
+              !targetRepairId ||
+              targetRepairId === currentId ||
+              targetRepairId.endsWith(currentId) ||
+              currentId.endsWith(targetRepairId) ||
+              (targetJobNumber && (targetJobNumber === currentId || currentId.endsWith(targetJobNumber)))
+            ) {
+              triggerDebounced();
+            }
           }
         };
       } catch (bcErr) {
         console.warn("[TerraByte Realtime] BroadcastChannel init warning:", bcErr);
       }
+    }
+
+    // 2. Same-window custom event listener for immediate zero-delay reactivity
+    const handleCustomEvent = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      const targetRepairId = detail?.repairId
+        ? String(detail.repairId).trim().toLowerCase()
+        : null;
+      const targetJobNumber = detail?.jobNumber
+        ? String(detail.jobNumber).trim().toLowerCase()
+        : null;
+      const currentId = repairId.trim().toLowerCase();
+      if (
+        !targetRepairId ||
+        targetRepairId === currentId ||
+        targetRepairId.endsWith(currentId) ||
+        currentId.endsWith(targetRepairId) ||
+        (targetJobNumber && (targetJobNumber === currentId || currentId.endsWith(targetJobNumber)))
+      ) {
+        triggerDebounced();
+      }
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("terrabyte:repair_updated", handleCustomEvent);
     }
 
     const handleStorage = (event: StorageEvent) => {
@@ -112,22 +227,24 @@ export function useRepairTicketRealtime({
     };
     window.addEventListener("storage", handleStorage);
 
-    // 2. Global Realtime Broadcast Bus (delivers signals across all sessions, tabs, and incognito windows)
+    // 3. Global Realtime Broadcast Bus (delivers signals across all sessions, tabs, and incognito windows)
     ensureGlobalBusChannel();
     const handleBusEvent: GlobalBusListener = (msg) => {
-      if (msg.event === "part_handoff") {
-        const payload = msg.payload;
-        const targetRepairId = payload?.repairId ? String(payload.repairId).trim().toLowerCase() : null;
-        const currentId = repairId.trim().toLowerCase();
-        if (
-          !targetRepairId ||
-          targetRepairId === currentId ||
-          targetRepairId.endsWith(currentId) ||
-          currentId.endsWith(targetRepairId)
-        ) {
-          triggerDebounced();
-        }
-      } else if (msg.event === "part_eta_updated") {
+      const payload = msg.payload;
+      const targetRepairId = payload?.repairId
+        ? String(payload.repairId).trim().toLowerCase()
+        : null;
+      const targetJobNumber = payload?.jobNumber
+        ? String(payload.jobNumber).trim().toLowerCase()
+        : null;
+      const currentId = repairId.trim().toLowerCase();
+      if (
+        !targetRepairId ||
+        targetRepairId === currentId ||
+        targetRepairId.endsWith(currentId) ||
+        currentId.endsWith(targetRepairId) ||
+        (targetJobNumber && (targetJobNumber === currentId || currentId.endsWith(targetJobNumber)))
+      ) {
         triggerDebounced();
       }
     };
@@ -225,6 +342,18 @@ export function useRepairTicketRealtime({
                 triggerDebounced();
               }
             )
+            .on(
+              "postgres_changes",
+              {
+                event: "*",
+                schema: "public",
+                table: "repair_messages",
+                filter: `repair_request_id=eq.${cleanId}`,
+              },
+              () => {
+                triggerDebounced();
+              }
+            )
             .subscribe((status) => {
               if (status === "CHANNEL_ERROR") {
                 console.warn(`[TerraByte Realtime] Channel error on ${channelName}, fallback to authoritative polling.`);
@@ -257,6 +386,9 @@ export function useRepairTicketRealtime({
       }
       window.removeEventListener("focus", handleFocus);
       window.removeEventListener("storage", handleStorage);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("terrabyte:repair_updated", handleCustomEvent);
+      }
       globalBusListeners.delete(handleBusEvent);
       if (demoBc) {
         try {
@@ -319,6 +451,55 @@ export function useRepairListRealtime({
   useEffect(() => {
     if (!enabled || !channelName) return;
 
+    let demoBc: BroadcastChannel | null = null;
+
+    // 1. Cross-tab synchronization via BroadcastChannel
+    if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
+      try {
+        demoBc = new BroadcastChannel("terrabyte_demo_store_sync");
+        demoBc.onmessage = (event) => {
+          if (
+            event.data?.type === "STORE_UPDATED" ||
+            event.data?.type === "REPAIR_UPDATED"
+          ) {
+            triggerDebounced();
+          }
+        };
+      } catch (bcErr) {
+        console.warn("[TerraByte Realtime] List BroadcastChannel init warning:", bcErr);
+      }
+    }
+
+    // 2. Same-tab DOM event listener for immediate zero-delay reactivity
+    const handleCustomEvent = () => {
+      triggerDebounced();
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("terrabyte:repair_updated", handleCustomEvent);
+    }
+
+    // 3. Storage event listener for cross-tab local storage changes
+    const handleStorage = (event: StorageEvent) => {
+      if (
+        !event.key ||
+        event.key === "terrabyte-demo-v1" ||
+        event.key === "terrabyte_demo_store" ||
+        event.key.startsWith("terrabyte") ||
+        event.key.startsWith("tb")
+      ) {
+        triggerDebounced();
+      }
+    };
+    window.addEventListener("storage", handleStorage);
+
+    // 4. Global Realtime Broadcast Bus (delivers signals across all sessions, tabs, and incognito windows)
+    ensureGlobalBusChannel();
+    const handleBusEvent: GlobalBusListener = () => {
+      triggerDebounced();
+    };
+    globalBusListeners.add(handleBusEvent);
+
+    // 5. Supabase Postgres Changes
     const changeConfig: {
       event: "*";
       schema: "public";
@@ -340,6 +521,12 @@ export function useRepairListRealtime({
       channel = supabase
         .channel(uniqueChannelName)
         .on("postgres_changes", changeConfig, () => {
+          triggerDebounced();
+        })
+        .on("postgres_changes", { event: "*", schema: "public", table: "quotes" }, () => {
+          triggerDebounced();
+        })
+        .on("postgres_changes", { event: "*", schema: "public", table: "repair_timeline" }, () => {
           triggerDebounced();
         })
         .subscribe((status) => {
@@ -365,6 +552,18 @@ export function useRepairListRealtime({
         timerRef.current = null;
       }
       window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("storage", handleStorage);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("terrabyte:repair_updated", handleCustomEvent);
+      }
+      globalBusListeners.delete(handleBusEvent);
+      if (demoBc) {
+        try {
+          demoBc.close();
+        } catch {
+          // Ignore
+        }
+      }
       if (channel) {
         try {
           void supabase.removeChannel(channel);

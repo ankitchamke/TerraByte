@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { createNotification } from "./notifications";
+import { broadcastRepairWorkflowEvent } from "@/hooks/use-repair-realtime";
 
 export type RepairMessageRow = Database["public"]["Tables"]["repair_messages"]["Row"];
 export type RepairMessageInsert = Database["public"]["Tables"]["repair_messages"]["Insert"];
@@ -244,6 +245,11 @@ export async function sendRepairMessage(
   } catch (notifErr) {
     console.warn("[TerraByte Messages] Warning: Failed to dispatch notification for repair message:", notifErr);
   }
+
+  broadcastRepairWorkflowEvent("message_sent", resolvedRepairId, {
+    jobNumber: repair.job_number,
+    messageId: insertedMessage.id,
+  });
 
   return insertedMessage as unknown as RepairMessageWithParticipants;
 }

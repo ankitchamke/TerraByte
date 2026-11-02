@@ -892,8 +892,7 @@ function Job() {
         <Card className="border-accent">
           <div className="flex items-center justify-between gap-2 mb-3">
             <h2 className="text-lg font-bold flex items-center gap-2">
-              <Lock className="h-4 w-4 text-accent" /> Quote v{pendingQuote.version} (Pending Farmer
-              Review)
+              <Lock className="h-4 w-4 text-accent" /> Quote v{pendingQuote.version} (Pending Farmer Review)
             </h2>
             <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-accent/15 text-accent border border-accent/30">
               Awaiting Farmer
@@ -918,7 +917,7 @@ function Job() {
             </ul>
           </div>
         </Card>
-      ) : r.status === "ACCEPTED" || r.status === "QUOTE_REVISED" ? (
+      ) : (r.status === "ACCEPTED" || r.status === "QUOTE_REVISED") ? (
         <QuoteBuilder
           repairId={r.id}
           status={r.status}
@@ -1527,10 +1526,7 @@ function QuoteBuilder({
             <div>
               <select
                 aria-label="Select from Depot Catalog"
-                className={cn(
-                  input,
-                  "h-10 min-h-[2.5rem] py-1.5 px-3 text-xs leading-normal cursor-pointer",
-                )}
+                className={cn(input, "h-10 min-h-[2.5rem] py-1.5 px-3 text-xs leading-normal cursor-pointer")}
                 value={p.catalogPartId || ""}
                 onChange={(e) => {
                   const val = e.target.value;

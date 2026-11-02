@@ -685,6 +685,8 @@ function AdminRepair() {
     try {
       if (isReal) {
         await cancelRepairRequest(r.id);
+      } else {
+        actions.cancel(jobNumber || r.id);
       }
       toast.success("Repair cancelled.");
       await loadData();
@@ -706,6 +708,8 @@ function AdminRepair() {
         await approveCancellation(r.id, {
           adminResponse: approveRemarks.trim() || undefined,
         });
+      } else {
+        actions.approveCancellation(jobNumber || r.id, approveRemarks.trim() || undefined);
       }
       toast.success("Cancellation approved. Ticket cancelled.");
       setApproveDialogOpen(false);
@@ -738,6 +742,8 @@ function AdminRepair() {
         await rejectCancellation(r.id, {
           adminResponse: trimmed,
         });
+      } else {
+        actions.rejectCancellation(jobNumber || r.id, trimmed);
       }
       toast.success("Cancellation request declined. Repair resumed.");
       setRejectDialogOpen(false);

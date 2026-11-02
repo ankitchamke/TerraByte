@@ -1,6 +1,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 import { createNotification } from "./notifications";
+import { broadcastRepairWorkflowEvent } from "@/hooks/use-repair-realtime";
 
 export type QuoteRow = Database["public"]["Tables"]["quotes"]["Row"];
 export type QuoteItemRow = Database["public"]["Tables"]["quote_items"]["Row"];
@@ -807,6 +808,13 @@ export async function createQuote(input: CreateQuoteInput): Promise<QuoteDetail>
     console.warn("[TerraByte] Warning: Failed to send quote notification:", notifErr);
   }
 
+  broadcastRepairWorkflowEvent("quote_created", repair.id, {
+    jobNumber: repair.job_number,
+    quoteId: quote.id,
+    version: quote.version,
+    status: newRepairStatus,
+  });
+
   return {
     ...quote,
     quote_items: insertedItems,
@@ -1084,6 +1092,13 @@ export async function reviseQuote(input: ReviseQuoteInput): Promise<QuoteDetail>
     console.warn("[TerraByte] Warning: Failed to send revised quote notification:", notifErr);
   }
 
+  broadcastRepairWorkflowEvent("quote_revised", repair.id, {
+    jobNumber: repair.job_number,
+    quoteId: newQuote.id,
+    version: newVersion,
+    status: "QUOTE_PENDING",
+  });
+
   return {
     ...newQuote,
     quote_items: insertedItems,
@@ -1221,6 +1236,14 @@ export async function approveQuote(quoteId: string): Promise<QuoteDetail> {
 
   const items = (updatedQuote as any).quote_items || [];
   const totals = calculateQuoteTotals(items, Number(updatedQuote.labour_amount), Number(updatedQuote.tax_percent));
+  const finalRepairStatus = repair.status === "WAITING_FOR_PARTS" ? "WAITING_FOR_PARTS" : "IN_PROGRESS";
+
+  broadcastRepairWorkflowEvent("quote_approved", repair.id, {
+    jobNumber: repair.job_number,
+    quoteId: quote.id,
+    version: quote.version,
+    status: finalRepairStatus,
+  });
 
   return {
     ...(updatedQuote as unknown as QuoteRow & { quote_items: QuoteItemRow[]; technician: any }),
@@ -1460,6 +1483,14 @@ export async function rejectQuote(
 
   const items = (updatedQuote as any).quote_items || [];
   const totals = calculateQuoteTotals(items, Number(updatedQuote.labour_amount), Number(updatedQuote.tax_percent));
+
+  broadcastRepairWorkflowEvent("quote_rejected", repair.id, {
+    jobNumber: repair.job_number,
+    quoteId: quote.id,
+    version: quote.version,
+    status: "QUOTE_REVISED",
+    reason: selectedReason || explanation,
+  });
 
   return {
     ...(updatedQuote as unknown as QuoteRow & { quote_items: QuoteItemRow[]; technician: any }),

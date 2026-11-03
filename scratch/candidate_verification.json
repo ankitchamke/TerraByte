@@ -1,0 +1,307 @@
+{
+  "20261001151000": {
+    "filename": "20261001151000_fix_technician_signup_trigger.sql",
+    "sha256": "7ae894f24f18b826b25c4704f7779e3d6ad7218b101cbec82b86733b886cd6a3",
+    "size": 3622,
+    "functions": [
+      "handle_new_user"
+    ],
+    "tables": [],
+    "triggers": [],
+    "policies": [],
+    "columns": [],
+    "indexes": [],
+    "superseded_by": [
+      "Function handle_new_user replaced in 20261001151000_fix_technician_signup_trigger.sql",
+      "Function handle_new_user replaced in 20261104100000_profile_security_separation.sql"
+    ]
+  },
+  "20261001151200": {
+    "filename": "20261001151200_restore_supabase_auth_rls_helpers.sql",
+    "sha256": "da4530c5908e93824cd4ea9f8e71d1b2fe2956efd8fe21705b68ff4728951f6b",
+    "size": 2121,
+    "functions": [
+      "current_user_role",
+      "current_profile_id"
+    ],
+    "tables": [],
+    "triggers": [],
+    "policies": [
+      "Users can update own profile",
+      "Admins can update technician profiles"
+    ],
+    "columns": [],
+    "indexes": [],
+    "superseded_by": [
+      "Function current_user_role replaced in 20261001151200_restore_supabase_auth_rls_helpers.sql",
+      "Function current_profile_id replaced in 20261001151200_restore_supabase_auth_rls_helpers.sql",
+      "Policy \"Users can update own profile\" dropped in 20261001151200_restore_supabase_auth_rls_helpers.sql",
+      "Policy \"Admins can update technician profiles\" dropped in 20261001151200_restore_supabase_auth_rls_helpers.sql",
+      "Function current_user_role replaced in 20261001163000_phase2_security_hardening.sql",
+      "Function current_profile_id replaced in 20261001163000_phase2_security_hardening.sql",
+      "Function current_user_role replaced in 20261004100000_phase5_4_cancellation_approval_foundation.sql",
+      "Function current_profile_id replaced in 20261004100000_phase5_4_cancellation_approval_foundation.sql",
+      "Function current_user_role replaced in 20261005100000_phase5_5_communication_foundation.sql",
+      "Function current_profile_id replaced in 20261005100000_phase5_5_communication_foundation.sql",
+      "Function current_user_role replaced in 20261029100000_phase9_1_parts_pickup.sql",
+      "Function current_profile_id replaced in 20261029100000_phase9_1_parts_pickup.sql",
+      "Function current_user_role replaced in 20261029120000_phase9_2_stock_movement_sales.sql",
+      "Function current_user_role replaced in 20261031170000_phase9_2_quote_catalog_and_inventory.sql",
+      "Function current_profile_id replaced in 20261031170000_phase9_2_quote_catalog_and_inventory.sql",
+      "Function current_user_role replaced in 20261104100000_profile_security_separation.sql",
+      "Function current_profile_id replaced in 20261104100000_profile_security_separation.sql",
+      "Policy \"Users can update own profile\" dropped in 20261104100000_profile_security_separation.sql"
+    ]
+  },
+  "20261001153500": {
+    "filename": "20261001153500_set_demo_users_password.sql",
+    "sha256": "0cd923e5f4e0d650fba3f0defd3671eabc9115a85a9e1526b6978f7e316f8c6d",
+    "size": 772,
+    "functions": [],
+    "tables": [],
+    "triggers": [],
+    "policies": [],
+    "columns": [],
+    "indexes": [],
+    "superseded_by": []
+  },
+  "20261001163000": {
+    "filename": "20261001163000_phase2_security_hardening.sql",
+    "sha256": "ebeb6290dff5452f8fd2e9cf93b494b06f92d9f8848fea32cb8db7b6ddd2c64e",
+    "size": 5589,
+    "functions": [
+      "protect_technician_verification",
+      "current_user_role",
+      "current_profile_id"
+    ],
+    "tables": [],
+    "triggers": [
+      "trg_protect_technician_verification"
+    ],
+    "policies": [
+      "Quote items view policy",
+      "Repair timeline view policy",
+      "Repair notes view policy",
+      "Service history view policy",
+      "Technician profiles are viewable by authenticated users"
+    ],
+    "columns": [],
+    "indexes": [],
+    "superseded_by": [
+      "Function protect_technician_verification replaced in 20261001163000_phase2_security_hardening.sql",
+      "Function current_user_role replaced in 20261001163000_phase2_security_hardening.sql",
+      "Function current_profile_id replaced in 20261001163000_phase2_security_hardening.sql",
+      "Policy \"Quote items view policy\" dropped in 20261001163000_phase2_security_hardening.sql",
+      "Policy \"Repair timeline view policy\" dropped in 20261001163000_phase2_security_hardening.sql",
+      "Policy \"Repair notes view policy\" dropped in 20261001163000_phase2_security_hardening.sql",
+      "Policy \"Service history view policy\" dropped in 20261001163000_phase2_security_hardening.sql",
+      "Policy \"Technician profiles are viewable by authenticated users\" dropped in 20261001163000_phase2_security_hardening.sql",
+      "Policy \"Repair timeline view policy\" dropped in 20261002130000_phase3_7_rls_integrity_hardening.sql",
+      "Policy \"Repair notes view policy\" dropped in 20261002130000_phase3_7_rls_integrity_hardening.sql",
+      "Function current_user_role replaced in 20261004100000_phase5_4_cancellation_approval_foundation.sql",
+      "Function current_profile_id replaced in 20261004100000_phase5_4_cancellation_approval_foundation.sql",
+      "Function current_user_role replaced in 20261005100000_phase5_5_communication_foundation.sql",
+      "Function current_profile_id replaced in 20261005100000_phase5_5_communication_foundation.sql",
+      "Function current_user_role replaced in 20261029100000_phase9_1_parts_pickup.sql",
+      "Function current_profile_id replaced in 20261029100000_phase9_1_parts_pickup.sql",
+      "Function current_user_role replaced in 20261029120000_phase9_2_stock_movement_sales.sql",
+      "Function current_user_role replaced in 20261031170000_phase9_2_quote_catalog_and_inventory.sql",
+      "Function current_profile_id replaced in 20261031170000_phase9_2_quote_catalog_and_inventory.sql",
+      "Function current_user_role replaced in 20261104100000_profile_security_separation.sql",
+      "Function current_profile_id replaced in 20261104100000_profile_security_separation.sql"
+    ]
+  },
+  "20261001170000": {
+    "filename": "20261001170000_phase2_3_database_foundation.sql",
+    "sha256": "bf9c232f3fff85544fe50046e34532baf1538d4616f019755ad608c94c328eea",
+    "size": 2313,
+    "functions": [],
+    "tables": [],
+    "triggers": [],
+    "policies": [
+      "Users can insert own profile"
+    ],
+    "columns": [],
+    "indexes": [
+      "idx_quotes_status",
+      "idx_repair_timeline_created_by",
+      "idx_profiles_email",
+      "idx_repair_notes_author_id",
+      "idx_quotes_technician_id",
+      "idx_service_history_repair_id",
+      "idx_technician_profiles_verified"
+    ],
+    "superseded_by": [
+      "Policy \"Users can insert own profile\" dropped in 20261001170000_phase2_3_database_foundation.sql",
+      "Policy \"Users can insert own profile\" dropped in 20261104100000_profile_security_separation.sql"
+    ]
+  },
+  "20261002000000": {
+    "filename": "20261002000000_phase3_6_notifications_insert_policy.sql",
+    "sha256": "396a5b583571ecf84a6de629cf0122cb7600ca2984786fc848560c8f2579d83e",
+    "size": 2835,
+    "functions": [],
+    "tables": [],
+    "triggers": [],
+    "policies": [
+      "Notifications view policy",
+      "Notifications insert policy",
+      "Notifications update read status"
+    ],
+    "columns": [],
+    "indexes": [],
+    "superseded_by": [
+      "Policy \"Notifications view policy\" dropped in 20261002000000_phase3_6_notifications_insert_policy.sql",
+      "Policy \"Notifications insert policy\" dropped in 20261002000000_phase3_6_notifications_insert_policy.sql",
+      "Policy \"Notifications update read status\" dropped in 20261002000000_phase3_6_notifications_insert_policy.sql"
+    ]
+  },
+  "20261004100000": {
+    "filename": "20261004100000_phase5_4_cancellation_approval_foundation.sql",
+    "sha256": "8f2d26fe9cf2d8427d94540f03330ea261687850a89eb90a1cd9cfbd95cb2297",
+    "size": 37596,
+    "functions": [
+      "reset_demo_data"
+    ],
+    "tables": [],
+    "triggers": [],
+    "policies": [
+      "Admins have full operational update access",
+      "Technicians can update assigned repairs and accept jobs",
+      "Farmers can update active repair requests",
+      "Farmers can directly cancel unassigned repairs"
+    ],
+    "columns": [
+      "cancellation_previous_status",
+      "cancellation_reason",
+      "cancellation_admin_response",
+      "cancellation_requested_at",
+      "cancellation_note",
+      "cancellation_requested_by"
+    ],
+    "indexes": [
+      "idx_repair_requests_cancellation_status"
+    ],
+    "superseded_by": [
+      "Function reset_demo_data replaced in 20261004100000_phase5_4_cancellation_approval_foundation.sql",
+      "Policy \"Admins have full operational update access\" dropped in 20261004100000_phase5_4_cancellation_approval_foundation.sql",
+      "Policy \"Technicians can update assigned repairs and accept jobs\" dropped in 20261004100000_phase5_4_cancellation_approval_foundation.sql",
+      "Policy \"Farmers can update active repair requests\" dropped in 20261004100000_phase5_4_cancellation_approval_foundation.sql",
+      "Policy \"Farmers can directly cancel unassigned repairs\" dropped in 20261004100000_phase5_4_cancellation_approval_foundation.sql",
+      "Function reset_demo_data replaced in 20261005100000_phase5_5_communication_foundation.sql",
+      "Policy \"Technicians can update assigned repairs and accept jobs\" dropped in 20261006110000_phase7_3_technician_decline_rls.sql",
+      "Function reset_demo_data replaced in 20261028110000_phase8b_cleanup_reset_demo_rpc.sql",
+      "Function reset_demo_data replaced in 20261029100000_phase9_1_parts_pickup.sql",
+      "Function reset_demo_data replaced in 20261029120000_phase9_2_stock_movement_sales.sql",
+      "Function reset_demo_data replaced in 20261031153000_phase9_3_safe_scoped_reset_demo_rpc.sql",
+      "Function reset_demo_data replaced in 20261103110000_fix_demo_reset_equipment_and_realtime.sql",
+      "Function reset_demo_data replaced in 20261104100000_profile_security_separation.sql"
+    ]
+  },
+  "20261005100000": {
+    "filename": "20261005100000_phase5_5_communication_foundation.sql",
+    "sha256": "4c8df78fbb9c2c0da3d62ac170e717a97d96ee79aaaa0692ea22b92f3ddaee83",
+    "size": 40890,
+    "functions": [
+      "guard_repair_messages_update",
+      "reset_demo_data"
+    ],
+    "tables": [
+      "repair_messages"
+    ],
+    "triggers": [
+      "trg_guard_repair_messages_update"
+    ],
+    "policies": [
+      "Authorized participants and admins can view repair messages",
+      "Admins can delete repair messages",
+      "Authorized participants and admins can send repair messages",
+      "Recipients can update message read status"
+    ],
+    "columns": [],
+    "indexes": [
+      "idx_repair_messages_unread",
+      "idx_repair_messages_ticket"
+    ],
+    "superseded_by": [
+      "Function guard_repair_messages_update replaced in 20261005100000_phase5_5_communication_foundation.sql",
+      "Function reset_demo_data replaced in 20261005100000_phase5_5_communication_foundation.sql",
+      "Policy \"Authorized participants and admins can view repair messages\" dropped in 20261005100000_phase5_5_communication_foundation.sql",
+      "Policy \"Admins can delete repair messages\" dropped in 20261005100000_phase5_5_communication_foundation.sql",
+      "Policy \"Authorized participants and admins can send repair messages\" dropped in 20261005100000_phase5_5_communication_foundation.sql",
+      "Policy \"Recipients can update message read status\" dropped in 20261005100000_phase5_5_communication_foundation.sql",
+      "Function reset_demo_data replaced in 20261028110000_phase8b_cleanup_reset_demo_rpc.sql",
+      "Function reset_demo_data replaced in 20261029100000_phase9_1_parts_pickup.sql",
+      "Function reset_demo_data replaced in 20261029120000_phase9_2_stock_movement_sales.sql",
+      "Function reset_demo_data replaced in 20261031153000_phase9_3_safe_scoped_reset_demo_rpc.sql",
+      "Function reset_demo_data replaced in 20261103110000_fix_demo_reset_equipment_and_realtime.sql",
+      "Function reset_demo_data replaced in 20261104100000_profile_security_separation.sql"
+    ]
+  },
+  "20261006100000": {
+    "filename": "20261006100000_phase7_1_realtime_publication_foundation.sql",
+    "sha256": "9587566d9d1c74f423e15637eb1bc3d5d2fe01cf7fc43a8cad65fb5942c2538c",
+    "size": 1932,
+    "functions": [],
+    "tables": [],
+    "triggers": [],
+    "policies": [],
+    "columns": [],
+    "indexes": [],
+    "superseded_by": []
+  },
+  "20261006110000": {
+    "filename": "20261006110000_phase7_3_technician_decline_rls.sql",
+    "sha256": "2112184d6f412e29d3f2cd6a9e612e5d5309637fb323ab26597468a81d6c8dda",
+    "size": 1470,
+    "functions": [],
+    "tables": [],
+    "triggers": [],
+    "policies": [
+      "Technicians can update assigned repairs and accept jobs"
+    ],
+    "columns": [],
+    "indexes": [],
+    "superseded_by": [
+      "Policy \"Technicians can update assigned repairs and accept jobs\" dropped in 20261006110000_phase7_3_technician_decline_rls.sql"
+    ]
+  },
+  "20261102100000": {
+    "filename": "20261102100000_phase10_2_doorstep_urgency.sql",
+    "sha256": "c8a3f1dcb15ef58147d3b34b2c88257992c565a414edf19dc3a72af3a1bfc106",
+    "size": 2064,
+    "functions": [],
+    "tables": [],
+    "triggers": [],
+    "policies": [],
+    "columns": [
+      "field_landmark",
+      "preferred_time_slot",
+      "service_type",
+      "is_machine_stopped",
+      "urgency_level"
+    ],
+    "indexes": [
+      "idx_repair_requests_urgency_triage",
+      "idx_repair_requests_service_type"
+    ],
+    "superseded_by": []
+  },
+  "20261103110000": {
+    "filename": "20261103110000_fix_demo_reset_equipment_and_realtime.sql",
+    "sha256": "571d789ff4ee4343dd858d2c52ebc5eba04c057aba60b98a914bd8d4fa9ad7c9",
+    "size": 14397,
+    "functions": [
+      "reset_demo_data"
+    ],
+    "tables": [],
+    "triggers": [],
+    "policies": [],
+    "columns": [],
+    "indexes": [],
+    "superseded_by": [
+      "Function reset_demo_data replaced in 20261103110000_fix_demo_reset_equipment_and_realtime.sql",
+      "Function reset_demo_data replaced in 20261104100000_profile_security_separation.sql"
+    ]
+  }
+}

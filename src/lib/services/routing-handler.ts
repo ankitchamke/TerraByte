@@ -81,12 +81,9 @@ export async function handleRouteEstimateRequest(
     );
   }
 
-  // 2. Identify caller profile and role
-  const { data: profile, error: profileError } = await userClient
-    .from("profiles")
-    .select("id, role")
-    .eq("auth_user_id", user.id)
-    .maybeSingle();
+  // 2. Identify caller profile and role via get_session_profile RPC
+  const { data: sessionData, error: profileError } = await userClient.rpc("get_session_profile");
+  const profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
 
   if (profileError || !profile) {
     return new Response(

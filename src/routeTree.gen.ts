@@ -22,6 +22,7 @@ import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } fr
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminPartsDeskRouteImport } from './routes/admin/parts-desk'
 import { Route as AdminTechniciansRouteImport } from './routes/admin/technicians'
+import { Route as ApiAssessVisualDefectRouteImport } from './routes/api/assess-visual-defect'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ApiRouteEstimateRouteImport } from './routes/api/route-estimate'
 import { Route as AuthConfirmRouteImport } from './routes/auth/confirm'
@@ -103,6 +104,11 @@ const AdminTechniciansRoute = AdminTechniciansRouteImport.update({
   id: '/technicians',
   path: '/technicians',
   getParentRoute: () => AdminRoute,
+} as any)
+const ApiAssessVisualDefectRoute = ApiAssessVisualDefectRouteImport.update({
+  id: '/api/assess-visual-defect',
+  path: '/api/assess-visual-defect',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ApiHealthRoute = ApiHealthRouteImport.update({
   id: '/api/health',
@@ -193,6 +199,7 @@ export interface FileRoutesByFullPath {
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin/parts-desk': typeof AdminPartsDeskRoute
   '/admin/technicians': typeof AdminTechniciansRoute
+  '/api/assess-visual-defect': typeof ApiAssessVisualDefectRoute
   '/api/health': typeof ApiHealthRoute
   '/api/route-estimate': typeof ApiRouteEstimateRoute
   '/auth/confirm': typeof AuthConfirmRoute
@@ -220,6 +227,7 @@ export interface FileRoutesByTo {
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin/parts-desk': typeof AdminPartsDeskRoute
   '/admin/technicians': typeof AdminTechniciansRoute
+  '/api/assess-visual-defect': typeof ApiAssessVisualDefectRoute
   '/api/health': typeof ApiHealthRoute
   '/api/route-estimate': typeof ApiRouteEstimateRoute
   '/auth/confirm': typeof AuthConfirmRoute
@@ -251,6 +259,7 @@ export interface FileRoutesById {
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   '/admin/parts-desk': typeof AdminPartsDeskRoute
   '/admin/technicians': typeof AdminTechniciansRoute
+  '/api/assess-visual-defect': typeof ApiAssessVisualDefectRoute
   '/api/health': typeof ApiHealthRoute
   '/api/route-estimate': typeof ApiRouteEstimateRoute
   '/auth/confirm': typeof AuthConfirmRoute
@@ -283,6 +292,7 @@ export interface FileRouteTypes {
     | '/.well-known/oauth-protected-resource'
     | '/admin/parts-desk'
     | '/admin/technicians'
+    | '/api/assess-visual-defect'
     | '/api/health'
     | '/api/route-estimate'
     | '/auth/confirm'
@@ -310,6 +320,7 @@ export interface FileRouteTypes {
     | '/.well-known/oauth-protected-resource'
     | '/admin/parts-desk'
     | '/admin/technicians'
+    | '/api/assess-visual-defect'
     | '/api/health'
     | '/api/route-estimate'
     | '/auth/confirm'
@@ -340,6 +351,7 @@ export interface FileRouteTypes {
     | '/.well-known/oauth-protected-resource'
     | '/admin/parts-desk'
     | '/admin/technicians'
+    | '/api/assess-visual-defect'
     | '/api/health'
     | '/api/route-estimate'
     | '/auth/confirm'
@@ -369,6 +381,7 @@ export interface RootRouteChildren {
   ServiceCentreRoute: typeof ServiceCentreRoute
   TechnicianRoute: typeof TechnicianRouteWithChildren
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  ApiAssessVisualDefectRoute: typeof ApiAssessVisualDefectRoute
   ApiHealthRoute: typeof ApiHealthRoute
   ApiRouteEstimateRoute: typeof ApiRouteEstimateRoute
   AuthConfirmRoute: typeof AuthConfirmRoute
@@ -469,6 +482,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/technicians'
       preLoaderRoute: typeof AdminTechniciansRouteImport
       parentRoute: typeof AdminRoute
+    }
+    '/api/assess-visual-defect': {
+      id: '/api/assess-visual-defect'
+      path: '/api/assess-visual-defect'
+      fullPath: '/api/assess-visual-defect'
+      preLoaderRoute: typeof ApiAssessVisualDefectRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/health': {
       id: '/api/health'
@@ -641,6 +661,7 @@ const rootRouteChildren: RootRouteChildren = {
   TechnicianRoute: TechnicianRouteWithChildren,
   Char91DotwellKnownChar93OauthProtectedResourceRoute:
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
+  ApiAssessVisualDefectRoute: ApiAssessVisualDefectRoute,
   ApiHealthRoute: ApiHealthRoute,
   ApiRouteEstimateRoute: ApiRouteEstimateRoute,
   AuthConfirmRoute: AuthConfirmRoute,

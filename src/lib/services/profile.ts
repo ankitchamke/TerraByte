@@ -25,11 +25,16 @@ export async function updateProfile(input: UpdateProfileInput): Promise<void> {
     throw new Error("Authentication required. Please sign in to update your profile.");
   }
 
+  const { data: sessionData } = await supabase.rpc("get_session_profile");
+  const sessionProfile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
+  const profileId = sessionProfile?.id || user.id;
+
   const trimmedName = input.fullName.trim();
   if (!trimmedName) {
     throw new Error("Full name is required.");
   }
 
+<<<<<<< Updated upstream
   const { error } = await supabase
     .from("profiles")
     .update({
@@ -39,10 +44,65 @@ export async function updateProfile(input: UpdateProfileInput): Promise<void> {
       updated_at: new Date().toISOString(),
     })
     .or(`auth_user_id.eq.${user.id},id.eq.${user.id}`);
+=======
+  const updateData: {
+    full_name: string;
+    phone?: string | null;
+    village?: string | null;
+    updated_at: string;
+  } = {
+    full_name: trimmedName,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (input.phone !== undefined) {
+    updateData.phone = input.phone?.trim() || null;
+  }
+
+  if (input.village !== undefined) {
+    const trimmedVillage = input.village?.trim();
+    if (trimmedVillage) {
+      updateData.village = trimmedVillage;
+    } else {
+      // Do not overwrite an existing saved farmer profile location with an empty value
+      const { data: existingProfile } = await supabase
+        .from("profiles")
+        .select("village")
+        .eq("id", profileId)
+        .maybeSingle();
+
+      if (!existingProfile?.village) {
+        updateData.village = null;
+      }
+      // If existingProfile has a saved village, leave it unchanged
+    }
+  }
+
+  const { error } = await supabase
+    .from("profiles")
+    .update(updateData)
+    .eq("id", profileId);
+>>>>>>> Stashed changes
 
   if (error) {
     console.error("[TerraByte] Error updating profile:", error);
     throw new Error("Failed to update profile. Please try again.");
+  }
+
+  // Dual-write into profile_contacts
+  const contactsUpdate = {
+    profile_id: profileId,
+    phone: (updateData.phone !== undefined ? updateData.phone : sessionProfile?.phone) ?? null,
+    village: (updateData.village !== undefined ? updateData.village : sessionProfile?.village) ?? null,
+    updated_at: updateData.updated_at,
+  };
+
+  const { error: contactsError } = await supabase
+    .from("profile_contacts")
+    .upsert(contactsUpdate);
+
+  if (contactsError) {
+    console.warn("[TerraByte] Warning: Error updating profile_contacts:", contactsError);
   }
 }
 
@@ -65,13 +125,10 @@ export async function updateTechnicianWorkshop(input: UpdateTechnicianWorkshopIn
   }
 
   // Resolve technician's profile ID
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("id")
-    .or(`auth_user_id.eq.${user.id},id.eq.${user.id}`)
-    .maybeSingle();
+  const { data: sessionData, error: sessionError } = await supabase.rpc("get_session_profile");
+  const profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
 
-  if (profileError || !profile) {
+  if (sessionError || !profile) {
     throw new Error("Technician profile record could not be found.");
   }
 
@@ -103,11 +160,8 @@ export async function getTechnicianWorkshopDetails(): Promise<{
 
   if (!user) return null;
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("id")
-    .or(`auth_user_id.eq.${user.id},id.eq.${user.id}`)
-    .maybeSingle();
+  const { data: sessionData } = await supabase.rpc("get_session_profile");
+  const profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
 
   if (!profile) return null;
 

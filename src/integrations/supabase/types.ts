@@ -161,6 +161,7 @@ export type Database = {
           village?: string | null
         }
         Update: {
+<<<<<<< Updated upstream
           auth_user_id?: string | null
           clerk_user_id?: string | null
           created_at?: string
@@ -175,6 +176,89 @@ export type Database = {
         }
         Relationships: []
       }
+=======
+          auth_user_id?: string | null;
+          clerk_user_id?: string | null;
+          created_at?: string;
+          demo_code?: string | null;
+          email?: string | null;
+          full_name?: string;
+          id?: string;
+          phone?: string | null;
+          role?: Database["public"]["Enums"]["user_role"];
+          updated_at?: string;
+          village?: string | null;
+        };
+        Relationships: [];
+      };
+      profile_contacts: {
+        Row: {
+          phone: string | null;
+          profile_id: string;
+          updated_at: string;
+          village: string | null;
+        };
+        Insert: {
+          phone?: string | null;
+          profile_id: string;
+          updated_at?: string;
+          village?: string | null;
+        };
+        Update: {
+          phone?: string | null;
+          profile_id?: string;
+          updated_at?: string;
+          village?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "profile_contacts_profile_id_fkey";
+            columns: ["profile_id"];
+            isOneToOne: true;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      profile_auth_secrets: {
+        Row: {
+          auth_user_id: string | null;
+          clerk_user_id: string | null;
+          created_at: string;
+          demo_code: string | null;
+          email: string | null;
+          profile_id: string;
+          updated_at: string;
+        };
+        Insert: {
+          auth_user_id?: string | null;
+          clerk_user_id?: string | null;
+          created_at?: string;
+          demo_code?: string | null;
+          email?: string | null;
+          profile_id: string;
+          updated_at?: string;
+        };
+        Update: {
+          auth_user_id?: string | null;
+          clerk_user_id?: string | null;
+          created_at?: string;
+          demo_code?: string | null;
+          email?: string | null;
+          profile_id?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "profile_auth_secrets_profile_id_fkey";
+            columns: ["profile_id"];
+            isOneToOne: true;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+>>>>>>> Stashed changes
       quote_items: {
         Row: {
           catalog_part_id: string | null
@@ -996,9 +1080,39 @@ export type Database = {
       current_clerk_id: { Args: never; Returns: string }
       current_profile_id: { Args: never; Returns: string }
       current_user_role: {
+<<<<<<< Updated upstream
         Args: never
         Returns: Database["public"]["Enums"]["user_role"]
       }
+=======
+        Args: never;
+        Returns: Database["public"]["Enums"]["user_role"];
+      };
+      get_session_profile: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          created_at: string;
+          full_name: string;
+          id: string;
+          is_verified: boolean;
+          phone: string | null;
+          role: Database["public"]["Enums"]["user_role"];
+          updated_at: string;
+          village: string | null;
+        }[];
+      };
+      admin_provision_staff: {
+        Args: {
+          p_email: string;
+          p_full_name: string;
+          p_phone?: string | null;
+          p_role: Database["public"]["Enums"]["user_role"];
+          p_village?: string | null;
+          p_workshop_name?: string | null;
+        };
+        Returns: string;
+      };
+>>>>>>> Stashed changes
       delete_user_account: {
         Args: never
         Returns: Json
@@ -1049,6 +1163,7 @@ export type Database = {
       }
       request_service_centre_part: {
         Args: {
+<<<<<<< Updated upstream
           p_repair_request_id: string
           p_part_id: string
           p_quantity?: number
@@ -1057,6 +1172,61 @@ export type Database = {
         Returns: Json
       }
     }
+=======
+          p_repair_request_id: string;
+          p_part_id: string;
+          p_quantity?: number;
+          p_notes?: string;
+        };
+        Returns: Json;
+      };
+      claim_repair_visual_diagnostic: {
+        Args: {
+          p_repair_request_id: string;
+          p_force_rescan?: boolean;
+        };
+        Returns: Json;
+      };
+      save_repair_visual_diagnostic: {
+        Args: {
+          p_repair_request_id: string;
+          p_claim_token: string;
+          p_executed_by_profile_id: string;
+          p_diagnostic_payload: Json;
+        };
+        Returns: Json;
+      };
+      finalize_repair_visual_diagnostic_failure: {
+        Args: {
+          p_repair_request_id: string;
+          p_claim_token: string;
+          p_error_code: string;
+          p_error_message: string;
+          p_is_terminal: boolean;
+        };
+        Returns: Json;
+      };
+      revoke_repair_visual_consent: {
+        Args: {
+          p_repair_request_id: string;
+        };
+        Returns: Json;
+      };
+      grant_repair_visual_consent: {
+        Args: {
+          p_repair_request_id: string;
+        };
+        Returns: Json;
+      };
+      admin_repair_corrupted_diagnostic: {
+        Args: {
+          p_repair_request_id: string;
+          p_target_status?: string;
+        };
+        Returns: Json;
+      };
+    };
+>>>>>>> Stashed changes
     Enums: {
       equipment_status: "Operational" | "In Repair" | "Needs Attention"
       equipment_type:

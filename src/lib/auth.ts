@@ -42,21 +42,16 @@ async function loadProfile(userId: string, email: string | null, emailConfirmed:
 
   inflightProfilePromise = (async () => {
     try {
-      // Query profiles matching auth_user_id or id, with email as fallback
-      const orFilter = email
-        ? `auth_user_id.eq.${userId},id.eq.${userId},email.eq.${email}`
-        : `auth_user_id.eq.${userId},id.eq.${userId}`;
-
-      const { data: profileRow, error } = await supabase
-        .from("profiles")
-        .select("id, auth_user_id, full_name, phone, village, role, email, demo_code")
-        .or(orFilter)
-        .maybeSingle();
+      // Call secure parameterless session hydration RPC
+      const { data, error } = await supabase.rpc("get_session_profile");
 
       if (error) {
         set({ ready: true, userId, email, emailConfirmed, profile: null, profileError: error.message });
         return;
       }
+
+      const profileRow = data && data.length > 0 ? data[0] : null;
+
       if (!profileRow) {
         set({
           ready: true,
@@ -69,34 +64,16 @@ async function loadProfile(userId: string, email: string | null, emailConfirmed:
         return;
       }
 
-  // If the profile exists but auth_user_id wasn't linked yet, link it
-  if (!profileRow.auth_user_id && userId) {
-    void supabase.from("profiles").update({ auth_user_id: userId }).eq("id", profileRow.id);
-  }
+      const role: AppRole = profileRow.role === "admin" ? "service_centre" : (profileRow.role as AppRole);
 
-  // Check technician verification state:
-  // In canonical schema, technicians have their own record in technician_profiles with is_verified
-  let isVerified = true;
-  if (profileRow.role === "technician") {
-    const { data: techRow } = await supabase
-      .from("technician_profiles")
-      .select("is_verified")
-      .or(`profile_id.eq.${profileRow.id},id.eq.${profileRow.id}`)
-      .maybeSingle();
-    isVerified = Boolean(techRow?.is_verified ?? false);
-  }
-
-  const role: AppRole = profileRow.role === "admin" ? "service_centre" : (profileRow.role as AppRole);
-
-  const profile: Profile = {
-    id: profileRow.id,
-    full_name: profileRow.full_name,
-    phone: profileRow.phone,
-    village: profileRow.village,
-    role,
-    is_verified: isVerified,
-    demo_code: profileRow.demo_code ?? null,
-  };
+      const profile: Profile = {
+        id: profileRow.id,
+        full_name: profileRow.full_name,
+        phone: profileRow.phone,
+        village: profileRow.village,
+        role,
+        is_verified: Boolean(profileRow.is_verified),
+      };
 
   set({ ready: true, userId, email, emailConfirmed, profile, profileError: null });
     } finally {

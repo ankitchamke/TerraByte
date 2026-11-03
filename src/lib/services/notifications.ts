@@ -41,11 +41,8 @@ async function getAuthenticatedProfile(): Promise<{ id: string; role: string }> 
     return { id: cachedProfile.id, role: cachedProfile.role };
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("id, role")
-    .or(`auth_user_id.eq.${user.id},id.eq.${user.id}`)
-    .maybeSingle();
+  const { data: sessionData, error: profileError } = await supabase.rpc("get_session_profile");
+  const profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
 
   if (profileError || !profile) {
     throw new Error("User profile not found. Please ensure your profile is initialized.");

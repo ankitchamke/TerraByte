@@ -1,0 +1,421 @@
+{
+  "confirm_service_centre_part_handoff": [
+    {
+      "file": "src/integrations/supabase/types.ts",
+      "lines": [
+        1131
+      ]
+    },
+    {
+      "file": "src/lib/services/parts-desk.ts",
+      "lines": [
+        821,
+        845
+      ]
+    }
+  ],
+  "adjust_service_centre_part_stock": [
+    {
+      "file": "src/integrations/supabase/types.ts",
+      "lines": [
+        1154
+      ]
+    },
+    {
+      "file": "src/lib/services/parts-desk.ts",
+      "lines": [
+        1213
+      ]
+    }
+  ],
+  "request_service_centre_part": [
+    {
+      "file": "src/integrations/supabase/types.ts",
+      "lines": [
+        1162
+      ]
+    }
+  ],
+  "receive_service_centre_stock": [
+    {
+      "file": "src/integrations/supabase/types.ts",
+      "lines": [
+        1137
+      ]
+    },
+    {
+      "file": "src/lib/services/parts-desk.ts",
+      "lines": [
+        1723
+      ]
+    }
+  ],
+  "return_service_centre_part": [
+    {
+      "file": "src/integrations/supabase/types.ts",
+      "lines": [
+        1145
+      ]
+    },
+    {
+      "file": "src/lib/services/parts-desk.ts",
+      "lines": [
+        1797
+      ]
+    }
+  ],
+  "update_service_centre_part_request_eta": [
+    {
+      "file": "src/lib/services/parts-desk.ts",
+      "lines": [
+        1369
+      ]
+    }
+  ],
+  "service_centre_parts": [
+    {
+      "file": "src/hooks/use-repair-realtime.ts",
+      "lines": [
+        644
+      ]
+    },
+    {
+      "file": "src/integrations/supabase/types.ts",
+      "lines": [
+        793,
+        892,
+        978,
+        1045
+      ]
+    },
+    {
+      "file": "src/lib/services/parts-desk.ts",
+      "lines": [
+        27,
+        274,
+        296,
+        435,
+        904,
+        924
+      ]
+    }
+  ],
+  "service_centre_part_requests": [
+    {
+      "file": "src/hooks/use-repair-realtime.ts",
+      "lines": [
+        338,
+        639
+      ]
+    },
+    {
+      "file": "src/integrations/supabase/types.ts",
+      "lines": [
+        838,
+        889,
+        896,
+        903,
+        910
+      ]
+    },
+    {
+      "file": "src/lib/services/parts-desk.ts",
+      "lines": [
+        29,
+        374,
+        391,
+        405,
+        739,
+        780,
+        851,
+        893,
+        935,
+        1248,
+        1272,
+        1285,
+        1418,
+        1434,
+        1447,
+        1740
+      ]
+    },
+    {
+      "file": "src/lib/services/repair-requests.ts",
+      "lines": [
+        2102,
+        2110,
+        2358,
+        2366
+      ]
+    }
+  ],
+  "service_centre_stock_audit": [
+    {
+      "file": "src/hooks/use-repair-realtime.ts",
+      "lines": [
+        649
+      ]
+    },
+    {
+      "file": "src/integrations/supabase/types.ts",
+      "lines": [
+        918,
+        975,
+        982
+      ]
+    },
+    {
+      "file": "src/lib/services/parts-desk.ts",
+      "lines": [
+        31,
+        1011,
+        1651
+      ]
+    }
+  ],
+  "service_centre_part_sales": [
+    {
+      "file": "src/hooks/use-repair-realtime.ts",
+      "lines": [
+        654
+      ]
+    },
+    {
+      "file": "src/integrations/supabase/types.ts",
+      "lines": [
+        991,
+        1042,
+        1049,
+        1056,
+        1063
+      ]
+    },
+    {
+      "file": "src/lib/services/parts-desk.ts",
+      "lines": [
+        33,
+        985,
+        1835
+      ]
+    }
+  ],
+  "estimated_arrival_at": [
+    {
+      "file": "src/components/parts-pickup-card.tsx",
+      "lines": [
+        264,
+        497,
+        498
+      ]
+    },
+    {
+      "file": "src/integrations/supabase/types.ts",
+      "lines": [
+        841,
+        857,
+        873
+      ]
+    },
+    {
+      "file": "src/lib/tb-store.ts",
+      "lines": [
+        246,
+        1541,
+        1554,
+        1575,
+        2074,
+        2117,
+        2218
+      ]
+    },
+    {
+      "file": "src/lib/services/parts-desk.ts",
+      "lines": [
+        104,
+        235,
+        681,
+        1367,
+        1371,
+        1436,
+        1447,
+        1515,
+        1587,
+        1637
+      ]
+    },
+    {
+      "file": "src/routes/admin/parts-desk.tsx",
+      "lines": [
+        446,
+        715,
+        716
+      ]
+    },
+    {
+      "file": "src/routes/admin/repair/$id.tsx",
+      "lines": [
+        375,
+        1624,
+        1629,
+        1630
+      ]
+    }
+  ],
+  "eta_updated_by": [
+    {
+      "file": "src/integrations/supabase/types.ts",
+      "lines": [
+        842,
+        858,
+        874
+      ]
+    },
+    {
+      "file": "src/lib/tb-store.ts",
+      "lines": [
+        135,
+        247,
+        1542,
+        1555,
+        1594,
+        2075,
+        2118,
+        2158,
+        2172
+      ]
+    },
+    {
+      "file": "src/lib/services/parts-desk.ts",
+      "lines": [
+        106,
+        236,
+        238,
+        240,
+        242,
+        682,
+        1437,
+        1467,
+        1480,
+        1589,
+        1639
+      ]
+    }
+  ],
+  "eta_updated_at": [
+    {
+      "file": "src/components/parts-pickup-card.tsx",
+      "lines": [
+        501,
+        503
+      ]
+    },
+    {
+      "file": "src/integrations/supabase/types.ts",
+      "lines": [
+        843,
+        859,
+        875
+      ]
+    },
+    {
+      "file": "src/lib/tb-store.ts",
+      "lines": [
+        136,
+        248,
+        1543,
+        1556,
+        1595,
+        2076,
+        2119,
+        2159,
+        2173
+      ]
+    },
+    {
+      "file": "src/lib/services/parts-desk.ts",
+      "lines": [
+        107,
+        237,
+        683,
+        1438,
+        1468,
+        1481,
+        1590,
+        1640
+      ]
+    },
+    {
+      "file": "src/routes/admin/parts-desk.tsx",
+      "lines": [
+        719,
+        721
+      ]
+    },
+    {
+      "file": "src/routes/admin/repair/$id.tsx",
+      "lines": [
+        1634,
+        1638
+      ]
+    }
+  ],
+  "notify_admin_on_technician_registration": [],
+  "supabase.channel": [
+    {
+      "file": "src/hooks/use-repair-realtime.ts",
+      "lines": [
+        44,
+        80
+      ]
+    },
+    {
+      "file": "src/lib/services/parts-desk.ts",
+      "lines": [
+        869,
+        1095,
+        1160,
+        1377,
+        1551,
+        1621
+      ]
+    },
+    {
+      "file": "src/lib/services/repair-requests.ts",
+      "lines": [
+        1918
+      ]
+    }
+  ],
+  "postgres_changes": [
+    {
+      "file": "src/components/repair-chat.tsx",
+      "lines": [
+        185
+      ]
+    },
+    {
+      "file": "src/components/tb.tsx",
+      "lines": [
+        326
+      ]
+    },
+    {
+      "file": "src/hooks/use-repair-realtime.ts",
+      "lines": [
+        287,
+        299,
+        311,
+        322,
+        334,
+        346,
+        523,
+        526,
+        529,
+        638,
+        643,
+        648,
+        653
+      ]
+    }
+  ]
+}

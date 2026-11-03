@@ -167,11 +167,8 @@ async function getAuthenticatedProfile(): Promise<{
     };
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("id, role, full_name")
-    .or(`auth_user_id.eq.${user.id},id.eq.${user.id}`)
-    .maybeSingle();
+  const { data: sessionData } = await supabase.rpc("get_session_profile");
+  const profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
 
   if (!profile) {
     return {

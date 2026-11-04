@@ -1,0 +1,127 @@
+{
+  "audit_version": "Step 5B.11 Final Evidence Inspection",
+  "timestamp_utc": "2026-11-03T19:10:00Z",
+  "total_artifacts": 12,
+  "artifacts": [
+    {
+      "artifact_id": "HISTORICAL_EQUIVALENCE_MATRIX_JSON",
+      "path": "scratch/detailed_historical_equivalence_matrix.json",
+      "generation_command": "python scratch/comprehensive_historical_equivalence_audit.py",
+      "environment": "Local Workspace (Windows Python 3.14)",
+      "what_it_proves": "Forensic, object-by-object proof that all 36 operations across the 6 historical migrations are accounted for (34 EQUIVALENT, 2 NOT_APPLICABLE).",
+      "limitations": "Proves schema equivalence only; does not authorize modifying remote migration history.",
+      "sha256": "E9647E75F3EA0B29DFFAC7B10C533BBE8C905043F618FBAAFA90F9F0F103C6AE",
+      "size_bytes": 29593
+    },
+    {
+      "artifact_id": "HISTORICAL_EQUIVALENCE_MATRIX_CSV",
+      "path": "scratch/detailed_historical_equivalence_matrix.csv",
+      "generation_command": "python scratch/comprehensive_historical_equivalence_audit.py",
+      "environment": "Local Workspace (Windows Python 3.14)",
+      "what_it_proves": "Tabular export of detailed equivalence matrix with line numbers for historical and forward migrations.",
+      "limitations": "Static analysis of migration SQL files and remote catalog.",
+      "sha256": "95E2F47610756B165A87FA0C19C5FEF71B93210B5C9BE60926B7596F30E252ED",
+      "size_bytes": 18345
+    },
+    {
+      "artifact_id": "MIGRATION_INVENTORY_JSON",
+      "path": "scratch/migration_inventory_audit.json",
+      "generation_command": "python scratch/audit_migration_inventory_exact.py",
+      "environment": "Local Workspace (Windows Python 3.14)",
+      "what_it_proves": "Exact inventory of 38 local files and 30 remote recorded versions, proving 11 local-only, 3 remote-only, 27 intersection, 0 duplicates, 0 invalid filenames.",
+      "limitations": "Reflects local filesystem and remote schema_migrations snapshot.",
+      "sha256": "9F12C2ADE4FB3025BF5250E424D15D48E9EF7B363FD41A701069944041906A19",
+      "size_bytes": 13726
+    },
+    {
+      "artifact_id": "MIGRATION_INVENTORY_CSV",
+      "path": "scratch/migration_inventory_audit.csv",
+      "generation_command": "python scratch/audit_migration_inventory_exact.py",
+      "environment": "Local Workspace (Windows Python 3.14)",
+      "what_it_proves": "Spreadsheet-compatible inventory of all local migrations with SHA256 hashes.",
+      "limitations": "Read-only inventory.",
+      "sha256": "3A4D58D4432B80F7957E0E81C8AC7A73F6035D8C4211E7A7373EF459259844A4",
+      "size_bytes": 6508
+    },
+    {
+      "artifact_id": "CLI_PUSH_SELECTION_SIMULATION",
+      "path": "scratch/db_push_selection_simulation.json",
+      "generation_command": "python scratch/simulate_db_push_selection.py",
+      "environment": "Local Workspace (Windows Python 3.14)",
+      "what_it_proves": "Proves that standard 'supabase db push' selects 5 files (including Phase 11) while '--include-all' selects 11 files (failing on historical collisions).",
+      "limitations": "Simulates Supabase CLI 3.0.0 Go logic; not executed against remote production.",
+      "sha256": "D86AEB8DCB7F4AD0282A8F1C5D6659977B94B5A0CFC64705A56863B04FA21AFB",
+      "size_bytes": 4954
+    },
+    {
+      "artifact_id": "SIX_TRIGGER_STATES_JSON",
+      "path": "scratch/six_trigger_states_results.json",
+      "generation_command": "python scratch/test_all_six_trigger_states.py",
+      "environment": "PostgreSQL 17.6 Drill DB (127.0.0.1:5433, terabyte_clean_restore_drill)",
+      "what_it_proves": "Proves that structural catalog bitmasks (tgtype, tgfoid, tgenabled, tgisinternal) correctly classify all 6 operational trigger states (6/6 PASS).",
+      "limitations": "Executed on isolated local drill DB; not on live production.",
+      "sha256": "5C1F9948A98A82C1B55F72B8D91F628064277C1B51DACD7276F8CC9D6619DFF1",
+      "size_bytes": 3474
+    },
+    {
+      "artifact_id": "FIVE_INDEX_STATES_JSON",
+      "path": "scratch/five_index_states_results.json",
+      "generation_command": "python scratch/test_all_five_index_states.py",
+      "environment": "PostgreSQL 17.6 Drill DB (127.0.0.1:5433, terabyte_clean_restore_drill)",
+      "what_it_proves": "Proves that index inspection query accurately validates indisvalid, indisready, and definition across all 5 operational states (5/5 PASS).",
+      "limitations": "Executed on isolated local drill DB; not on live production.",
+      "sha256": "F39DCA1F59F38FEE625A8CB0A4A3C786D79A6D68C0844F5FE600AB3A1BCD07E3",
+      "size_bytes": 2436
+    },
+    {
+      "artifact_id": "LOCK_TIMEOUT_DRILL_JSON",
+      "path": "scratch/lock_timeout_drill_results.json",
+      "generation_command": "python scratch/test_lock_timeout_modes.py",
+      "environment": "PostgreSQL 17.6 Drill DB (127.0.0.1:5433, terabyte_clean_restore_drill)",
+      "what_it_proves": "Proves that 'BEGIN; SET LOCAL lock_timeout = '3s'; ...; COMMIT;' enforces 3s timeout in-transaction and reverts to 0 upon commit.",
+      "limitations": "Validated on local PostgreSQL 17.6; remote CLI execution path not tested against production to avoid mutation.",
+      "sha256": "54CE3EC67EF21D2AE1DE929F5D98A2A199364EB4B37BD8F232FA11E7F5A7AC1F",
+      "size_bytes": 1050
+    },
+    {
+      "artifact_id": "HISTORICAL_DRILL_STEP5B8_JSON",
+      "path": "scratch/step5b8_drill_test_results.json",
+      "generation_command": "python scratch/run_complete_55_audit.py",
+      "environment": "PostgreSQL 17.6 Drill DB (127.0.0.1:5433, terabyte_clean_restore_drill)",
+      "what_it_proves": "Historical 165-execution drill results from Step 5B.8 (55 P1 + 55 P2 + 55 P3 = 165 PASS).",
+      "limitations": "Historical artifact from previous step; superseded by fresh Step 5B.10 drill.",
+      "sha256": "1426CF26F3B1F70BD48064C18B37D9937B5ECBFF1D41812ED207C49C1F81FACF",
+      "size_bytes": 23831
+    },
+    {
+      "artifact_id": "FRESH_DRILL_STEP5B10_JSON",
+      "path": "scratch/step5b10_drill_test_results.json",
+      "generation_command": "python scratch/run_fresh_step5b10_audit.py",
+      "environment": "PostgreSQL 17.6 Drill DB (127.0.0.1:5433, terabyte_clean_restore_drill)",
+      "what_it_proves": "Fresh, independently executed 165-execution drill audit covering all 55 requests across 3 phases (165/165 PASS).",
+      "limitations": "Proves SQL validity on clean restored DB; does not verify live traffic concurrency or frontend integration.",
+      "sha256": "8DE42EB9BD3D1CD5BFAF049C0DA9FD0198C435FDDAB1D217773666DED9B5650D",
+      "size_bytes": 48385
+    },
+    {
+      "artifact_id": "FRESH_DRILL_STEP5B10_LOG",
+      "path": "scratch/step5b10_drill_execution.log",
+      "generation_command": "python scratch/run_fresh_step5b10_audit.py",
+      "environment": "PostgreSQL 17.6 Drill DB (127.0.0.1:5433, terabyte_clean_restore_drill)",
+      "what_it_proves": "Complete chronological execution trace of all 165 executions in Step 5B.10.",
+      "limitations": "Local drill log.",
+      "sha256": "1D429A91F92FFB60270026063F2DF01FC35633D7BDE767A30CE978C75F6CACAD",
+      "size_bytes": 16054
+    },
+    {
+      "artifact_id": "FULL_DURATION_SCAN_JSON",
+      "path": "scratch/full_duration_scan_report.json",
+      "generation_command": "python scratch/full_scan_report_durations.py",
+      "environment": "Local Workspace (Windows Python 3.14)",
+      "what_it_proves": "Exhaustive scan proving zero occurrences of speculative duration claims across all 55 requests in the assessment report.",
+      "limitations": "Text-based pattern search.",
+      "sha256": "4E3B93E161E111D2946270157DD5A5EACB4F48BBCED21B4B74FE8780FE25D1FA",
+      "size_bytes": 1497
+    }
+  ]
+}

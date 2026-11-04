@@ -1,0 +1,86 @@
+[
+  {
+    "id": "T1.1",
+    "name": "Return for Non-Existent Repair Ticket Rejected (P0002)",
+    "status": "PASSED",
+    "error": null
+  },
+  {
+    "id": "T1.2",
+    "name": "Return for Part Never Issued to Repair Rejected (22023)",
+    "status": "PASSED",
+    "error": null
+  },
+  {
+    "id": "T1.3",
+    "name": "Return Part Lifecycle, Quantity-Limit Guard & Audit Immutability",
+    "status": "PASSED",
+    "error": null
+  },
+  {
+    "id": "T2.1",
+    "name": "Technician RLS Policy Prevents Modifying Unrelated Requisition Fields",
+    "status": "PASSED",
+    "error": null
+  },
+  {
+    "id": "T2.2",
+    "name": "Unassigned Technician Cannot Update Part Requisition",
+    "status": "PASSED",
+    "error": null
+  },
+  {
+    "id": "T3.1",
+    "name": "ETA Update RPC Resilient to NULL & Malformed parts_hold JSON",
+    "status": "PASSED",
+    "error": null
+  },
+  {
+    "id": "T3.2",
+    "name": "Authoritative Latest Pending ETA Aggregation Across Multiple Parts",
+    "status": "PASSED",
+    "error": null
+  },
+  {
+    "id": "T4.1",
+    "name": "Quote in WAITING_FOR_PARTS Rejected when Parts Hold is Empty/Resolved",
+    "status": "PASSED",
+    "error": null
+  },
+  {
+    "id": "T4.2",
+    "name": "Revising APPROVED or REJECTED Quotes Rejected (22023)",
+    "status": "PASSED",
+    "error": null
+  },
+  {
+    "id": "T4.3",
+    "name": "Revising Quote for COMPLETED Repair Rejected (22000)",
+    "status": "PASSED",
+    "error": null
+  },
+  {
+    "id": "T5.1",
+    "name": "NULL and Zero/Negative Quantities Rejected in Stock RPCs (22003)",
+    "status": "PASSED",
+    "error": null
+  },
+  {
+    "id": "T5.2",
+    "name": "Monetary & Array Validation in Quotes (Labour, Tax, Items)",
+    "status": "PASSED",
+    "error": null
+  },
+  {
+    "id": "T6.1",
+    "name": "Two Technicians with Same Name Both Generate Admin Notifications",
+    "status": "PASSED",
+    "error": null
+  },
+  {
+    "id": "T6.2",
+    "name": "Concurrent/Duplicate Registration for Same Profile Deduplicated",
+    "status": "PASSED",
+    "error": null
+  }
+]

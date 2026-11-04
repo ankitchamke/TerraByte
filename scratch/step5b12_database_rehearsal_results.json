@@ -1,0 +1,302 @@
+{
+  "timestamp": "2026-11-04T06:57:29.571896+00:00",
+  "pg_version": "PostgreSQL 17.6 on x86_64-windows, compiled by msvc-19.44.35213, 64-bit",
+  "pass_1": [
+    {
+      "letter": "A",
+      "file": "supabase/migrations/20261104110000_complete_phase9_parts_desk_rpcs.sql",
+      "status": "SUCCESS",
+      "return_code": 0,
+      "duration_ms": 53.6,
+      "stderr_preview": "psql:supabase/migrations/20261104110000_complete_phase9_parts_desk_rpcs.sql:12: NOTICE:  relation \"idx_sc_sales_sold_at\" already exists, skipping\npsql:supabase/migrations/20261104110000_complete_phase"
+    },
+    {
+      "letter": "B",
+      "file": "supabase/migrations/20261104120000_complete_phase9_realtime_and_eta.sql",
+      "status": "SUCCESS",
+      "return_code": 0,
+      "duration_ms": 66.58,
+      "stderr_preview": "psql:supabase/migrations/20261104120000_complete_phase9_realtime_and_eta.sql:71: NOTICE:  column \"estimated_arrival_at\" of relation \"service_centre_part_requests\" already exists, skipping\npsql:supabas"
+    },
+    {
+      "letter": "C",
+      "file": "supabase/migrations/20261104130000_complete_phase5_3_technician_registration_notification.sql",
+      "status": "SUCCESS",
+      "return_code": 0,
+      "duration_ms": 50.35,
+      "stderr_preview": ""
+    }
+  ],
+  "pass_2_idempotency": [
+    {
+      "letter": "A",
+      "file": "supabase/migrations/20261104110000_complete_phase9_parts_desk_rpcs.sql",
+      "status": "SUCCESS",
+      "return_code": 0,
+      "duration_ms": 52.92,
+      "stderr_preview": "psql:supabase/migrations/20261104110000_complete_phase9_parts_desk_rpcs.sql:12: NOTICE:  relation \"idx_sc_sales_sold_at\" already exists, skipping\npsql:supabase/migrations/20261104110000_complete_phase"
+    },
+    {
+      "letter": "B",
+      "file": "supabase/migrations/20261104120000_complete_phase9_realtime_and_eta.sql",
+      "status": "SUCCESS",
+      "return_code": 0,
+      "duration_ms": 175.56,
+      "stderr_preview": "psql:supabase/migrations/20261104120000_complete_phase9_realtime_and_eta.sql:71: NOTICE:  column \"estimated_arrival_at\" of relation \"service_centre_part_requests\" already exists, skipping\npsql:supabas"
+    },
+    {
+      "letter": "C",
+      "file": "supabase/migrations/20261104130000_complete_phase5_3_technician_registration_notification.sql",
+      "status": "SUCCESS",
+      "return_code": 0,
+      "duration_ms": 49.05,
+      "stderr_preview": ""
+    }
+  ],
+  "catalog_verification": {
+    "indexes": {
+      "count": 3,
+      "all_valid": true,
+      "details": [
+        [
+          "idx_sc_part_requests_estimated_arrival",
+          "t",
+          "t"
+        ],
+        [
+          "idx_sc_sales_sold_at",
+          "t",
+          "t"
+        ],
+        [
+          "idx_sc_stock_audit_movement",
+          "t",
+          "t"
+        ]
+      ]
+    },
+    "triggers": {
+      "count": 2,
+      "all_active": true,
+      "details": [
+        [
+          "trg_notify_admin_on_technician_registration",
+          "technician_profiles",
+          "O"
+        ],
+        [
+          "trg_protect_technician_part_request_fields",
+          "service_centre_part_requests",
+          "O"
+        ]
+      ]
+    },
+    "functions": {
+      "count": 10,
+      "all_secdef_and_search_path": true,
+      "details": [
+        [
+          "adjust_service_centre_part_stock",
+          "t",
+          "v",
+          "search_path=public, auth, pg_temp"
+        ],
+        [
+          "confirm_service_centre_part_handoff",
+          "t",
+          "v",
+          "search_path=public, auth, pg_temp"
+        ],
+        [
+          "create_quote_atomic",
+          "t",
+          "v",
+          "search_path=public, pg_temp"
+        ],
+        [
+          "notify_admin_on_technician_registration",
+          "t",
+          "v",
+          "search_path=public, auth, pg_temp"
+        ],
+        [
+          "receive_service_centre_stock",
+          "t",
+          "v",
+          "search_path=public, auth, pg_temp"
+        ],
+        [
+          "request_service_centre_part",
+          "t",
+          "v",
+          "search_path=public, auth, pg_temp"
+        ],
+        [
+          "return_service_centre_part",
+          "t",
+          "v",
+          "search_path=public, auth, pg_temp"
+        ],
+        [
+          "revise_quote_atomic",
+          "t",
+          "v",
+          "search_path=public, pg_temp"
+        ],
+        [
+          "trg_enforce_technician_part_request_fields",
+          "t",
+          "v",
+          "search_path=public, pg_temp"
+        ],
+        [
+          "update_service_centre_part_request_eta",
+          "t",
+          "v",
+          "search_path=public, auth, pg_temp"
+        ]
+      ]
+    },
+    "acls": {
+      "count": 9,
+      "all_strict": true,
+      "details": [
+        [
+          "adjust_service_centre_part_stock",
+          "f",
+          "t"
+        ],
+        [
+          "confirm_service_centre_part_handoff",
+          "f",
+          "t"
+        ],
+        [
+          "create_quote_atomic",
+          "f",
+          "t"
+        ],
+        [
+          "notify_admin_on_technician_registration",
+          "f",
+          "t"
+        ],
+        [
+          "receive_service_centre_stock",
+          "f",
+          "t"
+        ],
+        [
+          "request_service_centre_part",
+          "f",
+          "t"
+        ],
+        [
+          "return_service_centre_part",
+          "f",
+          "t"
+        ],
+        [
+          "revise_quote_atomic",
+          "f",
+          "t"
+        ],
+        [
+          "update_service_centre_part_request_eta",
+          "f",
+          "t"
+        ]
+      ]
+    },
+    "publication": {
+      "count": 5,
+      "details": [
+        [
+          "supabase_realtime",
+          "quote_items"
+        ],
+        [
+          "supabase_realtime",
+          "service_centre_part_requests"
+        ],
+        [
+          "supabase_realtime",
+          "service_centre_part_sales"
+        ],
+        [
+          "supabase_realtime",
+          "service_centre_parts"
+        ],
+        [
+          "supabase_realtime",
+          "service_centre_stock_audit"
+        ]
+      ]
+    },
+    "rls_policies": {
+      "count": 10,
+      "details": [
+        [
+          "service_centre_part_requests",
+          "Admins can manage part requests",
+          "ALL",
+          "{authenticated}"
+        ],
+        [
+          "service_centre_part_requests",
+          "Admins can view all part requests",
+          "SELECT",
+          "{authenticated}"
+        ],
+        [
+          "service_centre_part_requests",
+          "Assigned technicians or admins can update part request ETA",
+          "UPDATE",
+          "{authenticated}"
+        ],
+        [
+          "service_centre_part_requests",
+          "Technicians can request parts for their assigned repairs",
+          "INSERT",
+          "{authenticated}"
+        ],
+        [
+          "service_centre_part_requests",
+          "Technicians can view part requests for their assigned repairs",
+          "SELECT",
+          "{authenticated}"
+        ],
+        [
+          "service_centre_part_sales",
+          "Admins can view and manage part sales",
+          "ALL",
+          "{authenticated}"
+        ],
+        [
+          "service_centre_parts",
+          "Admins can manage parts catalog",
+          "ALL",
+          "{authenticated}"
+        ],
+        [
+          "service_centre_parts",
+          "Staff and technicians can view parts catalog",
+          "SELECT",
+          "{authenticated}"
+        ],
+        [
+          "service_centre_stock_audit",
+          "Admins can insert stock audit log",
+          "INSERT",
+          "{authenticated}"
+        ],
+        [
+          "service_centre_stock_audit",
+          "Admins can view stock audit log",
+          "SELECT",
+          "{authenticated}"
+        ]
+      ]
+    }
+  }
+}

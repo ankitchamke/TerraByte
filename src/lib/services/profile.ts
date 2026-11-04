@@ -34,17 +34,6 @@ export async function updateProfile(input: UpdateProfileInput): Promise<void> {
     throw new Error("Full name is required.");
   }
 
-<<<<<<< Updated upstream
-  const { error } = await supabase
-    .from("profiles")
-    .update({
-      full_name: trimmedName,
-      phone: input.phone?.trim() || null,
-      village: input.village?.trim() || null,
-      updated_at: new Date().toISOString(),
-    })
-    .or(`auth_user_id.eq.${user.id},id.eq.${user.id}`);
-=======
   const updateData: {
     full_name: string;
     phone?: string | null;
@@ -68,7 +57,7 @@ export async function updateProfile(input: UpdateProfileInput): Promise<void> {
       const { data: existingProfile } = await supabase
         .from("profiles")
         .select("village")
-        .eq("id", profileId)
+        .or(`auth_user_id.eq.${user.id},id.eq.${profileId}`)
         .maybeSingle();
 
       if (!existingProfile?.village) {
@@ -81,8 +70,7 @@ export async function updateProfile(input: UpdateProfileInput): Promise<void> {
   const { error } = await supabase
     .from("profiles")
     .update(updateData)
-    .eq("id", profileId);
->>>>>>> Stashed changes
+    .or(`auth_user_id.eq.${user.id},id.eq.${profileId}`);
 
   if (error) {
     console.error("[TerraByte] Error updating profile:", error);
@@ -93,13 +81,12 @@ export async function updateProfile(input: UpdateProfileInput): Promise<void> {
   const contactsUpdate = {
     profile_id: profileId,
     phone: (updateData.phone !== undefined ? updateData.phone : sessionProfile?.phone) ?? null,
-    village: (updateData.village !== undefined ? updateData.village : sessionProfile?.village) ?? null,
+    village:
+      (updateData.village !== undefined ? updateData.village : sessionProfile?.village) ?? null,
     updated_at: updateData.updated_at,
   };
 
-  const { error: contactsError } = await supabase
-    .from("profile_contacts")
-    .upsert(contactsUpdate);
+  const { error: contactsError } = await supabase.from("profile_contacts").upsert(contactsUpdate);
 
   if (contactsError) {
     console.warn("[TerraByte] Warning: Error updating profile_contacts:", contactsError);
@@ -109,7 +96,9 @@ export async function updateProfile(input: UpdateProfileInput): Promise<void> {
 /**
  * Updates the authenticated technician's workshop details in public.technician_profiles.
  */
-export async function updateTechnicianWorkshop(input: UpdateTechnicianWorkshopInput): Promise<void> {
+export async function updateTechnicianWorkshop(
+  input: UpdateTechnicianWorkshopInput,
+): Promise<void> {
   const {
     data: { user },
     error: authError,
@@ -191,12 +180,12 @@ export async function deleteUserAccount(): Promise<void> {
     const msg = error.message || "";
     if (msg.includes("active repair requests in progress")) {
       throw new Error(
-        "Cannot delete your account while you have active repair requests in progress. Please complete or cancel all open repairs before deleting your account."
+        "Cannot delete your account while you have active repair requests in progress. Please complete or cancel all open repairs before deleting your account.",
       );
     }
     if (msg.includes("assigned to active repair jobs")) {
       throw new Error(
-        "Cannot delete your account while you are assigned to active repair jobs. Please complete or resolve all open jobs before deleting your account."
+        "Cannot delete your account while you are assigned to active repair jobs. Please complete or resolve all open jobs before deleting your account.",
       );
     }
     if (msg.includes("Demo evaluation accounts cannot be deleted")) {
@@ -208,7 +197,12 @@ export async function deleteUserAccount(): Promise<void> {
     throw new Error(error.message || "Failed to delete account. Please try again.");
   }
 
-  if (data && typeof data === "object" && "success" in data && !(data as any).success) {
+  if (
+    data &&
+    typeof data === "object" &&
+    "success" in data &&
+    !(data as { success?: boolean }).success
+  ) {
     throw new Error((data as { message?: string }).message || "Failed to delete account.");
   }
 }

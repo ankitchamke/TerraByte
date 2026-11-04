@@ -1,0 +1,446 @@
+{
+  "20261003170000": {
+    "file": "supabase/migrations/20261003170000_phase5_3_technician_registration_notification.sql",
+    "objects": [
+      {
+        "type": "FUNCTION",
+        "name": "public.notify_admin_on_technician_registration",
+        "line": 9,
+        "text": "CREATE OR REPLACE FUNCTION public.notify_admin_on_technician_registration()"
+      },
+      {
+        "type": "DROP_TRIGGER",
+        "name": "trg_notify_admin_on_technician_registration",
+        "line": 59,
+        "text": "DROP TRIGGER IF EXISTS trg_notify_admin_on_technician_registration ON public.technician_profiles;"
+      },
+      {
+        "type": "TRIGGER",
+        "name": "trg_notify_admin_on_technician_registration",
+        "line": 61,
+        "text": "CREATE TRIGGER trg_notify_admin_on_technician_registration"
+      }
+    ]
+  },
+  "20261029100000": {
+    "file": "supabase/migrations/20261029100000_phase9_1_parts_pickup.sql",
+    "objects": [
+      {
+        "type": "TABLE",
+        "name": "public.service_centre_parts",
+        "line": 14,
+        "text": "CREATE TABLE IF NOT EXISTS public.service_centre_parts ("
+      },
+      {
+        "type": "TABLE",
+        "name": "public.service_centre_part_requests",
+        "line": 31,
+        "text": "CREATE TABLE IF NOT EXISTS public.service_centre_part_requests ("
+      },
+      {
+        "type": "TABLE",
+        "name": "public.service_centre_stock_audit",
+        "line": 46,
+        "text": "CREATE TABLE IF NOT EXISTS public.service_centre_stock_audit ("
+      },
+      {
+        "type": "INDEX",
+        "name": "idx_sc_part_requests_repair_id",
+        "line": 60,
+        "text": "CREATE INDEX IF NOT EXISTS idx_sc_part_requests_repair_id"
+      },
+      {
+        "type": "INDEX",
+        "name": "idx_sc_part_requests_status",
+        "line": 63,
+        "text": "CREATE INDEX IF NOT EXISTS idx_sc_part_requests_status"
+      },
+      {
+        "type": "INDEX",
+        "name": "idx_sc_stock_audit_part_id",
+        "line": 66,
+        "text": "CREATE INDEX IF NOT EXISTS idx_sc_stock_audit_part_id"
+      },
+      {
+        "type": "INDEX",
+        "name": "idx_sc_stock_audit_created_at",
+        "line": 69,
+        "text": "CREATE INDEX IF NOT EXISTS idx_sc_stock_audit_created_at"
+      },
+      {
+        "type": "ALTER_TABLE",
+        "name": "ALTER TABLE public.service_centre_parts ENABLE ROW LEVEL SEC",
+        "line": 73,
+        "text": "ALTER TABLE public.service_centre_parts ENABLE ROW LEVEL SECURITY;"
+      },
+      {
+        "type": "ALTER_TABLE",
+        "name": "ALTER TABLE public.service_centre_part_requests ENABLE ROW L",
+        "line": 74,
+        "text": "ALTER TABLE public.service_centre_part_requests ENABLE ROW LEVEL SECURITY;"
+      },
+      {
+        "type": "ALTER_TABLE",
+        "name": "ALTER TABLE public.service_centre_stock_audit ENABLE ROW LEV",
+        "line": 75,
+        "text": "ALTER TABLE public.service_centre_stock_audit ENABLE ROW LEVEL SECURITY;"
+      },
+      {
+        "type": "DROP_POLICY",
+        "name": "Staff",
+        "line": 79,
+        "text": "DROP POLICY IF EXISTS \"Staff and technicians can view parts catalog\" ON public.service_centre_parts;"
+      },
+      {
+        "type": "POLICY",
+        "name": "Staff and technicians can view parts catalog",
+        "line": 80,
+        "text": "CREATE POLICY \"Staff and technicians can view parts catalog\""
+      },
+      {
+        "type": "DROP_POLICY",
+        "name": "Admins",
+        "line": 89,
+        "text": "DROP POLICY IF EXISTS \"Admins can manage parts catalog\" ON public.service_centre_parts;"
+      },
+      {
+        "type": "POLICY",
+        "name": "Admins can manage parts catalog",
+        "line": 90,
+        "text": "CREATE POLICY \"Admins can manage parts catalog\""
+      },
+      {
+        "type": "DROP_POLICY",
+        "name": "Admins",
+        "line": 99,
+        "text": "DROP POLICY IF EXISTS \"Admins can view all part requests\" ON public.service_centre_part_requests;"
+      },
+      {
+        "type": "POLICY",
+        "name": "Admins can view all part requests",
+        "line": 100,
+        "text": "CREATE POLICY \"Admins can view all part requests\""
+      },
+      {
+        "type": "DROP_POLICY",
+        "name": "Technicians",
+        "line": 107,
+        "text": "DROP POLICY IF EXISTS \"Technicians can view part requests for their assigned repairs\" ON public.service_centre_part_requests;"
+      },
+      {
+        "type": "POLICY",
+        "name": "Technicians can view part requests for their assigned repairs",
+        "line": 108,
+        "text": "CREATE POLICY \"Technicians can view part requests for their assigned repairs\""
+      },
+      {
+        "type": "DROP_POLICY",
+        "name": "Technicians",
+        "line": 125,
+        "text": "DROP POLICY IF EXISTS \"Technicians can request parts for assigned repairs\" ON public.service_centre_part_requests;"
+      },
+      {
+        "type": "POLICY",
+        "name": "Technicians can request parts for assigned repairs",
+        "line": 126,
+        "text": "CREATE POLICY \"Technicians can request parts for assigned repairs\""
+      },
+      {
+        "type": "DROP_POLICY",
+        "name": "Admins",
+        "line": 145,
+        "text": "DROP POLICY IF EXISTS \"Admins can update part requests\" ON public.service_centre_part_requests;"
+      },
+      {
+        "type": "POLICY",
+        "name": "Admins can update part requests",
+        "line": 146,
+        "text": "CREATE POLICY \"Admins can update part requests\""
+      },
+      {
+        "type": "DROP_POLICY",
+        "name": "Technicians",
+        "line": 154,
+        "text": "DROP POLICY IF EXISTS \"Technicians can cancel own pending part requests\" ON public.service_centre_part_requests;"
+      },
+      {
+        "type": "POLICY",
+        "name": "Technicians can cancel own pending part requests",
+        "line": 155,
+        "text": "CREATE POLICY \"Technicians can cancel own pending part requests\""
+      },
+      {
+        "type": "DROP_POLICY",
+        "name": "Admins",
+        "line": 170,
+        "text": "DROP POLICY IF EXISTS \"Admins can view stock audit log\" ON public.service_centre_stock_audit;"
+      },
+      {
+        "type": "POLICY",
+        "name": "Admins can view stock audit log",
+        "line": 171,
+        "text": "CREATE POLICY \"Admins can view stock audit log\""
+      },
+      {
+        "type": "FUNCTION",
+        "name": "public.confirm_service_centre_part_handoff",
+        "line": 178,
+        "text": "CREATE OR REPLACE FUNCTION public.confirm_service_centre_part_handoff("
+      },
+      {
+        "type": "FUNCTION",
+        "name": "public.adjust_service_centre_part_stock",
+        "line": 291,
+        "text": "CREATE OR REPLACE FUNCTION public.adjust_service_centre_part_stock("
+      },
+      {
+        "type": "FUNCTION",
+        "name": "public.request_service_centre_part",
+        "line": 383,
+        "text": "CREATE OR REPLACE FUNCTION public.request_service_centre_part("
+      },
+      {
+        "type": "FUNCTION",
+        "name": "public.reset_demo_data",
+        "line": 500,
+        "text": "CREATE OR REPLACE FUNCTION public.reset_demo_data()"
+      }
+    ]
+  },
+  "20261029120000": {
+    "file": "supabase/migrations/20261029120000_phase9_2_stock_movement_sales.sql",
+    "objects": [
+      {
+        "type": "ALTER_TABLE",
+        "name": "ALTER TABLE public.service_centre_parts DROP CONSTRAINT serv",
+        "line": 51,
+        "text": "ALTER TABLE public.service_centre_parts DROP CONSTRAINT service_centre_parts_part_number_key;"
+      },
+      {
+        "type": "TABLE",
+        "name": "public.service_centre_part_sales",
+        "line": 65,
+        "text": "CREATE TABLE IF NOT EXISTS public.service_centre_part_sales ("
+      },
+      {
+        "type": "INDEX",
+        "name": "idx_sc_sales_part_id",
+        "line": 83,
+        "text": "CREATE INDEX IF NOT EXISTS idx_sc_sales_part_id ON public.service_centre_part_sales(part_id);"
+      },
+      {
+        "type": "INDEX",
+        "name": "idx_sc_sales_repair_id",
+        "line": 84,
+        "text": "CREATE INDEX IF NOT EXISTS idx_sc_sales_repair_id ON public.service_centre_part_sales(repair_request_id);"
+      },
+      {
+        "type": "INDEX",
+        "name": "idx_sc_sales_quote_id",
+        "line": 85,
+        "text": "CREATE INDEX IF NOT EXISTS idx_sc_sales_quote_id ON public.service_centre_part_sales(quote_id);"
+      },
+      {
+        "type": "INDEX",
+        "name": "idx_sc_sales_sold_at",
+        "line": 86,
+        "text": "CREATE INDEX IF NOT EXISTS idx_sc_sales_sold_at ON public.service_centre_part_sales(sold_at DESC);"
+      },
+      {
+        "type": "INDEX",
+        "name": "idx_sc_stock_audit_movement",
+        "line": 87,
+        "text": "CREATE INDEX IF NOT EXISTS idx_sc_stock_audit_movement ON public.service_centre_stock_audit(movement_type);"
+      },
+      {
+        "type": "ALTER_TABLE",
+        "name": "ALTER TABLE public.service_centre_part_sales ENABLE ROW LEVE",
+        "line": 90,
+        "text": "ALTER TABLE public.service_centre_part_sales ENABLE ROW LEVEL SECURITY;"
+      },
+      {
+        "type": "DROP_POLICY",
+        "name": "Admins",
+        "line": 94,
+        "text": "DROP POLICY IF EXISTS \"Admins can view and manage part sales\" ON public.service_centre_part_sales;"
+      },
+      {
+        "type": "POLICY",
+        "name": "Admins can view and manage part sales",
+        "line": 95,
+        "text": "CREATE POLICY \"Admins can view and manage part sales\""
+      },
+      {
+        "type": "FUNCTION",
+        "name": "public.confirm_service_centre_part_handoff",
+        "line": 103,
+        "text": "CREATE OR REPLACE FUNCTION public.confirm_service_centre_part_handoff("
+      },
+      {
+        "type": "FUNCTION",
+        "name": "public.receive_service_centre_stock",
+        "line": 307,
+        "text": "CREATE OR REPLACE FUNCTION public.receive_service_centre_stock("
+      },
+      {
+        "type": "FUNCTION",
+        "name": "public.return_service_centre_part",
+        "line": 390,
+        "text": "CREATE OR REPLACE FUNCTION public.return_service_centre_part("
+      },
+      {
+        "type": "FUNCTION",
+        "name": "public.reset_demo_data",
+        "line": 479,
+        "text": "CREATE OR REPLACE FUNCTION public.reset_demo_data()"
+      }
+    ]
+  },
+  "20261031173000": {
+    "file": "supabase/migrations/20261031173000_phase9_3_parts_handoff_rpcs.sql",
+    "objects": [
+      {
+        "type": "FUNCTION",
+        "name": "public.confirm_service_centre_part_handoff",
+        "line": 10,
+        "text": "CREATE OR REPLACE FUNCTION public.confirm_service_centre_part_handoff("
+      },
+      {
+        "type": "FUNCTION",
+        "name": "public.adjust_service_centre_part_stock",
+        "line": 201,
+        "text": "CREATE OR REPLACE FUNCTION public.adjust_service_centre_part_stock("
+      }
+    ]
+  },
+  "20261031183000": {
+    "file": "supabase/migrations/20261031183000_phase9_3_realtime_publications.sql",
+    "objects": [
+      {
+        "type": "PUBLICATION",
+        "name": "ALTER PUBLICATION supabase_realtime ADD TABLE public.service",
+        "line": 25,
+        "text": "ALTER PUBLICATION supabase_realtime ADD TABLE public.service_centre_parts;"
+      },
+      {
+        "type": "PUBLICATION",
+        "name": "ALTER PUBLICATION supabase_realtime ADD TABLE public.service",
+        "line": 38,
+        "text": "ALTER PUBLICATION supabase_realtime ADD TABLE public.service_centre_part_requests;"
+      },
+      {
+        "type": "PUBLICATION",
+        "name": "ALTER PUBLICATION supabase_realtime ADD TABLE public.service",
+        "line": 51,
+        "text": "ALTER PUBLICATION supabase_realtime ADD TABLE public.service_centre_stock_audit;"
+      },
+      {
+        "type": "PUBLICATION",
+        "name": "ALTER PUBLICATION supabase_realtime ADD TABLE public.service",
+        "line": 64,
+        "text": "ALTER PUBLICATION supabase_realtime ADD TABLE public.service_centre_part_sales;"
+      },
+      {
+        "type": "PUBLICATION",
+        "name": "ALTER PUBLICATION supabase_realtime ADD TABLE public.quote_i",
+        "line": 77,
+        "text": "ALTER PUBLICATION supabase_realtime ADD TABLE public.quote_items;"
+      },
+      {
+        "type": "ALTER_TABLE",
+        "name": "ALTER TABLE public.service_centre_parts REPLICA IDENTITY FUL",
+        "line": 87,
+        "text": "ALTER TABLE public.service_centre_parts REPLICA IDENTITY FULL;"
+      },
+      {
+        "type": "ALTER_TABLE",
+        "name": "ALTER TABLE public.service_centre_part_requests REPLICA IDEN",
+        "line": 91,
+        "text": "ALTER TABLE public.service_centre_part_requests REPLICA IDENTITY FULL;"
+      },
+      {
+        "type": "ALTER_TABLE",
+        "name": "ALTER TABLE public.service_centre_stock_audit REPLICA IDENTI",
+        "line": 95,
+        "text": "ALTER TABLE public.service_centre_stock_audit REPLICA IDENTITY FULL;"
+      },
+      {
+        "type": "ALTER_TABLE",
+        "name": "ALTER TABLE public.service_centre_part_sales REPLICA IDENTIT",
+        "line": 99,
+        "text": "ALTER TABLE public.service_centre_part_sales REPLICA IDENTITY FULL;"
+      },
+      {
+        "type": "ALTER_TABLE",
+        "name": "ALTER TABLE public.repair_requests REPLICA IDENTITY FULL;",
+        "line": 103,
+        "text": "ALTER TABLE public.repair_requests REPLICA IDENTITY FULL;"
+      },
+      {
+        "type": "ALTER_TABLE",
+        "name": "ALTER TABLE public.quotes REPLICA IDENTITY FULL;",
+        "line": 107,
+        "text": "ALTER TABLE public.quotes REPLICA IDENTITY FULL;"
+      },
+      {
+        "type": "ALTER_TABLE",
+        "name": "ALTER TABLE public.quote_items REPLICA IDENTITY FULL;",
+        "line": 111,
+        "text": "ALTER TABLE public.quote_items REPLICA IDENTITY FULL;"
+      },
+      {
+        "type": "FUNCTION",
+        "name": "public.create_quote_atomic",
+        "line": 116,
+        "text": "CREATE OR REPLACE FUNCTION public.create_quote_atomic("
+      },
+      {
+        "type": "FUNCTION",
+        "name": "public.revise_quote_atomic",
+        "line": 313,
+        "text": "CREATE OR REPLACE FUNCTION public.revise_quote_atomic("
+      }
+    ]
+  },
+  "20261101140000": {
+    "file": "supabase/migrations/20261101140000_phase9_3_unavailable_parts_eta.sql",
+    "objects": [
+      {
+        "type": "INDEX",
+        "name": "idx_sc_part_requests_estimated_arrival",
+        "line": 17,
+        "text": "CREATE INDEX IF NOT EXISTS idx_sc_part_requests_estimated_arrival"
+      },
+      {
+        "type": "DROP_POLICY",
+        "name": "Assigned",
+        "line": 22,
+        "text": "DROP POLICY IF EXISTS \"Assigned technicians or admins can update part request ETA\" ON public.service_centre_part_requests;"
+      },
+      {
+        "type": "DROP_POLICY",
+        "name": "Technicians",
+        "line": 23,
+        "text": "DROP POLICY IF EXISTS \"Technicians can update ETA on assigned repair part requests\" ON public.service_centre_part_requests;"
+      },
+      {
+        "type": "POLICY",
+        "name": "Assigned technicians or admins can update part request ETA",
+        "line": 25,
+        "text": "CREATE POLICY \"Assigned technicians or admins can update part request ETA\""
+      },
+      {
+        "type": "FUNCTION",
+        "name": "public.update_service_centre_part_request_eta",
+        "line": 61,
+        "text": "CREATE OR REPLACE FUNCTION public.update_service_centre_part_request_eta("
+      },
+      {
+        "type": "FUNCTION",
+        "name": "public.create_quote_atomic",
+        "line": 261,
+        "text": "CREATE OR REPLACE FUNCTION public.create_quote_atomic("
+      }
+    ]
+  }
+}

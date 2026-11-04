@@ -1,0 +1,467 @@
+[
+  {
+    "num": 1,
+    "filename": "20260930000001_initial_schema.sql",
+    "status": "INCLUDED IN BASELINE",
+    "notes": "Core historical migration whose resulting DDL state is captured in terabyte_public_schema.sql.",
+    "tables": [
+      "profiles",
+      "technician_profiles",
+      "equipment",
+      "repair_requests",
+      "quotes",
+      "quote_items",
+      "service_history",
+      "repair_timeline",
+      "repair_notes",
+      "notifications"
+    ],
+    "functions": [
+      "set_current_timestamp_updated_at",
+      "current_profile_id",
+      "current_user_role"
+    ],
+    "enums": [
+      "user_role",
+      "equipment_type",
+      "equipment_status",
+      "repair_status",
+      "quote_status"
+    ]
+  },
+  {
+    "num": 2,
+    "filename": "20260930000002_storage_setup.sql",
+    "status": "INCLUDED IN BASELINE",
+    "notes": "Core historical migration whose resulting DDL state is captured in terabyte_public_schema.sql.",
+    "tables": [],
+    "functions": [],
+    "enums": []
+  },
+  {
+    "num": 3,
+    "filename": "20260930000003_grant_permissions.sql",
+    "status": "INCLUDED IN BASELINE",
+    "notes": "Core historical migration whose resulting DDL state is captured in terabyte_public_schema.sql.",
+    "tables": [],
+    "functions": [],
+    "enums": []
+  },
+  {
+    "num": 4,
+    "filename": "20260930000004_storage_policies.sql",
+    "status": "INCLUDED IN BASELINE",
+    "notes": "Core historical migration whose resulting DDL state is captured in terabyte_public_schema.sql.",
+    "tables": [],
+    "functions": [
+      "get_storage_buckets"
+    ],
+    "enums": []
+  },
+  {
+    "num": 5,
+    "filename": "20260930000005_verify_rls_helper.sql",
+    "status": "INCLUDED IN BASELINE",
+    "notes": "Core historical migration whose resulting DDL state is captured in terabyte_public_schema.sql.",
+    "tables": [],
+    "functions": [
+      "check_table_rls"
+    ],
+    "enums": []
+  },
+  {
+    "num": 6,
+    "filename": "20260930000006_legacy_remote_placeholder.sql",
+    "status": "PLACEHOLDER",
+    "notes": "Remote alignment placeholder (no-op DO block).",
+    "tables": [],
+    "functions": [],
+    "enums": []
+  },
+  {
+    "num": 7,
+    "filename": "20260930000007_legacy_remote_placeholder.sql",
+    "status": "PLACEHOLDER",
+    "notes": "Remote alignment placeholder (no-op DO block).",
+    "tables": [],
+    "functions": [],
+    "enums": []
+  },
+  {
+    "num": 8,
+    "filename": "20260930000008_legacy_remote_placeholder.sql",
+    "status": "PLACEHOLDER",
+    "notes": "Remote alignment placeholder (no-op DO block).",
+    "tables": [],
+    "functions": [],
+    "enums": []
+  },
+  {
+    "num": 9,
+    "filename": "20261001151000_fix_technician_signup_trigger.sql",
+    "status": "INCLUDED IN BASELINE",
+    "notes": "Core historical migration whose resulting DDL state is captured in terabyte_public_schema.sql.",
+    "tables": [],
+    "functions": [
+      "handle_new_user"
+    ],
+    "enums": []
+  },
+  {
+    "num": 10,
+    "filename": "20261001151200_restore_supabase_auth_rls_helpers.sql",
+    "status": "INCLUDED IN BASELINE",
+    "notes": "Core historical migration whose resulting DDL state is captured in terabyte_public_schema.sql.",
+    "tables": [],
+    "functions": [
+      "current_profile_id",
+      "current_user_role"
+    ],
+    "enums": []
+  },
+  {
+    "num": 11,
+    "filename": "20261001153500_set_demo_users_password.sql",
+    "status": "OBSOLETE SEED",
+    "notes": "Legacy hardcoded demo password setting; superseded by synthetic staging fixtures.",
+    "tables": [],
+    "functions": [],
+    "enums": []
+  },
+  {
+    "num": 12,
+    "filename": "20261001163000_phase2_security_hardening.sql",
+    "status": "INCLUDED IN BASELINE",
+    "notes": "Core historical migration whose resulting DDL state is captured in terabyte_public_schema.sql.",
+    "tables": [],
+    "functions": [
+      "current_profile_id",
+      "current_user_role",
+      "protect_technician_verification"
+    ],
+    "enums": []
+  },
+  {
+    "num": 13,
+    "filename": "20261001170000_phase2_3_database_foundation.sql",
+    "status": "INCLUDED IN BASELINE",
+    "notes": "Core historical migration whose resulting DDL state is captured in terabyte_public_schema.sql.",
+    "tables": [],
+    "functions": [],
+    "enums": []
+  },
+  {
+    "num": 14,
+    "filename": "20261002000000_phase3_6_notifications_insert_policy.sql",
+    "status": "INCLUDED IN BASELINE",
+    "notes": "Core historical migration whose resulting DDL state is captured in terabyte_public_schema.sql.",
+    "tables": [],
+    "functions": [],
+    "enums": []
+  },
+  {
+    "num": 15,
+    "filename": "20261002130000_phase3_7_rls_integrity_hardening.sql",
+    "status": "INCLUDED IN BASELINE",
+    "notes": "Core historical migration whose resulting DDL state is captured in terabyte_public_schema.sql.",
+    "tables": [],
+    "functions": [],
+    "enums": []
+  },
+  {
+    "num": 16,
+    "filename": "20261003131500_phase5_1_technician_profile_update_policy.sql",
+    "status": "INCLUDED IN BASELINE",
+    "notes": "Core historical migration whose resulting DDL state is captured in terabyte_public_schema.sql.",
+    "tables": [],
+    "functions": [],
+    "enums": []
+  },
+  {
+    "num": 17,
+    "filename": "20261003140000_phase5_1_account_deletion_rpc.sql",
+    "status": "INCLUDED IN BASELINE",
+    "notes": "Core historical migration whose resulting DDL state is captured in terabyte_public_schema.sql.",
+    "tables": [],
+    "functions": [
+      "delete_user_account"
+    ],
+    "enums": []
+  },
+  {
+    "num": 18,
+    "filename": "20261003141000_phase5_1_account_deletion_role_enum_fix.sql",
+    "status": "INCLUDED IN BASELINE",
+    "notes": "Core historical migration whose resulting DDL state is captured in terabyte_public_schema.sql.",
+    "tables": [],
+    "functions": [
+      "delete_user_account"
+    ],
+    "enums": []
+  },
+  {
+    "num": 19,
+    "filename": "20261003150000_phase5_2_reset_demo_rpc.sql",
+    "status": "INCLUDED IN BASELINE",
+    "notes": "Core historical migration whose resulting DDL state is captured in terabyte_public_schema.sql.",
+    "tables": [],
+    "functions": [
+      "reset_demo_data"
+    ],
+    "enums": []
+  },
+  {
+    "num": 20,
+    "filename": "20261003170000_phase5_3_technician_registration_notification.sql",
+    "status": "INCLUDED IN BASELINE",
+    "notes": "Core historical migration whose resulting DDL state is captured in terabyte_public_schema.sql.",
+    "tables": [],
+    "functions": [
+      "notify_admin_on_technician_registration"
+    ],
+    "enums": []
+  },
+  {
+    "num": 21,
+    "filename": "20261004100000_phase5_4_cancellation_approval_foundation.sql",
+    "status": "INCLUDED IN BASELINE",
+    "notes": "Core historical migration whose resulting DDL state is captured in terabyte_public_schema.sql.",
+    "tables": [],
+    "functions": [
+      "reset_demo_data"
+    ],
+    "enums": []
+  },
+  {
+    "num": 22,
+    "filename": "20261005100000_phase5_5_communication_foundation.sql",
+    "status": "INCLUDED IN BASELINE",
+    "notes": "Core historical migration whose resulting DDL state is captured in terabyte_public_schema.sql.",
+    "tables": [
+      "repair_messages"
+    ],
+    "functions": [
+      "guard_repair_messages_update",
+      "reset_demo_data"
+    ],
+    "enums": []
+  },
+  {
+    "num": 23,
+    "filename": "20261006100000_phase7_1_realtime_publication_foundation.sql",
+    "status": "INCLUDED IN BASELINE",
+    "notes": "Core historical migration whose resulting DDL state is captured in terabyte_public_schema.sql.",
+    "tables": [],
+    "functions": [],
+    "enums": []
+  },
+  {
+    "num": 24,
+    "filename": "20261006110000_phase7_3_technician_decline_rls.sql",
+    "status": "INCLUDED IN BASELINE",
+    "notes": "Core historical migration whose resulting DDL state is captured in terabyte_public_schema.sql.",
+    "tables": [],
+    "functions": [],
+    "enums": []
+  },
+  {
+    "num": 25,
+    "filename": "20261027100000_phase8b_1_dispatch_locations.sql",
+    "status": "INCLUDED IN BASELINE",
+    "notes": "Core historical migration whose resulting DDL state is captured in terabyte_public_schema.sql.",
+    "tables": [
+      "repair_dispatch_locations"
+    ],
+    "functions": [],
+    "enums": []
+  },
+  {
+    "num": 26,
+    "filename": "20261028110000_phase8b_cleanup_reset_demo_rpc.sql",
+    "status": "INCLUDED IN BASELINE",
+    "notes": "Core historical migration whose resulting DDL state is captured in terabyte_public_schema.sql.",
+    "tables": [],
+    "functions": [
+      "reset_demo_data"
+    ],
+    "enums": []
+  },
+  {
+    "num": 27,
+    "filename": "20261029100000_phase9_1_parts_pickup.sql",
+    "status": "SUPERSEDED",
+    "notes": "Historical fragmented draft superseded by Phase 9 consolidated forward migrations (20261104110000 & 20261104120000).",
+    "tables": [
+      "service_centre_parts",
+      "service_centre_part_requests",
+      "service_centre_stock_audit"
+    ],
+    "functions": [
+      "confirm_service_centre_part_handoff",
+      "adjust_service_centre_part_stock",
+      "request_service_centre_part",
+      "reset_demo_data"
+    ],
+    "enums": []
+  },
+  {
+    "num": 28,
+    "filename": "20261029120000_phase9_2_stock_movement_sales.sql",
+    "status": "SUPERSEDED",
+    "notes": "Historical fragmented draft superseded by Phase 9 consolidated forward migrations (20261104110000 & 20261104120000).",
+    "tables": [
+      "service_centre_part_sales"
+    ],
+    "functions": [
+      "confirm_service_centre_part_handoff",
+      "receive_service_centre_stock",
+      "return_service_centre_part",
+      "reset_demo_data"
+    ],
+    "enums": []
+  },
+  {
+    "num": 29,
+    "filename": "20261031153000_phase9_3_safe_scoped_reset_demo_rpc.sql",
+    "status": "SUPERSEDED",
+    "notes": "Historical fragmented draft superseded by Phase 9 consolidated forward migrations (20261104110000 & 20261104120000).",
+    "tables": [],
+    "functions": [
+      "reset_demo_data"
+    ],
+    "enums": []
+  },
+  {
+    "num": 30,
+    "filename": "20261031170000_phase9_2_quote_catalog_and_inventory.sql",
+    "status": "SUPERSEDED",
+    "notes": "Historical fragmented draft superseded by Phase 9 consolidated forward migrations (20261104110000 & 20261104120000).",
+    "tables": [
+      "service_centre_parts",
+      "service_centre_part_requests",
+      "service_centre_stock_audit",
+      "service_centre_part_sales"
+    ],
+    "functions": [
+      "create_quote_atomic",
+      "revise_quote_atomic"
+    ],
+    "enums": []
+  },
+  {
+    "num": 31,
+    "filename": "20261031173000_phase9_3_parts_handoff_rpcs.sql",
+    "status": "SUPERSEDED",
+    "notes": "Historical fragmented draft superseded by Phase 9 consolidated forward migrations (20261104110000 & 20261104120000).",
+    "tables": [],
+    "functions": [
+      "confirm_service_centre_part_handoff",
+      "adjust_service_centre_part_stock"
+    ],
+    "enums": []
+  },
+  {
+    "num": 32,
+    "filename": "20261031183000_phase9_3_realtime_publications.sql",
+    "status": "SUPERSEDED",
+    "notes": "Historical fragmented draft superseded by Phase 9 consolidated forward migrations (20261104110000 & 20261104120000).",
+    "tables": [],
+    "functions": [
+      "create_quote_atomic",
+      "revise_quote_atomic"
+    ],
+    "enums": []
+  },
+  {
+    "num": 33,
+    "filename": "20261101140000_phase9_3_unavailable_parts_eta.sql",
+    "status": "SUPERSEDED",
+    "notes": "Historical fragmented draft superseded by Phase 9 consolidated forward migrations (20261104110000 & 20261104120000).",
+    "tables": [],
+    "functions": [
+      "update_service_centre_part_request_eta",
+      "create_quote_atomic"
+    ],
+    "enums": []
+  },
+  {
+    "num": 34,
+    "filename": "20261103120000_phase11_visual_defect_diagnostics.sql",
+    "status": "PHASE 11 FORWARD",
+    "notes": "Phase 11 visual diagnostic RPCs (claim, save, finalize failure) required by assess-visual-defect.ts.",
+    "tables": [],
+    "functions": [
+      "claim_repair_visual_diagnostic",
+      "save_repair_visual_diagnostic",
+      "finalize_repair_visual_diagnostic_failure",
+      "revoke_repair_visual_consent",
+      "grant_repair_visual_consent",
+      "admin_repair_corrupted_diagnostic"
+    ],
+    "enums": []
+  },
+  {
+    "num": 35,
+    "filename": "20261104100000_profile_security_separation.sql",
+    "status": "FORWARD MIGRATION 1",
+    "notes": "Profile security separation, app_security schema, and get_session_profile() parameterless RPC.",
+    "tables": [
+      "profile_contacts",
+      "profile_auth_secrets"
+    ],
+    "functions": [
+      "current_profile_id",
+      "current_user_role",
+      "app_security.can_view_profile",
+      "get_session_profile",
+      "admin_provision_staff",
+      "protect_profile_role",
+      "handle_new_user",
+      "delete_user_account",
+      "reset_demo_data",
+      "create_quote_atomic",
+      "revise_quote_atomic"
+    ],
+    "enums": []
+  },
+  {
+    "num": 36,
+    "filename": "20261104110000_complete_phase9_parts_desk_rpcs.sql",
+    "status": "FORWARD MIGRATION 2",
+    "notes": "Consolidated Parts Desk atomic handoff, adjustment, requisition, and receipt RPCs.",
+    "tables": [],
+    "functions": [
+      "confirm_service_centre_part_handoff",
+      "adjust_service_centre_part_stock",
+      "request_service_centre_part",
+      "receive_service_centre_stock",
+      "return_service_centre_part"
+    ],
+    "enums": []
+  },
+  {
+    "num": 37,
+    "filename": "20261104120000_complete_phase9_realtime_and_eta.sql",
+    "status": "FORWARD MIGRATION 3",
+    "notes": "Consolidated ETA tracking, atomic quote RPCs, catalog foreign keys, and realtime publications.",
+    "tables": [],
+    "functions": [
+      "trg_enforce_technician_part_request_fields",
+      "update_service_centre_part_request_eta",
+      "create_quote_atomic",
+      "revise_quote_atomic"
+    ],
+    "enums": []
+  },
+  {
+    "num": 38,
+    "filename": "20261104130000_complete_phase5_3_technician_registration_notification.sql",
+    "status": "FORWARD MIGRATION 4",
+    "notes": "Technician registration notification trigger for service centre admins.",
+    "tables": [],
+    "functions": [
+      "notify_admin_on_technician_registration"
+    ],
+    "enums": []
+  }
+]

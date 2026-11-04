@@ -1,0 +1,42 @@
+[
+  {
+    "state": "ABSENT",
+    "setup_sql": "DROP INDEX IF EXISTS public._test_guard_idx;",
+    "classifier_output": "_test_guard_idx|NONE|NONE|NONE|ABSENT|PROCEED: Index absent; safe to create.",
+    "expected_state": "ABSENT",
+    "detected_state": "ABSENT",
+    "status": "PASS"
+  },
+  {
+    "state": "CORRECT_VALID",
+    "setup_sql": "DROP INDEX IF EXISTS public._test_guard_idx;\nCREATE INDEX _test_guard_idx ON public._test_index_table(ticket_id);",
+    "classifier_output": "_test_guard_idx|_test_index_table|true|true|CORRECT_VALID|SKIP: Index exists, is valid, and matches desired definition. Do not recreate.",
+    "expected_state": "CORRECT_VALID",
+    "detected_state": "CORRECT_VALID",
+    "status": "PASS"
+  },
+  {
+    "state": "VALID_WRONG_DEFINITION",
+    "setup_sql": "DROP INDEX IF EXISTS public._test_guard_idx;\nCREATE INDEX _test_guard_idx ON public._test_index_table(status);",
+    "classifier_output": "_test_guard_idx|_test_index_table|true|true|VALID_WRONG_DEFINITION|HALT: Valid index exists with conflicting definition. DO NOT AUTO-DROP. Investigate application usage.",
+    "expected_state": "VALID_WRONG_DEFINITION",
+    "detected_state": "VALID_WRONG_DEFINITION",
+    "status": "PASS"
+  },
+  {
+    "state": "INVALID_INDEX_RESIDUE",
+    "setup_sql": "DROP INDEX IF EXISTS public._test_guard_idx;\nCREATE INDEX _test_guard_idx ON public._test_index_table(ticket_id);\n-- Simulate failed CREATE INDEX CONCURRENTLY residue by toggling indisvalid in pg_index\nUPDATE pg_index SET indisvalid = false WHERE indexrelid = 'public._test_guard_idx'::regclass;",
+    "classifier_output": "_test_guard_idx|_test_index_table|false|true|INVALID_INDEX_RESIDUE|HALT: Invalid index residue detected (indisvalid=false). Requires manual DBA investigation before cleanup.",
+    "expected_state": "INVALID_INDEX_RESIDUE",
+    "detected_state": "INVALID_INDEX_RESIDUE",
+    "status": "PASS"
+  },
+  {
+    "state": "UNEXPECTED_TABLE_BINDING",
+    "setup_sql": "DROP INDEX IF EXISTS public._test_guard_idx;\nCREATE INDEX _test_guard_idx ON public._test_other_table(other_col);",
+    "classifier_output": "_test_guard_idx|_test_other_table|true|true|UNEXPECTED_TABLE_BINDING|HALT: Index exists on unexpected table. DO NOT AUTO-DROP. Investigate schema conflict.",
+    "expected_state": "UNEXPECTED_TABLE_BINDING",
+    "detected_state": "UNEXPECTED_TABLE_BINDING",
+    "status": "PASS"
+  }
+]

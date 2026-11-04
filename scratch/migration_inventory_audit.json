@@ -1,0 +1,339 @@
+{
+  "total_local_files": 38,
+  "total_remote_recorded_versions": 30,
+  "duplicate_versions_found": {},
+  "invalid_filenames_found": [],
+  "local_minus_remote_count": 11,
+  "local_minus_remote_versions": [
+    {
+      "version": "20261003170000",
+      "filename": "20261003170000_phase5_3_technician_registration_notification.sql",
+      "sha256": "5FDF5539B98D4B0C3C3D378A7876F664B39144EAAA6906A1D860F371C45BEC9B"
+    },
+    {
+      "version": "20261029100000",
+      "filename": "20261029100000_phase9_1_parts_pickup.sql",
+      "sha256": "00AF575D7443555824265CBF5FE7859F079784C74B12F3F97733B4B0126CE408"
+    },
+    {
+      "version": "20261029120000",
+      "filename": "20261029120000_phase9_2_stock_movement_sales.sql",
+      "sha256": "CB376F19E5C4C7E0D50D7D53D0B3CF73665A5AA71A53759B6620F03128311314"
+    },
+    {
+      "version": "20261031173000",
+      "filename": "20261031173000_phase9_3_parts_handoff_rpcs.sql",
+      "sha256": "CA54468E884DB981F00DC62E4DCDF6ECF4EB4F957287C57B6ACA92678370F477"
+    },
+    {
+      "version": "20261031183000",
+      "filename": "20261031183000_phase9_3_realtime_publications.sql",
+      "sha256": "79805A274EAF6BF2083A56591FA76CECF4F65924964F1D33017F55D8E6C85EF5"
+    },
+    {
+      "version": "20261101140000",
+      "filename": "20261101140000_phase9_3_unavailable_parts_eta.sql",
+      "sha256": "9E9F556002EA6DD79EE0AE9FEDDF56BFEAB6522EBDF9A3B93AFEFA69452B8365"
+    },
+    {
+      "version": "20261103120000",
+      "filename": "20261103120000_phase11_visual_defect_diagnostics.sql",
+      "sha256": "B68AE91FF972E20D499EF2EC99EB4EB162646A322ADEAC5B94523634DEE57C8C"
+    },
+    {
+      "version": "20261104100000",
+      "filename": "20261104100000_profile_security_separation.sql",
+      "sha256": "5FA9C94ACFD16C5AEB63DF5CB658D6DF3EAC08D8E2EE9C9174D49429AD7EE4B1"
+    },
+    {
+      "version": "20261104110000",
+      "filename": "20261104110000_complete_phase9_parts_desk_rpcs.sql",
+      "sha256": "B32F3C80971113360ADB86D1B096F1F8BDEB38FB87743CE24A038BA83F4B72E8"
+    },
+    {
+      "version": "20261104120000",
+      "filename": "20261104120000_complete_phase9_realtime_and_eta.sql",
+      "sha256": "1E583E78AF77A4B6E0BECB239E6ECC4DE9C46148091A7B2481EF8C60D0EDE97F"
+    },
+    {
+      "version": "20261104130000",
+      "filename": "20261104130000_complete_phase5_3_technician_registration_notification.sql",
+      "sha256": "33FAE47F83203DAB53686E67BA57F8002617224D9A61DE80F25AEF06298DE579"
+    }
+  ],
+  "remote_minus_local_count": 3,
+  "remote_minus_local_versions": [
+    "20261102100000",
+    "20261103100000",
+    "20261103110000"
+  ],
+  "common_versions_count": 27,
+  "local_inventory": [
+    {
+      "version": "20260930000001",
+      "filename": "20260930000001_initial_schema.sql",
+      "description": "initial_schema",
+      "size_bytes": 19515,
+      "sha256": "74272A042AE5BE0C05D54BCC783DA90BDF2A231E1F7715CE7E60C14A9B262094"
+    },
+    {
+      "version": "20260930000002",
+      "filename": "20260930000002_storage_setup.sql",
+      "description": "storage_setup",
+      "size_bytes": 1980,
+      "sha256": "1DF1D84D96B883CE5CDE8EEAF70E21F241FA3B7AB9E6A7CB839630AC6D1DC1DC"
+    },
+    {
+      "version": "20260930000003",
+      "filename": "20260930000003_grant_permissions.sql",
+      "description": "grant_permissions",
+      "size_bytes": 1319,
+      "sha256": "B562B5F5F92CC10459115D16BCC329F431D3A895F372C571DCD6C8BBCE790801"
+    },
+    {
+      "version": "20260930000004",
+      "filename": "20260930000004_storage_policies.sql",
+      "description": "storage_policies",
+      "size_bytes": 1760,
+      "sha256": "226AA09EA9565E950C7576CC07103320E3DF8B8D192CAAD425CD435B27E41718"
+    },
+    {
+      "version": "20260930000005",
+      "filename": "20260930000005_verify_rls_helper.sql",
+      "description": "verify_rls_helper",
+      "size_bytes": 1196,
+      "sha256": "3300E2B5B2038A1F7BA09BC557C8BF4C780033B278C76C5670DDBB837DB073B5"
+    },
+    {
+      "version": "20260930000006",
+      "filename": "20260930000006_legacy_remote_placeholder.sql",
+      "description": "legacy_remote_placeholder",
+      "size_bytes": 1143,
+      "sha256": "2D9A15AF2CC065B0485295F7510026E6E0852C678C674A1A0131A45C7A792A02"
+    },
+    {
+      "version": "20260930000007",
+      "filename": "20260930000007_legacy_remote_placeholder.sql",
+      "description": "legacy_remote_placeholder",
+      "size_bytes": 1143,
+      "sha256": "7E5DF1EBE7E35AD1FD8CACDBC344A3D0D2F22B28C623C403FA6D2E88C56AC820"
+    },
+    {
+      "version": "20260930000008",
+      "filename": "20260930000008_legacy_remote_placeholder.sql",
+      "description": "legacy_remote_placeholder",
+      "size_bytes": 1143,
+      "sha256": "1F3C543D7088AE547A820576B0920334A50CA9F8AF9501D1861931F21840D592"
+    },
+    {
+      "version": "20261001151000",
+      "filename": "20261001151000_fix_technician_signup_trigger.sql",
+      "description": "fix_technician_signup_trigger",
+      "size_bytes": 3622,
+      "sha256": "7AE894F24F18B826B25C4704F7779E3D6AD7218B101CBEC82B86733B886CD6A3"
+    },
+    {
+      "version": "20261001151200",
+      "filename": "20261001151200_restore_supabase_auth_rls_helpers.sql",
+      "description": "restore_supabase_auth_rls_helpers",
+      "size_bytes": 2121,
+      "sha256": "DA4530C5908E93824CD4EA9F8E71D1B2FE2956EFD8FE21705B68FF4728951F6B"
+    },
+    {
+      "version": "20261001153500",
+      "filename": "20261001153500_set_demo_users_password.sql",
+      "description": "set_demo_users_password",
+      "size_bytes": 772,
+      "sha256": "0CD923E5F4E0D650FBA3F0DEFD3671EABC9115A85A9E1526B6978F7E316F8C6D"
+    },
+    {
+      "version": "20261001163000",
+      "filename": "20261001163000_phase2_security_hardening.sql",
+      "description": "phase2_security_hardening",
+      "size_bytes": 5589,
+      "sha256": "EBEB6290DFF5452F8FD2E9CF93B494B06F92D9F8848FEA32CB8DB7B6DDD2C64E"
+    },
+    {
+      "version": "20261001170000",
+      "filename": "20261001170000_phase2_3_database_foundation.sql",
+      "description": "phase2_3_database_foundation",
+      "size_bytes": 2313,
+      "sha256": "BF9C232F3FFF85544FE50046E34532BAF1538D4616F019755AD608C94C328EEA"
+    },
+    {
+      "version": "20261002000000",
+      "filename": "20261002000000_phase3_6_notifications_insert_policy.sql",
+      "description": "phase3_6_notifications_insert_policy",
+      "size_bytes": 2835,
+      "sha256": "396A5B583571ECF84A6DE629CF0122CB7600CA2984786FC848560C8F2579D83E"
+    },
+    {
+      "version": "20261002130000",
+      "filename": "20261002130000_phase3_7_rls_integrity_hardening.sql",
+      "description": "phase3_7_rls_integrity_hardening",
+      "size_bytes": 4356,
+      "sha256": "E2D5AA851967D04271334939C538CF02764DD1AEAF3098359F61F7915C45A5E7"
+    },
+    {
+      "version": "20261003131500",
+      "filename": "20261003131500_phase5_1_technician_profile_update_policy.sql",
+      "description": "phase5_1_technician_profile_update_policy",
+      "size_bytes": 713,
+      "sha256": "E85B4B51391B1F9A598B30EB7E44341C4E91E2D232049CB52F05AB9EA61E2409"
+    },
+    {
+      "version": "20261003140000",
+      "filename": "20261003140000_phase5_1_account_deletion_rpc.sql",
+      "description": "phase5_1_account_deletion_rpc",
+      "size_bytes": 6240,
+      "sha256": "B0B7986D6255618ADD5245834DE618E00C69096D8ECC1D56E3124D0EF47BE6F5"
+    },
+    {
+      "version": "20261003141000",
+      "filename": "20261003141000_phase5_1_account_deletion_role_enum_fix.sql",
+      "description": "phase5_1_account_deletion_role_enum_fix",
+      "size_bytes": 6436,
+      "sha256": "213CDA3F8968F7848DFE58DE9D8F96C205D82817F131D7692A677F0739DB3EDB"
+    },
+    {
+      "version": "20261003150000",
+      "filename": "20261003150000_phase5_2_reset_demo_rpc.sql",
+      "description": "phase5_2_reset_demo_rpc",
+      "size_bytes": 29317,
+      "sha256": "EDA448E31DDB220E145804389C0CC615D6945240C1A4AB3689C621997FF7A6C7"
+    },
+    {
+      "version": "20261003170000",
+      "filename": "20261003170000_phase5_3_technician_registration_notification.sql",
+      "description": "phase5_3_technician_registration_notification",
+      "size_bytes": 2236,
+      "sha256": "5FDF5539B98D4B0C3C3D378A7876F664B39144EAAA6906A1D860F371C45BEC9B"
+    },
+    {
+      "version": "20261004100000",
+      "filename": "20261004100000_phase5_4_cancellation_approval_foundation.sql",
+      "description": "phase5_4_cancellation_approval_foundation",
+      "size_bytes": 37596,
+      "sha256": "8F2D26FE9CF2D8427D94540F03330EA261687850A89EB90A1CD9CFBD95CB2297"
+    },
+    {
+      "version": "20261005100000",
+      "filename": "20261005100000_phase5_5_communication_foundation.sql",
+      "description": "phase5_5_communication_foundation",
+      "size_bytes": 40890,
+      "sha256": "4C8DF78FBB9C2C0DA3D62AC170E717A97D96EE79AAAA0692EA22B92F3DDAEE83"
+    },
+    {
+      "version": "20261006100000",
+      "filename": "20261006100000_phase7_1_realtime_publication_foundation.sql",
+      "description": "phase7_1_realtime_publication_foundation",
+      "size_bytes": 1932,
+      "sha256": "9587566D9D1C74F423E15637EB1BC3D5D2FE01CF7FC43A8CAD65FB5942C2538C"
+    },
+    {
+      "version": "20261006110000",
+      "filename": "20261006110000_phase7_3_technician_decline_rls.sql",
+      "description": "phase7_3_technician_decline_rls",
+      "size_bytes": 1470,
+      "sha256": "2112184D6F412E29D3F2CD6A9E612E5D5309637FB323AB26597468A81D6C8DDA"
+    },
+    {
+      "version": "20261027100000",
+      "filename": "20261027100000_phase8b_1_dispatch_locations.sql",
+      "description": "phase8b_1_dispatch_locations",
+      "size_bytes": 3917,
+      "sha256": "9CB0B49605CB14E3028E901F67DE0BC525BA9EE670C4D2B4BE0EE48C2C83C3AE"
+    },
+    {
+      "version": "20261028110000",
+      "filename": "20261028110000_phase8b_cleanup_reset_demo_rpc.sql",
+      "description": "phase8b_cleanup_reset_demo_rpc",
+      "size_bytes": 7261,
+      "sha256": "EB1E2E9EE16108E837FF7071A59B00669CD077C5D07D401FA63386764AF7468E"
+    },
+    {
+      "version": "20261029100000",
+      "filename": "20261029100000_phase9_1_parts_pickup.sql",
+      "description": "phase9_1_parts_pickup",
+      "size_bytes": 25710,
+      "sha256": "00AF575D7443555824265CBF5FE7859F079784C74B12F3F97733B4B0126CE408"
+    },
+    {
+      "version": "20261029120000",
+      "filename": "20261029120000_phase9_2_stock_movement_sales.sql",
+      "description": "phase9_2_stock_movement_sales",
+      "size_bytes": 24901,
+      "sha256": "CB376F19E5C4C7E0D50D7D53D0B3CF73665A5AA71A53759B6620F03128311314"
+    },
+    {
+      "version": "20261031153000",
+      "filename": "20261031153000_phase9_3_safe_scoped_reset_demo_rpc.sql",
+      "description": "phase9_3_safe_scoped_reset_demo_rpc",
+      "size_bytes": 14215,
+      "sha256": "A2E6DC170E82582A8BDB8C79EABFEF54713D1C1BE1A8CBB831111C3E4FFDB027"
+    },
+    {
+      "version": "20261031170000",
+      "filename": "20261031170000_phase9_2_quote_catalog_and_inventory.sql",
+      "description": "phase9_2_quote_catalog_and_inventory",
+      "size_bytes": 24193,
+      "sha256": "8DBC60D16659782EE3FD7EBBB6A2327F8613D46FB8B9915C77E46EFB17E2F93C"
+    },
+    {
+      "version": "20261031173000",
+      "filename": "20261031173000_phase9_3_parts_handoff_rpcs.sql",
+      "description": "phase9_3_parts_handoff_rpcs",
+      "size_bytes": 7971,
+      "sha256": "CA54468E884DB981F00DC62E4DCDF6ECF4EB4F957287C57B6ACA92678370F477"
+    },
+    {
+      "version": "20261031183000",
+      "filename": "20261031183000_phase9_3_realtime_publications.sql",
+      "description": "phase9_3_realtime_publications",
+      "size_bytes": 17985,
+      "sha256": "79805A274EAF6BF2083A56591FA76CECF4F65924964F1D33017F55D8E6C85EF5"
+    },
+    {
+      "version": "20261101140000",
+      "filename": "20261101140000_phase9_3_unavailable_parts_eta.sql",
+      "description": "phase9_3_unavailable_parts_eta",
+      "size_bytes": 16408,
+      "sha256": "9E9F556002EA6DD79EE0AE9FEDDF56BFEAB6522EBDF9A3B93AFEFA69452B8365"
+    },
+    {
+      "version": "20261103120000",
+      "filename": "20261103120000_phase11_visual_defect_diagnostics.sql",
+      "description": "phase11_visual_defect_diagnostics",
+      "size_bytes": 38813,
+      "sha256": "B68AE91FF972E20D499EF2EC99EB4EB162646A322ADEAC5B94523634DEE57C8C"
+    },
+    {
+      "version": "20261104100000",
+      "filename": "20261104100000_profile_security_separation.sql",
+      "description": "profile_security_separation",
+      "size_bytes": 57885,
+      "sha256": "5FA9C94ACFD16C5AEB63DF5CB658D6DF3EAC08D8E2EE9C9174D49429AD7EE4B1"
+    },
+    {
+      "version": "20261104110000",
+      "filename": "20261104110000_complete_phase9_parts_desk_rpcs.sql",
+      "description": "complete_phase9_parts_desk_rpcs",
+      "size_bytes": 20520,
+      "sha256": "B32F3C80971113360ADB86D1B096F1F8BDEB38FB87743CE24A038BA83F4B72E8"
+    },
+    {
+      "version": "20261104120000",
+      "filename": "20261104120000_complete_phase9_realtime_and_eta.sql",
+      "description": "complete_phase9_realtime_and_eta",
+      "size_bytes": 43210,
+      "sha256": "1E583E78AF77A4B6E0BECB239E6ECC4DE9C46148091A7B2481EF8C60D0EDE97F"
+    },
+    {
+      "version": "20261104130000",
+      "filename": "20261104130000_complete_phase5_3_technician_registration_notification.sql",
+      "description": "complete_phase5_3_technician_registration_notification",
+      "size_bytes": 2918,
+      "sha256": "33FAE47F83203DAB53686E67BA57F8002617224D9A61DE80F25AEF06298DE579"
+    }
+  ]
+}

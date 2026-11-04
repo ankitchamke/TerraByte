@@ -1,0 +1,42 @@
+[
+  {
+    "line_number": 22,
+    "pattern": "<1ms",
+    "text": "| **3. Lock Durations & Concurrency Reality** | **CORRECTED (Task 3)** | Purged all speculative `<1ms`, `1\u20132ms`, `sub-millisecond`, and `zero downtime` claims across all 55 requests. Documented actual lock modes (`SHARE`, `ACCESS EXCLUSIVE`, `ROW EXCLUSIVE`) and lock wait queueing / pooler connection exhaustion risks. |"
+  },
+  {
+    "line_number": 22,
+    "pattern": "1\u20132ms",
+    "text": "| **3. Lock Durations & Concurrency Reality** | **CORRECTED (Task 3)** | Purged all speculative `<1ms`, `1\u20132ms`, `sub-millisecond`, and `zero downtime` claims across all 55 requests. Documented actual lock modes (`SHARE`, `ACCESS EXCLUSIVE`, `ROW EXCLUSIVE`) and lock wait queueing / pooler connection exhaustion risks. |"
+  },
+  {
+    "line_number": 22,
+    "pattern": "sub-millisecond",
+    "text": "| **3. Lock Durations & Concurrency Reality** | **CORRECTED (Task 3)** | Purged all speculative `<1ms`, `1\u20132ms`, `sub-millisecond`, and `zero downtime` claims across all 55 requests. Documented actual lock modes (`SHARE`, `ACCESS EXCLUSIVE`, `ROW EXCLUSIVE`) and lock wait queueing / pooler connection exhaustion risks. |"
+  },
+  {
+    "line_number": 22,
+    "pattern": "zero downtime",
+    "text": "| **3. Lock Durations & Concurrency Reality** | **CORRECTED (Task 3)** | Purged all speculative `<1ms`, `1\u20132ms`, `sub-millisecond`, and `zero downtime` claims across all 55 requests. Documented actual lock modes (`SHARE`, `ACCESS EXCLUSIVE`, `ROW EXCLUSIVE`) and lock wait queueing / pooler connection exhaustion risks. |"
+  },
+  {
+    "line_number": 226,
+    "pattern": "<1ms",
+    "text": "All speculative and unsupported lock duration claims (such as `<1ms`, `1\u20132ms`, `sub-millisecond`, and `zero downtime`) have been purged from this assessment."
+  },
+  {
+    "line_number": 226,
+    "pattern": "1\u20132ms",
+    "text": "All speculative and unsupported lock duration claims (such as `<1ms`, `1\u20132ms`, `sub-millisecond`, and `zero downtime`) have been purged from this assessment."
+  },
+  {
+    "line_number": 226,
+    "pattern": "sub-millisecond",
+    "text": "All speculative and unsupported lock duration claims (such as `<1ms`, `1\u20132ms`, `sub-millisecond`, and `zero downtime`) have been purged from this assessment."
+  },
+  {
+    "line_number": 226,
+    "pattern": "zero downtime",
+    "text": "All speculative and unsupported lock duration claims (such as `<1ms`, `1\u20132ms`, `sub-millisecond`, and `zero downtime`) have been purged from this assessment."
+  }
+]

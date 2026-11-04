@@ -377,13 +377,18 @@ TerraByte/
 ├── supabase/
 │   ├── migrations/             # Timestamped PostgreSQL schema & RLS migrations
 │   └── seed.sql                # Canonical seed dataset for Vidarbha personas
+├── docs/
+│   └── audits/                 # Quality gates, schema reconciliations & audit reports
+│       ├── phase-9/            # Staging readiness, RPC contract audits, DB reconciliations
+│       ├── phase-11/           # Phase 11 visual diagnostics implementation reports
+│       └── archive/            # Historical production deployment assessments
+├── .planning/                  # Project memory, roadmap, and GSD planning artifacts
+│   ├── PROJECT.md              # Vision, core value, requirements & constraints
+│   ├── ROADMAP.md              # Phased engineering roadmap & milestone tracker
+│   ├── STATE.md                # Engineering status & technical decisions log
+│   ├── APP_FLOW.md             # Detailed user journey maps & lifecycle flows
+│   └── codebase/               # Architecture, stack, testing, and conventions maps
 ├── AGENTS.md                   # Lovable sync rules & repository guardrails
-├── APP_FLOW.md                 # Detailed user journey maps & lifecycle flows
-├── ARCHITECTURE.md             # Deep-dive architecture & RLS security specification
-├── IMPLEMENTATION_PLAN.md      # Phased engineering roadmap & milestone tracker
-├── PROJECT_STATE.md            # Engineering status & technical decisions log
-├── TESTING.md                  # Comprehensive verification matrix & demo scripts
-├── TRD.md                      # Technical Requirements Document
 ├── package.json                # Dependencies & build scripts
 └── vite.config.ts              # Vite 8 + TanStack Start configuration
 ```

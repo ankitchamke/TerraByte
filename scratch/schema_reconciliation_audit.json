@@ -1,0 +1,101 @@
+{
+  "types_tables": [],
+  "types_funcs": [
+    "graphql"
+  ],
+  "types_enums": [],
+  "frontend_rpcs": [
+    "save_repair_visual_diagnostic",
+    "reset_demo_data",
+    "get_session_profile",
+    "delete_user_account",
+    "finalize_repair_visual_diagnostic_failure",
+    "claim_repair_visual_diagnostic"
+  ],
+  "baseline_tables": [
+    "service_centre_part_requests",
+    "notifications",
+    "repair_dispatch_locations",
+    "repair_requests",
+    "repair_timeline",
+    "technician_profiles",
+    "quotes",
+    "service_centre_part_sales",
+    "repair_messages",
+    "equipment",
+    "quote_items",
+    "service_centre_stock_audit",
+    "service_history",
+    "profiles",
+    "repair_notes",
+    "service_centre_parts"
+  ],
+  "baseline_enums": [
+    "repair_status",
+    "user_role",
+    "equipment_status",
+    "equipment_type",
+    "quote_status"
+  ],
+  "baseline_funcs": [
+    "reset_demo_data",
+    "set_current_timestamp_updated_at",
+    "current_user_role",
+    "revise_quote_atomic",
+    "delete_user_account",
+    "current_profile_id",
+    "check_table_rls",
+    "get_storage_buckets",
+    "create_quote_atomic",
+    "guard_repair_messages_update",
+    "handle_new_user",
+    "protect_profile_role",
+    "current_clerk_id",
+    "protect_technician_verification"
+  ],
+  "forward_added_tables": {
+    "20261104100000_profile_security_separation.sql": [
+      "public.profile_contacts",
+      "public.profile_auth_secrets"
+    ],
+    "20261104110000_complete_phase9_parts_desk_rpcs.sql": [],
+    "20261104120000_complete_phase9_realtime_and_eta.sql": [],
+    "20261104130000_complete_phase5_3_technician_registration_notification.sql": []
+  },
+  "forward_added_funcs": {
+    "20261104100000_profile_security_separation.sql": [
+      "public.current_profile_id",
+      "public.current_user_role",
+      "app_security.can_view_profile",
+      "public.get_session_profile",
+      "public.admin_provision_staff",
+      "public.protect_profile_role",
+      "public.handle_new_user",
+      "public.delete_user_account",
+      "public.reset_demo_data",
+      "public.create_quote_atomic",
+      "public.revise_quote_atomic"
+    ],
+    "20261104110000_complete_phase9_parts_desk_rpcs.sql": [
+      "public.confirm_service_centre_part_handoff",
+      "public.adjust_service_centre_part_stock",
+      "public.request_service_centre_part",
+      "public.receive_service_centre_stock",
+      "public.return_service_centre_part"
+    ],
+    "20261104120000_complete_phase9_realtime_and_eta.sql": [
+      "public.trg_enforce_technician_part_request_fields",
+      "public.update_service_centre_part_request_eta",
+      "public.create_quote_atomic",
+      "public.revise_quote_atomic"
+    ],
+    "20261104130000_complete_phase5_3_technician_registration_notification.sql": [
+      "public.notify_admin_on_technician_registration"
+    ]
+  },
+  "unsatisfied_rpcs": [
+    "claim_repair_visual_diagnostic",
+    "save_repair_visual_diagnostic",
+    "finalize_repair_visual_diagnostic_failure"
+  ]
+}

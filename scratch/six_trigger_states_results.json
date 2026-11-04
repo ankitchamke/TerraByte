@@ -1,0 +1,50 @@
+[
+  {
+    "state": "ABSENT",
+    "setup_sql": "-- Ensure trigger is absent\nDROP TRIGGER IF EXISTS _test_guard_trg ON public._test_trigger_table;",
+    "classifier_output": "_test_guard_trg|_test_trigger_table|N|NONE|ABSENT|PROCEED: Trigger absent; creation may proceed after verifying prerequisites.",
+    "expected_state": "ABSENT",
+    "detected_state": "ABSENT",
+    "status": "PASS"
+  },
+  {
+    "state": "HEALTHY_ACTIVE",
+    "setup_sql": "CREATE TRIGGER _test_guard_trg\nBEFORE UPDATE ON public._test_trigger_table\nFOR EACH ROW\nEXECUTE FUNCTION public._test_valid_func();",
+    "classifier_output": "_test_guard_trg|_test_trigger_table|O|_test_valid_func()|HEALTHY_ACTIVE|SKIP: Trigger is healthy and active. DO NOT DROP. Skip both DROP and CREATE.",
+    "expected_state": "HEALTHY_ACTIVE",
+    "detected_state": "HEALTHY_ACTIVE",
+    "status": "PASS"
+  },
+  {
+    "state": "DISABLED",
+    "setup_sql": "ALTER TABLE public._test_trigger_table DISABLE TRIGGER _test_guard_trg;",
+    "classifier_output": "_test_guard_trg|_test_trigger_table|D|_test_valid_func()|DISABLED|HALT: Anomalous trigger state detected. STOP AND INVESTIGATE immediately. Do not drop or recreate.",
+    "expected_state": "DISABLED",
+    "detected_state": "DISABLED",
+    "status": "PASS"
+  },
+  {
+    "state": "WRONG_FUNCTION",
+    "setup_sql": "DROP TRIGGER IF EXISTS _test_guard_trg ON public._test_trigger_table;\nCREATE TRIGGER _test_guard_trg\nBEFORE UPDATE ON public._test_trigger_table\nFOR EACH ROW\nEXECUTE FUNCTION public._test_wrong_func();",
+    "classifier_output": "_test_guard_trg|_test_trigger_table|O|_test_wrong_func()|WRONG_FUNCTION|HALT: Anomalous trigger state detected. STOP AND INVESTIGATE immediately. Do not drop or recreate.",
+    "expected_state": "WRONG_FUNCTION",
+    "detected_state": "WRONG_FUNCTION",
+    "status": "PASS"
+  },
+  {
+    "state": "WRONG_DEFINITION",
+    "setup_sql": "DROP TRIGGER IF EXISTS _test_guard_trg ON public._test_trigger_table;\n-- Create as AFTER INSERT instead of BEFORE UPDATE\nCREATE TRIGGER _test_guard_trg\nAFTER INSERT ON public._test_trigger_table\nFOR EACH ROW\nEXECUTE FUNCTION public._test_valid_func();",
+    "classifier_output": "_test_guard_trg|_test_trigger_table|O|_test_valid_func()|WRONG_DEFINITION|HALT: Anomalous trigger state detected. STOP AND INVESTIGATE immediately. Do not drop or recreate.",
+    "expected_state": "WRONG_DEFINITION",
+    "detected_state": "WRONG_DEFINITION",
+    "status": "PASS"
+  },
+  {
+    "state": "UNEXPECTED_STATE",
+    "setup_sql": "-- Create a second trigger with same name on a different table or simulate internal trigger\n-- In PostgreSQL, internal triggers have tgisinternal = true\n-- Let's test constraint trigger or update pg_trigger directly in test transaction\nDROP TRIGGER IF EXISTS _test_guard_trg ON public._test_trigger_table;\nCREATE CONSTRAINT TRIGGER _test_guard_trg\nAFTER INSERT ON public._test_trigger_table\nDEFERRABLE INITIALLY DEFERRED\nFOR EACH ROW\nEXECUTE FUNCTION public._test_valid_func();\n-- Mark tgisinternal = true\nUPDATE pg_trigger SET tgisinternal = true WHERE tgname = '_test_guard_trg';",
+    "classifier_output": "_test_guard_trg|_test_trigger_table|O|_test_valid_func()|UNEXPECTED_STATE|HALT: Anomalous trigger state detected. STOP AND INVESTIGATE immediately. Do not drop or recreate.",
+    "expected_state": "UNEXPECTED_STATE",
+    "detected_state": "UNEXPECTED_STATE",
+    "status": "PASS"
+  }
+]

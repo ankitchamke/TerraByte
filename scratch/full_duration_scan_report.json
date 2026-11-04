@@ -1,0 +1,32 @@
+[
+  {
+    "line": 344,
+    "pattern": "<1ms",
+    "text": "An automated search across all 4,636 lines of the assessment for patterns (`<1ms`, `1-2ms`, `1\u20132ms`, `sub-millisecond`, `zero downtime`, `guaranteed duration`) yielded:"
+  },
+  {
+    "line": 344,
+    "pattern": "1-2ms",
+    "text": "An automated search across all 4,636 lines of the assessment for patterns (`<1ms`, `1-2ms`, `1\u20132ms`, `sub-millisecond`, `zero downtime`, `guaranteed duration`) yielded:"
+  },
+  {
+    "line": 344,
+    "pattern": "1\u20132ms",
+    "text": "An automated search across all 4,636 lines of the assessment for patterns (`<1ms`, `1-2ms`, `1\u20132ms`, `sub-millisecond`, `zero downtime`, `guaranteed duration`) yielded:"
+  },
+  {
+    "line": 344,
+    "pattern": "sub-millisecond",
+    "text": "An automated search across all 4,636 lines of the assessment for patterns (`<1ms`, `1-2ms`, `1\u20132ms`, `sub-millisecond`, `zero downtime`, `guaranteed duration`) yielded:"
+  },
+  {
+    "line": 344,
+    "pattern": "zero downtime",
+    "text": "An automated search across all 4,636 lines of the assessment for patterns (`<1ms`, `1-2ms`, `1\u20132ms`, `sub-millisecond`, `zero downtime`, `guaranteed duration`) yielded:"
+  },
+  {
+    "line": 344,
+    "pattern": "guaranteed duration",
+    "text": "An automated search across all 4,636 lines of the assessment for patterns (`<1ms`, `1-2ms`, `1\u20132ms`, `sub-millisecond`, `zero downtime`, `guaranteed duration`) yielded:"
+  }
+]

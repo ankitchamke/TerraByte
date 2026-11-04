@@ -1,0 +1,16 @@
+{
+  "clean_install_success": true,
+  "tables_count": 18,
+  "routines_count": 76,
+  "policies_count": 59,
+  "rls_disabled_tables": [],
+  "frontend_rpc_presence": {
+    "get_session_profile": true,
+    "delete_user_account": true,
+    "reset_demo_data": true,
+    "claim_repair_visual_diagnostic": true,
+    "save_repair_visual_diagnostic": true,
+    "finalize_repair_visual_diagnostic_failure": true
+  },
+  "idempotency_errors_count": 0
+}

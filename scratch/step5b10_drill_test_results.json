@@ -1,0 +1,1343 @@
+{
+  "audit_step": "Step 5B.10 Fresh Revalidation",
+  "timestamp_utc": "2026-11-03T18:56:47.837950+00:00",
+  "target_database": "terabyte_clean_restore_drill",
+  "pg_version": "PostgreSQL 17.6 on x86_64-windows, compiled by msvc-19.44.35213, 64-bit",
+  "total_requests": 55,
+  "total_executions": 165,
+  "phase1_initial_verification": {
+    "passed": 55,
+    "failed": 0
+  },
+  "phase2_rerun_idempotency": {
+    "passed": 55,
+    "failed": 0
+  },
+  "phase3_post_rerun_verification": {
+    "passed": 55,
+    "failed": 0
+  },
+  "overall_pass_rate": "165 / 165",
+  "requests": [
+    {
+      "unit_id": "REQ-01",
+      "type": "INDEX_CREATION",
+      "target_object": "Index: public.idx_sc_sales_sold_at",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "index_name      |        table_name         | indisvalid | indisready |                                            index",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "CREATE INDEX",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "index_name      |        table_name         | indisvalid | indisready |                                            index",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-02",
+      "type": "INDEX_CREATION",
+      "target_object": "Index: public.idx_sc_stock_audit_movement",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "index_name          |         table_name         | indisvalid | indisready |                                            ",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "CREATE INDEX",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "index_name          |         table_name         | indisvalid | indisready |                                            ",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-03",
+      "type": "FUNCTION_DEFINITION",
+      "target_object": "Function: public.confirm_service_centre_part_handoff(uuid)",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "proname               |  owner   | prosecdef | search_path_ok | public_revoked | anon_revoked | auth_check_ok | service_",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "CREATE FUNCTION",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "proname               |  owner   | prosecdef | search_path_ok | public_revoked | anon_revoked | auth_check_ok | service_",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-04",
+      "type": "FUNCTION_DEFINITION",
+      "target_object": "Function: public.adjust_service_centre_part_stock(uuid, integer, text)",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "proname              |  owner   | prosecdef | search_path_ok | public_revoked | anon_revoked | auth_check_ok | service_r",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "CREATE FUNCTION",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "proname              |  owner   | prosecdef | search_path_ok | public_revoked | anon_revoked | auth_check_ok | service_r",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-05",
+      "type": "FUNCTION_DEFINITION",
+      "target_object": "Function: public.request_service_centre_part(uuid, uuid, integer, text)",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "proname           |  owner   | prosecdef | search_path_ok | public_revoked | anon_revoked | auth_check_ok | service_role",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "CREATE FUNCTION",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "proname           |  owner   | prosecdef | search_path_ok | public_revoked | anon_revoked | auth_check_ok | service_role",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-06",
+      "type": "FUNCTION_DEFINITION",
+      "target_object": "Function: public.receive_service_centre_stock(uuid, integer, text)",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "proname            |  owner   | prosecdef | search_path_ok | public_revoked | anon_revoked | auth_check_ok | service_rol",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "CREATE FUNCTION",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "proname            |  owner   | prosecdef | search_path_ok | public_revoked | anon_revoked | auth_check_ok | service_rol",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-07",
+      "type": "FUNCTION_DEFINITION",
+      "target_object": "Function: public.return_service_centre_part(uuid, uuid, integer, text)",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "proname           |  owner   | prosecdef | search_path_ok | public_revoked | anon_revoked | auth_check_ok | service_role",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "CREATE FUNCTION",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "proname           |  owner   | prosecdef | search_path_ok | public_revoked | anon_revoked | auth_check_ok | service_role",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-08",
+      "type": "PERMISSION_REVOKE",
+      "target_object": "Revoke ALL on public.confirm_service_centre_part_handoff(uuid) from PUBLIC",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "public_revoked \n----------------\n t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "REVOKE",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "public_revoked \n----------------\n t\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-09",
+      "type": "PERMISSION_REVOKE",
+      "target_object": "Revoke EXECUTE on public.confirm_service_centre_part_handoff(uuid) from anon",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "anon_revoked \n--------------\n t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "REVOKE",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "anon_revoked \n--------------\n t\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-10",
+      "type": "PERMISSION_GRANT",
+      "target_object": "Grant EXECUTE on public.confirm_service_centre_part_handoff(uuid) to authenticated, service_role",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "auth_granted | service_role_granted \n--------------+----------------------\n t            | t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "GRANT",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "auth_granted | service_role_granted \n--------------+----------------------\n t            | t\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-11",
+      "type": "PERMISSION_REVOKE",
+      "target_object": "Revoke ALL on public.adjust_service_centre_part_stock(uuid, integer, text) from PUBLIC",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "public_revoked \n----------------\n t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "REVOKE",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "public_revoked \n----------------\n t\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-12",
+      "type": "PERMISSION_REVOKE",
+      "target_object": "Revoke EXECUTE on public.adjust_service_centre_part_stock(uuid, integer, text) from anon",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "anon_revoked \n--------------\n t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "REVOKE",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "anon_revoked \n--------------\n t\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-13",
+      "type": "PERMISSION_GRANT",
+      "target_object": "Grant EXECUTE on public.adjust_service_centre_part_stock(uuid, integer, text) to authenticated, service_role",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "auth_granted | service_role_granted \n--------------+----------------------\n t            | t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "GRANT",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "auth_granted | service_role_granted \n--------------+----------------------\n t            | t\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-14",
+      "type": "PERMISSION_REVOKE",
+      "target_object": "Revoke ALL on public.request_service_centre_part(uuid, uuid, integer, text) from PUBLIC",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "public_revoked \n----------------\n t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "REVOKE",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "public_revoked \n----------------\n t\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-15",
+      "type": "PERMISSION_REVOKE",
+      "target_object": "Revoke EXECUTE on public.request_service_centre_part(uuid, uuid, integer, text) from anon",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "anon_revoked \n--------------\n t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "REVOKE",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "anon_revoked \n--------------\n t\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-16",
+      "type": "PERMISSION_GRANT",
+      "target_object": "Grant EXECUTE on public.request_service_centre_part(uuid, uuid, integer, text) to authenticated, service_role",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "auth_granted | service_role_granted \n--------------+----------------------\n t            | t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "GRANT",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "auth_granted | service_role_granted \n--------------+----------------------\n t            | t\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-17",
+      "type": "PERMISSION_REVOKE",
+      "target_object": "Revoke ALL on public.receive_service_centre_stock(uuid, integer, text) from PUBLIC",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "public_revoked \n----------------\n t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "REVOKE",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "public_revoked \n----------------\n t\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-18",
+      "type": "PERMISSION_REVOKE",
+      "target_object": "Revoke EXECUTE on public.receive_service_centre_stock(uuid, integer, text) from anon",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "anon_revoked \n--------------\n t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "REVOKE",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "anon_revoked \n--------------\n t\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-19",
+      "type": "PERMISSION_GRANT",
+      "target_object": "Grant EXECUTE on public.receive_service_centre_stock(uuid, integer, text) to authenticated, service_role",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "auth_granted | service_role_granted \n--------------+----------------------\n t            | t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "GRANT",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "auth_granted | service_role_granted \n--------------+----------------------\n t            | t\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-20",
+      "type": "PERMISSION_REVOKE",
+      "target_object": "Revoke ALL on public.return_service_centre_part(uuid, uuid, integer, text) from PUBLIC",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "public_revoked \n----------------\n t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "REVOKE",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "public_revoked \n----------------\n t\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-21",
+      "type": "PERMISSION_REVOKE",
+      "target_object": "Revoke EXECUTE on public.return_service_centre_part(uuid, uuid, integer, text) from anon",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "anon_revoked \n--------------\n t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "REVOKE",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "anon_revoked \n--------------\n t\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-22",
+      "type": "PERMISSION_GRANT",
+      "target_object": "Grant EXECUTE on public.return_service_centre_part(uuid, uuid, integer, text) to authenticated, service_role",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "auth_granted | service_role_granted \n--------------+----------------------\n t            | t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "GRANT",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "auth_granted | service_role_granted \n--------------+----------------------\n t            | t\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-23",
+      "type": "DO_BLOCK",
+      "target_object": "Realtime Publication Tables Registration (5 tables)",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "pubname      | schemaname |          tablename           \n-------------------+------------+-----------------------------",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "DO",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "pubname      | schemaname |          tablename           \n-------------------+------------+-----------------------------",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-24",
+      "type": "ALTER_REPLICA_IDENTITY",
+      "target_object": "Replica Identity FULL on public.quotes",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "relname | relreplident \n---------+--------------\n quotes  | f\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "ALTER TABLE",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "relname | relreplident \n---------+--------------\n quotes  | f\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-25",
+      "type": "ALTER_REPLICA_IDENTITY",
+      "target_object": "Replica Identity FULL on public.service_centre_part_requests",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "relname            | relreplident \n------------------------------+--------------\n service_centre_part_requests | f\n(1 ro",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "ALTER TABLE",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "relname            | relreplident \n------------------------------+--------------\n service_centre_part_requests | f\n(1 ro",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-26",
+      "type": "ALTER_ADD_COLUMNS",
+      "target_object": "Add Columns (estimated_arrival_at, eta_updated_by, eta_updated_at)",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "column_name      |        data_type         | is_nullable \n----------------------+--------------------------+-----------",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "ALTER TABLE",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "column_name      |        data_type         | is_nullable \n----------------------+--------------------------+-----------",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-27",
+      "type": "INDEX_CREATION",
+      "target_object": "Index: public.idx_sc_part_requests_estimated_arrival",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "index_name               |          table_name          | indisvalid | indisready |                                     ",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "CREATE INDEX",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "index_name               |          table_name          | indisvalid | indisready |                                     ",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-28",
+      "type": "DROP_POLICY",
+      "target_object": "Drop Policy: \"Assigned technicians or admins can update part request ETA\" on public.service_centre_part_requests",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "count \n-------\n     1\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "DROP POLICY",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "count \n-------\n     1\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-29",
+      "type": "DROP_POLICY",
+      "target_object": "Drop Policy: \"Technicians can update ETA on assigned repair part requests\" on public.service_centre_part_requests",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "count \n-------\n     0\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "DROP POLICY",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "count \n-------\n     0\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-30",
+      "type": "DROP_POLICY",
+      "target_object": "Drop Policy: \"Assigned technicians can update part request ETA\" on public.service_centre_part_requests",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "count \n-------\n     0\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "DROP POLICY",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "count \n-------\n     0\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-31",
+      "type": "CREATE_POLICY",
+      "target_object": "Create Policy: \"Assigned technicians or admins can update part request ETA\" on public.service_centre_part_requests",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "schemaname |          tablename           |                         policyname                         | permissive |   ",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "CREATE POLICY",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "schemaname |          tablename           |                         policyname                         | permissive |   ",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-32",
+      "type": "FUNCTION_DEFINITION",
+      "target_object": "Function: public.trg_enforce_technician_part_request_fields()",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "proname                   |  owner   | prosecdef | search_path_ok | public_revoked | anon_revoked | auth_check_ok | serv",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "CREATE FUNCTION",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "proname                   |  owner   | prosecdef | search_path_ok | public_revoked | anon_revoked | auth_check_ok | serv",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-33",
+      "type": "DROP_TRIGGER",
+      "target_object": "Drop Trigger: trg_protect_technician_part_request_fields on public.service_centre_part_requests",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "tgname                   |          table_name          | schema_name | tgenabled |                bound_function       ",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "DROP TRIGGER",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "tgname                   |          table_name          | schema_name | tgenabled |                bound_function       ",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-34",
+      "type": "CREATE_TRIGGER",
+      "target_object": "Create Trigger: trg_protect_technician_part_request_fields on public.service_centre_part_requests",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "tgname                   |          table_name          | schema_name | tgenabled |                bound_function       ",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "CREATE TRIGGER",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "tgname                   |          table_name          | schema_name | tgenabled |                bound_function       ",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-35",
+      "type": "FUNCTION_DEFINITION",
+      "target_object": "Function: public.update_service_centre_part_request_eta(uuid, timestamp with time zone, text)",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "proname                 |  owner   | prosecdef | search_path_ok | public_revoked | anon_revoked | auth_check_ok | servic",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "CREATE FUNCTION",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "proname                 |  owner   | prosecdef | search_path_ok | public_revoked | anon_revoked | auth_check_ok | servic",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-36",
+      "type": "FUNCTION_DEFINITION",
+      "target_object": "Function: public.create_quote_atomic(uuid, text, numeric, numeric, text, text, jsonb)",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "proname       |  owner   | prosecdef | search_path_ok | public_revoked | anon_revoked | auth_check_ok | service_role_gra",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "CREATE FUNCTION",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "proname       |  owner   | prosecdef | search_path_ok | public_revoked | anon_revoked | auth_check_ok | service_role_gra",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-37",
+      "type": "FUNCTION_DEFINITION",
+      "target_object": "Function: public.revise_quote_atomic(uuid, uuid, text, numeric, numeric, text, text, text, jsonb)",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "proname       |  owner   | prosecdef | search_path_ok | public_revoked | anon_revoked | auth_check_ok | service_role_gra",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "CREATE FUNCTION",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "proname       |  owner   | prosecdef | search_path_ok | public_revoked | anon_revoked | auth_check_ok | service_role_gra",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-38",
+      "type": "PERMISSION_REVOKE",
+      "target_object": "Revoke ALL on public.update_service_centre_part_request_eta(uuid, timestamp with time zone, text) from PUBLIC",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "public_revoked \n----------------\n t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "REVOKE",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "public_revoked \n----------------\n t\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-39",
+      "type": "PERMISSION_REVOKE",
+      "target_object": "Revoke EXECUTE on public.update_service_centre_part_request_eta(uuid, timestamp with time zone, text) from anon",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "anon_revoked \n--------------\n t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "REVOKE",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "anon_revoked \n--------------\n t\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-40",
+      "type": "PERMISSION_GRANT",
+      "target_object": "Grant EXECUTE on public.update_service_centre_part_request_eta(uuid, timestamp with time zone, text) to authenticated, service_role",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "auth_granted | service_role_granted \n--------------+----------------------\n t            | t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "GRANT",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "auth_granted | service_role_granted \n--------------+----------------------\n t            | t\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-41",
+      "type": "PERMISSION_REVOKE",
+      "target_object": "Revoke ALL on public.create_quote_atomic(uuid, text, numeric, numeric, text, text, jsonb) from PUBLIC",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "public_revoked \n----------------\n t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "REVOKE",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "public_revoked \n----------------\n t\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-42",
+      "type": "PERMISSION_REVOKE",
+      "target_object": "Revoke EXECUTE on public.create_quote_atomic(uuid, text, numeric, numeric, text, text, jsonb) from anon",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "anon_revoked \n--------------\n t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "REVOKE",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "anon_revoked \n--------------\n t\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-43",
+      "type": "PERMISSION_GRANT",
+      "target_object": "Grant EXECUTE on public.create_quote_atomic(uuid, text, numeric, numeric, text, text, jsonb) to authenticated, service_role",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "auth_granted | service_role_granted \n--------------+----------------------\n t            | t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "GRANT",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "auth_granted | service_role_granted \n--------------+----------------------\n t            | t\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-44",
+      "type": "PERMISSION_REVOKE",
+      "target_object": "Revoke ALL on public.revise_quote_atomic(uuid, uuid, text, numeric, numeric, text, text, text, jsonb) from PUBLIC",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "public_revoked \n----------------\n t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "REVOKE",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "public_revoked \n----------------\n t\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-45",
+      "type": "PERMISSION_REVOKE",
+      "target_object": "Revoke EXECUTE on public.revise_quote_atomic(uuid, uuid, text, numeric, numeric, text, text, text, jsonb) from anon",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "anon_revoked \n--------------\n t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "REVOKE",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "anon_revoked \n--------------\n t\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-46",
+      "type": "PERMISSION_GRANT",
+      "target_object": "Grant EXECUTE on public.revise_quote_atomic(uuid, uuid, text, numeric, numeric, text, text, text, jsonb) to authenticated, service_role",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "auth_granted | service_role_granted \n--------------+----------------------\n t            | t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "GRANT",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "auth_granted | service_role_granted \n--------------+----------------------\n t            | t\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-47",
+      "type": "PERMISSION_REVOKE",
+      "target_object": "Revoke ALL on public.trg_enforce_technician_part_request_fields() from PUBLIC",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "public_revoked \n----------------\n t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "REVOKE",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "public_revoked \n----------------\n t\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-48",
+      "type": "PERMISSION_REVOKE",
+      "target_object": "Revoke EXECUTE on public.trg_enforce_technician_part_request_fields() from anon",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "anon_revoked \n--------------\n t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "REVOKE",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "anon_revoked \n--------------\n t\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-49",
+      "type": "PERMISSION_GRANT",
+      "target_object": "Grant EXECUTE on public.trg_enforce_technician_part_request_fields() to authenticated, service_role",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "auth_granted | service_role_granted \n--------------+----------------------\n t            | t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "GRANT",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "auth_granted | service_role_granted \n--------------+----------------------\n t            | t\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-50",
+      "type": "FUNCTION_DEFINITION",
+      "target_object": "Function: public.notify_admin_on_technician_registration()",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "proname                 |  owner   | prosecdef | search_path_ok | public_revoked | anon_revoked | auth_check_ok | servic",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "CREATE FUNCTION",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "proname                 |  owner   | prosecdef | search_path_ok | public_revoked | anon_revoked | auth_check_ok | servic",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-51",
+      "type": "DROP_TRIGGER",
+      "target_object": "Drop Trigger: trg_notify_admin_on_technician_registration on public.technician_profiles",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "tgname                    |     table_name      | schema_name | tgenabled |              bound_function               | ",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "DROP TRIGGER",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "tgname                    |     table_name      | schema_name | tgenabled |              bound_function               | ",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-52",
+      "type": "CREATE_TRIGGER",
+      "target_object": "Create Trigger: trg_notify_admin_on_technician_registration on public.technician_profiles",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "tgname                    |     table_name      | schema_name | tgenabled |              bound_function               | ",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "CREATE TRIGGER",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "tgname                    |     table_name      | schema_name | tgenabled |              bound_function               | ",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-53",
+      "type": "PERMISSION_REVOKE",
+      "target_object": "Revoke ALL on public.notify_admin_on_technician_registration() from PUBLIC",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "public_revoked \n----------------\n t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "REVOKE",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "public_revoked \n----------------\n t\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-54",
+      "type": "PERMISSION_REVOKE",
+      "target_object": "Revoke EXECUTE on public.notify_admin_on_technician_registration() from anon",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "anon_revoked \n--------------\n t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "REVOKE",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "anon_revoked \n--------------\n t\n(1 row)",
+        "error": null
+      }
+    },
+    {
+      "unit_id": "REQ-55",
+      "type": "PERMISSION_GRANT",
+      "target_object": "Grant EXECUTE on public.notify_admin_on_technician_registration() to authenticated, service_role",
+      "source_line_range": null,
+      "phase1_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "auth_granted | service_role_granted \n--------------+----------------------\n t            | t\n(1 row)",
+        "error": null
+      },
+      "phase2_rerun_idempotency": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "GRANT",
+        "error": null
+      },
+      "phase3_post_rerun_verification": {
+        "return_code": 0,
+        "status": "PASS",
+        "output_preview": "auth_granted | service_role_granted \n--------------+----------------------\n t            | t\n(1 row)",
+        "error": null
+      }
+    }
+  ]
+}

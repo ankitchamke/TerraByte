@@ -1,0 +1,26 @@
+[
+  {
+    "test_id": "STANDALONE_SET_LOCK_TIMEOUT",
+    "description": "Standalone SET lock_timeout at session level",
+    "sql": "SET lock_timeout = '3s'; SHOW lock_timeout;",
+    "return_code": 0,
+    "stdout": "SET\n lock_timeout \n--------------\n 3s\n(1 row)\n\n",
+    "stderr": ""
+  },
+  {
+    "test_id": "SET_LOCAL_OUTSIDE_TRANSACTION",
+    "description": "SET LOCAL outside a transaction block (PostgreSQL behavior)",
+    "sql": "SET LOCAL lock_timeout = '3s'; SHOW lock_timeout;",
+    "return_code": 0,
+    "stdout": "SET\n lock_timeout \n--------------\n 3s\n(1 row)\n\n",
+    "stderr": ""
+  },
+  {
+    "test_id": "TRANSACTION_SET_LOCAL_WRAPPER",
+    "description": "Wrapped transaction with BEGIN; SET LOCAL lock_timeout = '3s'; COMMIT;",
+    "sql": "BEGIN; SET LOCAL lock_timeout = '3s'; SHOW lock_timeout; COMMIT; SHOW lock_timeout;",
+    "return_code": 0,
+    "stdout": "BEGIN\nSET\n lock_timeout \n--------------\n 3s\n(1 row)\n\nCOMMIT\n lock_timeout \n--------------\n 0\n(1 row)\n\n",
+    "stderr": ""
+  }
+]

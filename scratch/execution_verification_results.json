@@ -1,0 +1,283 @@
+{
+  "run1_success": 55,
+  "run1_fail": 0,
+  "run2_success": 55,
+  "run2_fail": 0,
+  "details": [
+    {
+      "unit_id": "REQ-01",
+      "rc": 0,
+      "error": "psql:D:/Projects/TerraByte/scratch/temp_stmt.sql:2: NOTICE:  relation \"idx_sc_sales_sold_at\" already exists, skipping"
+    },
+    {
+      "unit_id": "REQ-02",
+      "rc": 0,
+      "error": "psql:D:/Projects/TerraByte/scratch/temp_stmt.sql:2: NOTICE:  relation \"idx_sc_stock_audit_movement\" already exists, skipping"
+    },
+    {
+      "unit_id": "REQ-03",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-04",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-05",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-06",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-07",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-08",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-09",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-10",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-11",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-12",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-13",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-14",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-15",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-16",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-17",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-18",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-19",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-20",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-21",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-22",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-23",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-24",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-25",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-26",
+      "rc": 0,
+      "error": "psql:D:/Projects/TerraByte/scratch/temp_stmt.sql:4: NOTICE:  column \"estimated_arrival_at\" of relation \"service_centre_part_requests\" already exists, skipping\npsql:D:/Projects/TerraByte/scratch/temp_stmt.sql:4: NOTICE:  column \"eta_updated_by\" of relation \"service_centre_part_requests\" already exists, skipping\npsql:D:/Projects/TerraByte/scratch/temp_stmt.sql:4: NOTICE:  column \"eta_updated_at\" of relation \"service_centre_part_requests\" already exists, skipping"
+    },
+    {
+      "unit_id": "REQ-27",
+      "rc": 0,
+      "error": "psql:D:/Projects/TerraByte/scratch/temp_stmt.sql:2: NOTICE:  relation \"idx_sc_part_requests_estimated_arrival\" already exists, skipping"
+    },
+    {
+      "unit_id": "REQ-28",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-29",
+      "rc": 0,
+      "error": "psql:D:/Projects/TerraByte/scratch/temp_stmt.sql:1: NOTICE:  policy \"Technicians can update ETA on assigned repair part requests\" for relation \"public.service_centre_part_requests\" does not exist, skipping"
+    },
+    {
+      "unit_id": "REQ-30",
+      "rc": 0,
+      "error": "psql:D:/Projects/TerraByte/scratch/temp_stmt.sql:1: NOTICE:  policy \"Assigned technicians can update part request ETA\" for relation \"public.service_centre_part_requests\" does not exist, skipping"
+    },
+    {
+      "unit_id": "REQ-31",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-32",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-33",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-34",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-35",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-36",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-37",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-38",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-39",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-40",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-41",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-42",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-43",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-44",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-45",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-46",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-47",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-48",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-49",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-50",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-51",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-52",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-53",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-54",
+      "rc": 0,
+      "error": ""
+    },
+    {
+      "unit_id": "REQ-55",
+      "rc": 0,
+      "error": ""
+    }
+  ]
+}

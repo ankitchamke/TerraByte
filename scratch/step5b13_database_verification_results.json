@@ -1,0 +1,145 @@
+{
+  "timestamp": "2026-11-04T07:12:20.899075+00:00",
+  "migrations": {
+    "A": {
+      "file": "supabase/migrations/20261104110000_complete_phase9_parts_desk_rpcs.sql",
+      "sha256": "b32f3c80971113360adb86d1b096f1f8bdeb38fb87743ce24a038ba83f4b72e8"
+    },
+    "B": {
+      "file": "supabase/migrations/20261104120000_complete_phase9_realtime_and_eta.sql",
+      "sha256": "1e583e78af77a4b6e0becb239e6ecc4de9c46148091a7b2481ef8c60d0ede97f"
+    },
+    "C": {
+      "file": "supabase/migrations/20261104130000_complete_phase5_3_technician_registration_notification.sql",
+      "sha256": "33fae47f83203dab53686e67ba57f8002617224d9a61de80f25aef06298de579"
+    }
+  },
+  "test_1_clean_install": {
+    "starting_state": {
+      "public_tables": 16,
+      "public_functions": 14,
+      "data_rows": 0
+    },
+    "pass_1": [
+      {
+        "migration": "A",
+        "status": "SUCCESS",
+        "duration_ms": 59.68,
+        "rc": 0,
+        "error": ""
+      },
+      {
+        "migration": "B",
+        "status": "SUCCESS",
+        "duration_ms": 86.27,
+        "rc": 0,
+        "error": "psql:supabase/migrations/20261104120000_complete_phase9_realtime_and_eta.sql:58: WARNING:  \"wal_level\" is insufficient to publish logical changes\nHINT:  Set \"wal_level\" to \"logical\" before creating su"
+      },
+      {
+        "migration": "C",
+        "status": "SUCCESS",
+        "duration_ms": 52.1,
+        "rc": 0,
+        "error": "psql:supabase/migrations/20261104130000_complete_phase5_3_technician_registration_notification.sql:65: NOTICE:  trigger \"trg_notify_admin_on_technician_registration\" for relation \"public.technician_pr"
+      }
+    ],
+    "pass_2_idempotency": [
+      {
+        "migration": "A",
+        "status": "SUCCESS",
+        "duration_ms": 53.99,
+        "rc": 0,
+        "error": "psql:supabase/migrations/20261104110000_complete_phase9_parts_desk_rpcs.sql:12: NOTICE:  relation \"idx_sc_sales_sold_at\" already exists, skipping\npsql:supabase/migrations/20261104110000_complete_phase"
+      },
+      {
+        "migration": "B",
+        "status": "SUCCESS",
+        "duration_ms": 69.28,
+        "rc": 0,
+        "error": "psql:supabase/migrations/20261104120000_complete_phase9_realtime_and_eta.sql:71: NOTICE:  column \"estimated_arrival_at\" of relation \"service_centre_part_requests\" already exists, skipping\npsql:supabas"
+      },
+      {
+        "migration": "C",
+        "status": "SUCCESS",
+        "duration_ms": 47.01,
+        "rc": 0,
+        "error": ""
+      }
+    ],
+    "verification": {
+      "forward_indexes_valid": 3,
+      "forward_triggers_active": 2,
+      "forward_rpcs_valid": 8,
+      "realtime_tables": 5,
+      "verdict": "VERIFIED"
+    }
+  },
+  "test_2_upgrade_path": {
+    "pre_upgrade_state": {
+      "profiles_count": 3,
+      "parts_count": 5,
+      "equipment_count": 3,
+      "repairs_count": 0,
+      "tables_count": 16
+    },
+    "pass_1": [
+      {
+        "migration": "A",
+        "status": "SUCCESS",
+        "duration_ms": 61.65,
+        "rc": 0,
+        "error": ""
+      },
+      {
+        "migration": "B",
+        "status": "SUCCESS",
+        "duration_ms": 86.79,
+        "rc": 0,
+        "error": "psql:supabase/migrations/20261104120000_complete_phase9_realtime_and_eta.sql:58: WARNING:  \"wal_level\" is insufficient to publish logical changes\nHINT:  Set \"wal_level\" to \"logical\" before creating su"
+      },
+      {
+        "migration": "C",
+        "status": "SUCCESS",
+        "duration_ms": 52.85,
+        "rc": 0,
+        "error": "psql:supabase/migrations/20261104130000_complete_phase5_3_technician_registration_notification.sql:65: NOTICE:  trigger \"trg_notify_admin_on_technician_registration\" for relation \"public.technician_pr"
+      }
+    ],
+    "pass_2_idempotency": [
+      {
+        "migration": "A",
+        "status": "SUCCESS",
+        "duration_ms": 54.03,
+        "rc": 0,
+        "error": "psql:supabase/migrations/20261104110000_complete_phase9_parts_desk_rpcs.sql:12: NOTICE:  relation \"idx_sc_sales_sold_at\" already exists, skipping\npsql:supabase/migrations/20261104110000_complete_phase"
+      },
+      {
+        "migration": "B",
+        "status": "SUCCESS",
+        "duration_ms": 70.4,
+        "rc": 0,
+        "error": "psql:supabase/migrations/20261104120000_complete_phase9_realtime_and_eta.sql:71: NOTICE:  column \"estimated_arrival_at\" of relation \"service_centre_part_requests\" already exists, skipping\npsql:supabas"
+      },
+      {
+        "migration": "C",
+        "status": "SUCCESS",
+        "duration_ms": 47.4,
+        "rc": 0,
+        "error": ""
+      }
+    ],
+    "verification": {
+      "data_preserved": true,
+      "forward_indexes_valid": 3,
+      "forward_triggers_active": 2,
+      "forward_rpcs_valid": 8,
+      "realtime_tables": 5,
+      "verdict": "VERIFIED"
+    },
+    "phase_11_exclusion": {
+      "repair_visual_diagnostics_table": 0,
+      "claim_repair_visual_diagnostic_rpc": 0,
+      "is_strictly_excluded": true
+    }
+  }
+}

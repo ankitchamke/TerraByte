@@ -1,0 +1,267 @@
+{
+  "file": "D:\\TerraByte_Backups\\production_backup_20261103_151328\\terabyte_public_schema.sql",
+  "size_bytes": 131525,
+  "lines_count": 3339,
+  "data_statements_count": 12,
+  "data_statements": [
+    [
+      223,
+      "INSERT INTO public.quotes ("
+    ],
+    [
+      253,
+      "INSERT INTO public.quote_items ("
+    ],
+    [
+      280,
+      "INSERT INTO public.repair_timeline ("
+    ],
+    [
+      289,
+      "INSERT INTO public.notifications ("
+    ],
+    [
+      614,
+      "INSERT INTO public.profiles ("
+    ],
+    [
+      638,
+      "INSERT INTO public.technician_profiles ("
+    ],
+    [
+      897,
+      "INSERT INTO public.service_centre_parts ("
+    ],
+    [
+      938,
+      "INSERT INTO public.equipment ("
+    ],
+    [
+      1063,
+      "INSERT INTO public.quotes ("
+    ],
+    [
+      1087,
+      "INSERT INTO public.quote_items ("
+    ],
+    [
+      1112,
+      "INSERT INTO public.repair_timeline ("
+    ],
+    [
+      1124,
+      "INSERT INTO public.notifications ("
+    ]
+  ],
+  "pii_audit": {
+    "emails": [
+      [
+        765,
+        "farmer.nagpur@terrabyte.demo"
+      ],
+      [
+        766,
+        "tech.nagpur@terrabyte.demo"
+      ],
+      [
+        767,
+        "admin.nagpur@terrabyte.demo"
+      ]
+    ],
+    "phones": [],
+    "bcrypt_hashes": [],
+    "jwts": []
+  },
+  "project_refs_audit": {
+    "production_refs": [],
+    "staging_refs": [],
+    "supabase_urls": []
+  },
+  "object_inventory": {
+    "tables_count": 16,
+    "tables": [
+      "equipment",
+      "notifications",
+      "profiles",
+      "quote_items",
+      "quotes",
+      "repair_dispatch_locations",
+      "repair_messages",
+      "repair_notes",
+      "repair_requests",
+      "repair_timeline",
+      "service_centre_part_requests",
+      "service_centre_part_sales",
+      "service_centre_parts",
+      "service_centre_stock_audit",
+      "service_history",
+      "technician_profiles"
+    ],
+    "enums_count": 5,
+    "enums": [
+      "equipment_status",
+      "equipment_type",
+      "quote_status",
+      "repair_status",
+      "user_role"
+    ],
+    "triggers_count": 0,
+    "policies_count": 49,
+    "grants_count": 0,
+    "ownerships_count": 0
+  },
+  "functions_count": 14,
+  "functions": [
+    {
+      "name": "public.check_table_rls",
+      "args": "",
+      "returns": "TABLE(\"table_name\" \"text\", \"rls_enabled\" boolean, \"policy_count\" bigint)",
+      "is_security_definer": true,
+      "has_search_path": false,
+      "search_path": "NONE",
+      "has_auth_uid": false,
+      "has_auth_jwt": false
+    },
+    {
+      "name": "public.create_quote_atomic",
+      "args": "\"p_repair_request_id\" \"uuid\", \"p_labour_description\" \"text\", \"p_labour_amount\" numeric, \"p_tax_percent\" numeric, \"p_estimated_completion\" \"text\", \"p_warranty_terms\" \"text\", \"p_items\" \"jsonb\"",
+      "returns": "\"jsonb\"",
+      "is_security_definer": true,
+      "has_search_path": true,
+      "search_path": "NONE",
+      "has_auth_uid": true,
+      "has_auth_jwt": false
+    },
+    {
+      "name": "public.current_clerk_id",
+      "args": "",
+      "returns": "\"text\"",
+      "is_security_definer": true,
+      "has_search_path": false,
+      "search_path": "NONE",
+      "has_auth_uid": false,
+      "has_auth_jwt": true
+    },
+    {
+      "name": "public.current_profile_id",
+      "args": "",
+      "returns": "\"uuid\"",
+      "is_security_definer": true,
+      "has_search_path": true,
+      "search_path": "NONE",
+      "has_auth_uid": true,
+      "has_auth_jwt": true
+    },
+    {
+      "name": "public.current_user_role",
+      "args": "",
+      "returns": "\"public\".\"user_role\"",
+      "is_security_definer": true,
+      "has_search_path": true,
+      "search_path": "NONE",
+      "has_auth_uid": true,
+      "has_auth_jwt": true
+    },
+    {
+      "name": "public.delete_user_account",
+      "args": "",
+      "returns": "\"jsonb\"",
+      "is_security_definer": true,
+      "has_search_path": true,
+      "search_path": "NONE",
+      "has_auth_uid": true,
+      "has_auth_jwt": false
+    },
+    {
+      "name": "public.get_storage_buckets",
+      "args": "",
+      "returns": "TABLE(\"id\" \"text\", \"name\" \"text\", \"public\" boolean, \"file_size_limit\" bigint)",
+      "is_security_definer": true,
+      "has_search_path": false,
+      "search_path": "NONE",
+      "has_auth_uid": false,
+      "has_auth_jwt": false
+    },
+    {
+      "name": "public.guard_repair_messages_update",
+      "args": "",
+      "returns": "\"trigger\"",
+      "is_security_definer": true,
+      "has_search_path": true,
+      "search_path": "NONE",
+      "has_auth_uid": false,
+      "has_auth_jwt": false
+    },
+    {
+      "name": "public.handle_new_user",
+      "args": "",
+      "returns": "\"trigger\"",
+      "is_security_definer": true,
+      "has_search_path": true,
+      "search_path": "NONE",
+      "has_auth_uid": false,
+      "has_auth_jwt": false
+    },
+    {
+      "name": "public.protect_profile_role",
+      "args": "",
+      "returns": "\"trigger\"",
+      "is_security_definer": true,
+      "has_search_path": true,
+      "search_path": "NONE",
+      "has_auth_uid": false,
+      "has_auth_jwt": false
+    },
+    {
+      "name": "public.protect_technician_verification",
+      "args": "",
+      "returns": "\"trigger\"",
+      "is_security_definer": true,
+      "has_search_path": true,
+      "search_path": "NONE",
+      "has_auth_uid": false,
+      "has_auth_jwt": false
+    },
+    {
+      "name": "public.reset_demo_data",
+      "args": "",
+      "returns": "\"jsonb\"",
+      "is_security_definer": true,
+      "has_search_path": true,
+      "search_path": "NONE",
+      "has_auth_uid": true,
+      "has_auth_jwt": false
+    },
+    {
+      "name": "public.revise_quote_atomic",
+      "args": "\"p_previous_quote_id\" \"uuid\", \"p_repair_request_id\" \"uuid\", \"p_labour_description\" \"text\", \"p_labour_amount\" numeric, \"p_tax_percent\" numeric, \"p_estimated_completion\" \"text\", \"p_warranty_terms\" \"text\", \"p_technician_explanation\" \"text\", \"p_items\" \"jsonb\"",
+      "returns": "\"jsonb\"",
+      "is_security_definer": true,
+      "has_search_path": true,
+      "search_path": "NONE",
+      "has_auth_uid": true,
+      "has_auth_jwt": false
+    },
+    {
+      "name": "public.set_current_timestamp_updated_at",
+      "args": "",
+      "returns": "\"trigger\"",
+      "is_security_definer": false,
+      "has_search_path": false,
+      "search_path": "NONE",
+      "has_auth_uid": false,
+      "has_auth_jwt": false
+    }
+  ],
+  "dependencies": {
+    "auth_schema_objects": [
+      "jwt",
+      "uid",
+      "users"
+    ],
+    "storage_schema_objects": [
+      "buckets"
+    ],
+    "extensions": []
+  }
+}

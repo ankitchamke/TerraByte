@@ -1,0 +1,16 @@
+{
+  "timestamp": "2026-11-04T06:58:27.133103+00:00",
+  "dump_duration_ms": 521.1,
+  "dump_size_bytes": 471773,
+  "dump_size_kb": 460.72,
+  "sha256": "9b9442b3ac7d9982d1786818c640e666af9a7926d1787a555d801a31308b1864",
+  "restore_duration_ms": 716.4,
+  "restore_return_code": 0,
+  "verified_objects": {
+    "public_tables": 16,
+    "public_functions": 22,
+    "forward_triggers": 0,
+    "parts_rows": 60,
+    "profiles_rows": 47
+  }
+}

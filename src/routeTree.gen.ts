@@ -20,6 +20,7 @@ import { Route as ServiceCentreRouteImport } from './routes/service-centre'
 import { Route as TechnicianRouteImport } from './routes/technician'
 import { Route as Char91DotwellKnownChar93OauthProtectedResourceRouteImport } from './routes/[.well-known]/oauth-protected-resource'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
+import { Route as AdminFacilitiesRouteImport } from './routes/admin/facilities'
 import { Route as AdminPartsDeskRouteImport } from './routes/admin/parts-desk'
 import { Route as AdminTechniciansRouteImport } from './routes/admin/technicians'
 import { Route as ApiAssessVisualDefectRouteImport } from './routes/api/assess-visual-defect'
@@ -93,6 +94,11 @@ const Char91DotwellKnownChar93OauthProtectedResourceRoute =
 const AdminIndexRoute = AdminIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminFacilitiesRoute = AdminFacilitiesRouteImport.update({
+  id: '/facilities',
+  path: '/facilities',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminPartsDeskRoute = AdminPartsDeskRouteImport.update({
@@ -197,6 +203,7 @@ export interface FileRoutesByFullPath {
   '/service-centre': typeof ServiceCentreRoute
   '/technician': typeof TechnicianRouteWithChildren
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/admin/facilities': typeof AdminFacilitiesRoute
   '/admin/parts-desk': typeof AdminPartsDeskRoute
   '/admin/technicians': typeof AdminTechniciansRoute
   '/api/assess-visual-defect': typeof ApiAssessVisualDefectRoute
@@ -225,6 +232,7 @@ export interface FileRoutesByTo {
   '/profile': typeof ProfileRoute
   '/service-centre': typeof ServiceCentreRoute
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/admin/facilities': typeof AdminFacilitiesRoute
   '/admin/parts-desk': typeof AdminPartsDeskRoute
   '/admin/technicians': typeof AdminTechniciansRoute
   '/api/assess-visual-defect': typeof ApiAssessVisualDefectRoute
@@ -257,6 +265,7 @@ export interface FileRoutesById {
   '/service-centre': typeof ServiceCentreRoute
   '/technician': typeof TechnicianRouteWithChildren
   '/.well-known/oauth-protected-resource': typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
+  '/admin/facilities': typeof AdminFacilitiesRoute
   '/admin/parts-desk': typeof AdminPartsDeskRoute
   '/admin/technicians': typeof AdminTechniciansRoute
   '/api/assess-visual-defect': typeof ApiAssessVisualDefectRoute
@@ -290,6 +299,7 @@ export interface FileRouteTypes {
     | '/service-centre'
     | '/technician'
     | '/.well-known/oauth-protected-resource'
+    | '/admin/facilities'
     | '/admin/parts-desk'
     | '/admin/technicians'
     | '/api/assess-visual-defect'
@@ -318,6 +328,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/service-centre'
     | '/.well-known/oauth-protected-resource'
+    | '/admin/facilities'
     | '/admin/parts-desk'
     | '/admin/technicians'
     | '/api/assess-visual-defect'
@@ -349,6 +360,7 @@ export interface FileRouteTypes {
     | '/service-centre'
     | '/technician'
     | '/.well-known/oauth-protected-resource'
+    | '/admin/facilities'
     | '/admin/parts-desk'
     | '/admin/technicians'
     | '/api/assess-visual-defect'
@@ -467,6 +479,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/admin/'
       preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/facilities': {
+      id: '/admin/facilities'
+      path: '/facilities'
+      fullPath: '/admin/facilities'
+      preLoaderRoute: typeof AdminFacilitiesRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/parts-desk': {
@@ -599,6 +618,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AdminRouteChildren {
+  AdminFacilitiesRoute: typeof AdminFacilitiesRoute
   AdminPartsDeskRoute: typeof AdminPartsDeskRoute
   AdminTechniciansRoute: typeof AdminTechniciansRoute
   AdminIndexRoute: typeof AdminIndexRoute
@@ -606,6 +626,7 @@ interface AdminRouteChildren {
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
+  AdminFacilitiesRoute: AdminFacilitiesRoute,
   AdminPartsDeskRoute: AdminPartsDeskRoute,
   AdminTechniciansRoute: AdminTechniciansRoute,
   AdminIndexRoute: AdminIndexRoute,

@@ -235,10 +235,12 @@ DECLARE
   v_current_owner_id UUID;
 BEGIN
   -- 1. Prevent direct DELETE of an OWNER membership while the facility exists
-  IF TG_OP = 'DELETE' AND OLD.role = 'OWNER' THEN
-    IF EXISTS (SELECT 1 FROM public.repair_facilities WHERE id = OLD.facility_id) THEN
-      RAISE EXCEPTION 'CANNOT_DELETE_FACILITY_OWNER: Facility owner membership cannot be deleted while facility exists. Transfer ownership first.'
-        USING ERRCODE = '23503';
+  IF TG_OP = 'DELETE' THEN
+    IF OLD.role = 'OWNER' THEN
+      IF EXISTS (SELECT 1 FROM public.repair_facilities WHERE id = OLD.facility_id) THEN
+        RAISE EXCEPTION 'CANNOT_DELETE_FACILITY_OWNER: Facility owner membership cannot be deleted while facility exists. Transfer ownership first.'
+          USING ERRCODE = '23503';
+      END IF;
     END IF;
     RETURN OLD;
   END IF;
@@ -889,6 +891,69 @@ $$;
 
 REVOKE ALL ON FUNCTION public.revoke_facility_invitation(UUID) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.revoke_facility_invitation(UUID) TO authenticated;
+
+-- 5b. remove_facility_member
+CREATE OR REPLACE FUNCTION public.remove_facility_member(
+  p_facility_id UUID,
+  p_technician_profile_id UUID
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  v_caller_profile_id UUID := public.current_profile_id();
+  v_caller_role_text TEXT := public.current_user_role()::text;
+  v_target_role TEXT;
+  v_caller_fac_role TEXT;
+  v_is_authorized BOOLEAN := FALSE;
+BEGIN
+  -- 1. Look up target membership
+  SELECT role INTO v_target_role
+  FROM public.facility_memberships
+  WHERE facility_id = p_facility_id
+    AND technician_profile_id = p_technician_profile_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'NOT_FOUND: Technician is not a member of this facility.' USING ERRCODE = '02000';
+  END IF;
+
+  IF v_target_role = 'OWNER' THEN
+    RAISE EXCEPTION 'CANNOT_REMOVE_OWNER: Cannot remove facility owner. Transfer ownership first.' USING ERRCODE = '42501';
+  END IF;
+
+  -- 2. Authorization
+  IF v_caller_role_text IN ('admin', 'service_centre') THEN
+    v_is_authorized := TRUE;
+  ELSE
+    SELECT role INTO v_caller_fac_role
+    FROM public.facility_memberships
+    WHERE facility_id = p_facility_id
+      AND technician_profile_id = v_caller_profile_id
+      AND status = 'ACTIVE';
+
+    IF v_caller_fac_role = 'OWNER' THEN
+      v_is_authorized := TRUE;
+    ELSIF v_caller_fac_role = 'MANAGER' AND v_target_role = 'TECHNICIAN' THEN
+      v_is_authorized := TRUE;
+    END IF;
+  END IF;
+
+  IF NOT v_is_authorized THEN
+    RAISE EXCEPTION 'UNAUTHORIZED: Insufficient permissions to remove this facility member.' USING ERRCODE = '42501';
+  END IF;
+
+  DELETE FROM public.facility_memberships
+  WHERE facility_id = p_facility_id
+    AND technician_profile_id = p_technician_profile_id;
+
+  RETURN pg_catalog.jsonb_build_object('success', true, 'action', 'REMOVED');
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.remove_facility_member(UUID, UUID) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.remove_facility_member(UUID, UUID) TO authenticated;
 
 -- 6. get_facility_handover_location
 CREATE OR REPLACE FUNCTION public.get_facility_handover_location(
@@ -1944,12 +2009,14 @@ GRANT EXECUTE ON FUNCTION public.confirm_farmer_equipment_collection(UUID) TO au
 -- A. public.repair_facilities DAC & RLS
 ALTER TABLE public.repair_facilities ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE public.repair_facilities FROM anon, PUBLIC;
-REVOKE SELECT ON TABLE public.repair_facilities FROM authenticated;
+REVOKE ALL ON TABLE public.repair_facilities FROM anon, authenticated, PUBLIC;
 
 -- Grant column-level SELECT strictly on safe coarse attributes
 GRANT SELECT (id, name, village, tahsil, operating_hours, drop_off_approved, is_active, created_at, updated_at)
   ON TABLE public.repair_facilities TO authenticated;
+
+-- Grant INSERT and UPDATE to authenticated roles (strictly enforced by RLS policies and trigger guards)
+GRANT INSERT, UPDATE ON TABLE public.repair_facilities TO authenticated;
 
 GRANT ALL ON TABLE public.repair_facilities TO service_role;
 
@@ -1997,8 +2064,9 @@ CREATE POLICY "repair_facilities_update_policy"
 -- B. public.facility_memberships DAC & RLS
 ALTER TABLE public.facility_memberships ENABLE ROW LEVEL SECURITY;
 
-REVOKE ALL ON TABLE public.facility_memberships FROM anon, PUBLIC;
-GRANT SELECT ON TABLE public.facility_memberships TO authenticated, service_role;
+REVOKE ALL ON TABLE public.facility_memberships FROM anon, authenticated, PUBLIC;
+GRANT SELECT, UPDATE, DELETE ON TABLE public.facility_memberships TO authenticated;
+GRANT ALL ON TABLE public.facility_memberships TO service_role;
 
 -- Helper routine to evaluate active facility membership without recursive RLS query rewriter expansion
 CREATE OR REPLACE FUNCTION public.is_active_facility_member(
@@ -2029,6 +2097,32 @@ CREATE POLICY "facility_memberships_select_policy"
     technician_profile_id = public.current_profile_id()
     OR public.current_user_role()::text IN ('admin', 'service_centre')
     OR public.is_active_facility_member(facility_id)
+  );
+
+DROP POLICY IF EXISTS "facility_memberships_delete_policy" ON public.facility_memberships;
+CREATE POLICY "facility_memberships_delete_policy"
+  ON public.facility_memberships FOR DELETE
+  TO authenticated
+  USING (
+    technician_profile_id = public.current_profile_id()
+    OR public.current_user_role()::text IN ('admin', 'service_centre')
+    OR EXISTS (
+      SELECT 1 FROM public.facility_memberships m
+      WHERE m.facility_id = facility_memberships.facility_id
+        AND m.technician_profile_id = public.current_profile_id()
+        AND m.role = 'OWNER'
+        AND m.status = 'ACTIVE'
+    )
+    OR (
+      facility_memberships.role = 'TECHNICIAN'
+      AND EXISTS (
+        SELECT 1 FROM public.facility_memberships m
+        WHERE m.facility_id = facility_memberships.facility_id
+          AND m.technician_profile_id = public.current_profile_id()
+          AND m.role = 'MANAGER'
+          AND m.status = 'ACTIVE'
+      )
+    )
   );
 
 -- C. public.technician_reviews DAC & RLS

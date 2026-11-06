@@ -763,6 +763,125 @@ export type Database = {
           },
         ];
       };
+      repair_facilities: {
+        Row: {
+          id: string;
+          name: string;
+          owner_profile_id: string;
+          phone: string;
+          email: string | null;
+          address: string;
+          village: string;
+          tahsil: string;
+          latitude: number;
+          longitude: number;
+          max_equipment_capacity: number;
+          drop_off_approved: boolean;
+          drop_off_approved_at: string | null;
+          drop_off_approved_by: string | null;
+          is_active: boolean;
+          operating_hours: Json;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          owner_profile_id: string;
+          phone: string;
+          email?: string | null;
+          address: string;
+          village: string;
+          tahsil: string;
+          latitude: number;
+          longitude: number;
+          max_equipment_capacity?: number;
+          drop_off_approved?: boolean;
+          drop_off_approved_at?: string | null;
+          drop_off_approved_by?: string | null;
+          is_active?: boolean;
+          operating_hours?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          owner_profile_id?: string;
+          phone?: string;
+          email?: string | null;
+          address?: string;
+          village?: string;
+          tahsil?: string;
+          latitude?: number;
+          longitude?: number;
+          max_equipment_capacity?: number;
+          drop_off_approved?: boolean;
+          drop_off_approved_at?: string | null;
+          drop_off_approved_by?: string | null;
+          is_active?: boolean;
+          operating_hours?: Json;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "repair_facilities_owner_profile_id_fkey";
+            columns: ["owner_profile_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      facility_memberships: {
+        Row: {
+          id: string;
+          facility_id: string;
+          technician_profile_id: string;
+          role: "OWNER" | "MANAGER" | "TECHNICIAN";
+          status: "ACTIVE" | "INVITED" | "SUSPENDED" | "RESIGNED";
+          joined_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          facility_id: string;
+          technician_profile_id: string;
+          role?: "OWNER" | "MANAGER" | "TECHNICIAN";
+          status?: "ACTIVE" | "INVITED" | "SUSPENDED" | "RESIGNED";
+          joined_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          facility_id?: string;
+          technician_profile_id?: string;
+          role?: "OWNER" | "MANAGER" | "TECHNICIAN";
+          status?: "ACTIVE" | "INVITED" | "SUSPENDED" | "RESIGNED";
+          joined_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "facility_memberships_facility_id_fkey";
+            columns: ["facility_id"];
+            isOneToOne: false;
+            referencedRelation: "repair_facilities";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "facility_memberships_technician_profile_id_fkey";
+            columns: ["technician_profile_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       service_centre_parts: {
         Row: {
           category: string;
@@ -1236,6 +1355,58 @@ export type Database = {
       get_technician_private_profile: {
         Args: {
           p_technician_profile_id: string;
+        };
+        Returns: Json;
+      };
+      transfer_facility_ownership: {
+        Args: {
+          p_facility_id: string;
+          p_new_owner_profile_id: string;
+        };
+        Returns: Json;
+      };
+      invite_technician_to_facility: {
+        Args: {
+          p_facility_id: string;
+          p_technician_phone: string;
+          p_role: string;
+        };
+        Returns: Json;
+      };
+      accept_facility_invitation: {
+        Args: {
+          p_membership_id: string;
+        };
+        Returns: Json;
+      };
+      reject_facility_invitation: {
+        Args: {
+          p_membership_id: string;
+        };
+        Returns: Json;
+      };
+      revoke_facility_invitation: {
+        Args: {
+          p_membership_id: string;
+        };
+        Returns: Json;
+      };
+      remove_facility_member: {
+        Args: {
+          p_facility_id: string;
+          p_technician_profile_id: string;
+        };
+        Returns: Json;
+      };
+      get_facility_management_profile: {
+        Args: {
+          p_facility_id: string;
+        };
+        Returns: Json;
+      };
+      get_facility_handover_location: {
+        Args: {
+          p_repair_request_id: string;
         };
         Returns: Json;
       };

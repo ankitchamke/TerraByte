@@ -48,8 +48,8 @@
   --color-info: var(--info);
   --color-soil: var(--soil);
   --color-soil-foreground: var(--soil-foreground);
-  --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui;
-  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui;
+  --font-display: "Bricolage Grotesque", "Noto Sans Devanagari", ui-sans-serif, system-ui;
+  --font-sans: "IBM Plex Sans", "Noto Sans Devanagari", ui-sans-serif, system-ui;
   --font-mono: "IBM Plex Mono", ui-monospace, monospace;
   --color-border: var(--border);
   --color-input: var(--input);

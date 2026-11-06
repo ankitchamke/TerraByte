@@ -29,11 +29,12 @@ The overarching design objective is to **dramatically compress the time between 
 - [x] **Phase 9.4: Dedicated Parts Notifications** — Role-specific in-app notifications for Service Centre, assigned technician, and farmer with privacy boundaries.
 - [x] **Phase 10: Profile Security Separation** — Decouple `public.profiles` from `auth.users.id`, segregating credentials in `public.profile_auth_secrets` with zero admin read access.
 - [x] **Phase 11: Visual Defect Diagnostics (Google Gemini AI)** — Multimodal tractor damage assessment via Google Gemini 3.5 Flash-Lite, bounded token claims, fail-closed consent, and fail-open submission. *(Status: COMPLETED & STAGING VERIFIED)*
-- [ ] **Phase 12: Multilingual Farmer Experience (English + Hindi + Marathi)** — Trilingual farmer interface (English, Hindi, Marathi) with Noto Sans Devanagari typography, language switcher, and Marathi/Hindi/English voice transcription preservation. *(Status: NEXT — PLANNED)*
-- [ ] **Phase 13: Technician Trust, Shared Workshops & Accountability** — Independent `repair_facilities`, workshop ownership vs technician membership separation via `facility_memberships`, in-person physical KYC, admin-verified AI skills, verified repair reviews (null defaults). *(Status: PLANNED)*
+- [x] **Phase 12: Multilingual Farmer Experience (English + Hindi + Marathi)** — Trilingual farmer interface (English, Hindi, Marathi) with Noto Sans Devanagari typography, language switcher, and Marathi/Hindi/English voice transcription preservation. *(Status: COMPLETED & STAGING VERIFIED)*
+- [ ] **Phase 13: Technician Trust, Shared Workshops & Accountability** — Independent `repair_facilities`, workshop ownership vs technician membership separation via `facility_memberships`, in-person physical KYC, admin-verified AI skills, verified repair reviews (null defaults). *(Status: NEXT — PLANNED)*
 - [ ] **Phase 14: Smart Dispatch & Emergency Response** — Workshop-based OSRM road distance & driving duration matching, strict ban on straight-line Haversine, dual delivery modes (Doorstep vs Workshop Drop-Off), Immobile machinery lock (`is_immobile = true` -> Doorstep only), bay capacity limits. *(Status: PLANNED)*
 - [ ] **Phase 15: Preventive Maintenance Intelligence & Offline Field Reliability** — Rule-based agro-climatic maintenance heuristics (Vidarbha Kharif/Rabi cycles), Service Worker caching, optimistic updates for intermittent rural cellular connectivity. *(Status: PLANNED)*
-- [ ] **Phase 16: Master System-Wide QA, E2E Verification & Release Gate** — Multi-role regression suite, load/concurrency stress testing, security audits, release checklist, zero-warning build sign-off. *(Status: PLANNED)*
+- [ ] **Phase 16: Frontend UI/UX Improvement & Product Polish** — Comprehensive frontend visual consistency, public homepage redesign and subsequent trilingual localisation (English, Hindi, Marathi), role portal polish (Farmer, Technician, Service Centre), mobile (320px–375px)/tablet/desktop responsiveness, Devanagari typography & text expansion resilience, touch targets ($\ge 44\text{px}$), accessible forms/validation, and loading/empty/error states. *(Status: PLANNED)*
+- [ ] **Phase 17: Master System-Wide QA, Production Migration & Release Gate** — Multi-role regression suite, load/concurrency stress testing, security audits, governed production database migration rehearsal and execution (`hwdrypkvszwrcraujctw`), free-tier manual backup & reverse DDL rollback procedures, release checklist, zero-warning build sign-off. *(Status: PLANNED)*
 
 ---
 
@@ -87,38 +88,38 @@ The overarching design objective is to **dramatically compress the time between 
 
 ### Phase 12: Multilingual Farmer Experience (English + Hindi + Marathi)
 **Goal**: Deliver a culturally accessible, trilingual interface tailored to Vidarbha rural operators, focusing localization strictly on the farmer-facing experience while preserving English for technician and service centre administration.  
-**Status**: **NEXT — PLANNED**  
-**Dependencies**: Phase 11 completion.
+**Status**: **COMPLETED & STAGING VERIFIED**  
+**Dependencies**: Phase 11 completion.  
+**Verification Baseline**: 171 automated tests passing (`npm test` in ~1.20s), clean production build (1.20s), 15/15 responsive viewport passes (320px–1440px across EN/HI/MR with zero horizontal overflow), 100% dictionary key parity (208 keys across en/hi/mr), canonical Whisper Large V3 voice transcription preservation, single header selector (`EN` / `हिं` / `म`), and controlled staging demo reset verified.
 
-#### Scope & Requirements:
-1. **Target Languages & Scope**:
-   - **Supported Languages**: English (`en`), Hindi (`hi`), and Marathi (`mr`).
-   - **Target Audience**: Farmer Portal (`/farmer/*`, breakdown reporting, tracking stepper, quote review, equipment fleet).
-   - **Administrative Scope**: Technician and Service Centre administration portals remain strictly in English for this release.
-   - **Historical Evolution Note**: Earlier project scoping (ADR-006) temporarily bounded web UI to English + Hindi. In alignment with confirmed Vidarbha operator demographics, Phase 12 extends full farmer UI support to Marathi (`mr`) alongside Hindi and English.
-2. **Speech-to-Text & Transcript Canonical Invariant**:
-   - Existing Groq Whisper Large V3 voice transcription service maintains automatic multi-language detection across Marathi, Hindi, and English.
-   - **Preserve Canonical Spoken Transcript**: Spoken voice input is transcribed in its native spoken language as the canonical record.
-   - **No Overwriting**: The system must never automatically overwrite original spoken transcripts with machine translations.
-3. **Free-Tier & Zero External Cost Guarantee**:
-   - Zero paid translation APIs, commercial SDKs, or external per-token localization services.
-   - Lightweight, maintainable, type-safe dictionary mapping (zero heavy runtime i18n bundle overhead).
-4. **Typography & Layout Integrity**:
-   - Configure **Noto Sans Devanagari** web font stack for proper rendering of Devanagari ligatures and conjuncts across Hindi and Marathi.
-   - Zero horizontal overflow or clipped text in Hindi or Marathi on mobile screens (verify with 320px–375px viewports).
-5. **Localization Architecture & Preference**:
-   - Lightweight, type-safe dictionary approach (zero heavy i18n runtime bundles).
-   - Language selector toggle located in Shell header and Farmer dashboard.
-   - Persist user language preference in `localStorage` and optionally in `profile.preferred_language`.
-6. **Continuous Automated Testing**:
-   - Unit tests verifying 100% dictionary key parity across `en`, `hi`, and `mr`.
-   - Responsive layout tests ensuring no broken UI components under Devanagari text expansion.
+#### Completed Deliverables:
+1. **Trilingual Localization Architecture (`en`, `hi`, `mr`)**:
+   - Zero-overhead, type-safe dictionary mapping (`src/lib/i18n/dictionaries/` for `en.ts`, `hi.ts`, `mr.ts`) with `TranslationKey` type safety.
+   - 100% dictionary key parity across 208 keys, with verified Devanagari script presence for Hindi and Marathi.
+   - Comprehensive coverage across Farmer Portal routes: `/farmer`, `/farmer/report-breakdown`, `/farmer/equipment`, `/farmer/equipment/$id`, and `/farmer/repair/$id`.
+   - Name & Identity preservation: dynamic user names, equipment brands/models, job IDs, phone numbers, and dates remain untransliterated in canonical form.
+2. **Compact Navigation Language Selector**:
+   - Single placement exclusively in the Farmer Portal top navigation header (`src/components/farmer-language-selector.tsx`). Duplicate dashboard selector removed.
+   - Compact segmented UI displaying `EN` / `हिं` / `म` with `aria-label` accessibility ("English", "Hindi", "Marathi") and zero Lucide globe icon.
+   - Client-side reactive switching without page reloads; preference persisted in `localStorage` (`terrabyte_farmer_lang`).
+3. **Typography & Layout Integrity (Noto Sans Devanagari)**:
+   - Configured `Noto Sans Devanagari` font family in CSS and HTML root for correct rendering of Devanagari ligatures and conjuncts.
+   - Responsive verification across 5 screen sizes (320px, 375px, 768px, 1024px, 1440px) confirmed zero horizontal scroll overflow across all 3 languages.
+4. **Canonical Voice Transcription Preservation**:
+   - Groq Whisper Large V3 service maintains automatic multi-language detection across Marathi, Hindi, and English without hardcoded language constraints.
+   - Spoken farmer voice descriptions appended directly to text input as canonical record, never overwritten by machine translation.
+   - Strict $0.00 Free-Tier guarantee with zero paid external translation APIs.
+5. **Reset Demo Authorization & Staging Verification**:
+   - Hardened `handleExecuteReset` in `src/components/tb.tsx` with explicit error propagation and strict `rpcResult.success` verification.
+   - Applied staging forward migration `20261106153000_phase12_staging_reset_demo_rpc_pair_auth.sql` pairing staging demo accounts (`*.staging@terrabyte.app`) with canonical UUIDs.
+   - Executed controlled staging reset exactly once, successfully restoring baseline: 3 equipment, 5 depot parts, 0 active repairs.
+   - Documented production migration safety findings: migration is staging-specific and must not be applied as-is to production (`hwdrypkvszwrcraujctw`).
 
 ---
 
 ### Phase 13: Technician Trust, Shared Workshops & Accountability
 **Goal**: Establish enterprise-grade trust, identity verification, shared facility management, and transparent reputation metrics across the technician network.  
-**Status**: **PLANNED**  
+**Status**: **NEXT — PLANNED**  
 **Dependencies**: Phase 12 completion.
 
 #### Scope & Requirements:
@@ -202,28 +203,100 @@ The overarching design objective is to **dramatically compress the time between 
 
 ---
 
-### Phase 16: Master System-Wide QA, E2E Verification & Release Gate
-**Goal**: Execute comprehensive system-wide quality assurance, multi-role end-to-end regression, security penetration checks, and release gate certification.  
+### Phase 16: Frontend UI/UX Improvement & Product Polish
+**Goal**: Deliver a comprehensive frontend visual, ergonomic, and accessibility overhaul across all TerraByte user interfaces (including public homepage, Farmer, Technician, and Service Centre), elevating the application to an aesthetically refined, highly intuitive, production-grade agricultural technology standard.  
 **Status**: **PLANNED**  
-**Dependencies**: Phases 11 through 15 completion.
+**Dependencies**: Phase 15 completion (all feature workflows stabilized).
 
 #### Scope & Requirements:
-1. **Continuous Testing Architecture (Phases 11–15 $\rightarrow$ Phase 16)**:
+1. **Public Homepage Redesign & Multilingual Implementation**:
+   - The public TerraByte homepage/landing page (`/`) is explicitly included in Phase 16 and must strictly adhere to the following sequence:
+     1. Redesign the public homepage and finalize its visual hierarchy, UX, value proposition, and persona entry points.
+     2. Implement trilingual localisation (English, Hindi, and Marathi) against the finalized redesigned interface.
+     3. Ensure all homepage content, navigation headers, action buttons, feature sections, FAQs, and user-facing messages are fully translated.
+     4. Integrate the language selector consistently with the final public design (accessible in the public navigation).
+     5. Verify responsive layouts and Devanagari typography across 320px–375px mobile, tablet, and desktop viewports.
+     6. Add automated translation key parity and language-switching tests covering the public homepage dictionary.
+   - *Phase Boundary Invariant*: Phase 12 scope remains strictly bounded to the Farmer Portal. Public homepage localisation belongs exclusively to Phase 16 after its visual redesign.
+2. **Design System & Visual Consistency**:
+   - Establish a unified visual hierarchy, high-contrast palette calibrated for outdoor sunlight readability, consistent spacing tokens, and clean typography.
+   - Refine component styling across buttons, badges, chips, dialogs, sheets, and notification toasts.
+   - Harmonize card treatments, elevation, and border radii across all portals.
+3. **Multi-Role Portal Usability & Information Architecture**:
+   - **Farmer Portal**: Streamline breakdown reporting wizard, clarify 7-step repair tracking stepper, elevate itemized quote approval cards, and enhance equipment fleet cards.
+   - **Technician Workbench**: Optimize mobile task workflow, touch-friendly checklist inputs, clear visual defect diagnostic overlays, and seamless parts requisition management.
+   - **Service Centre Operations**: Improve tabular density and readability on the dispatch board, responsive inspection modals, and clear visual indicators for parts holds and stock levels.
+4. **Responsive Viewports & Touch Usability**:
+   - Flawless mobile layouts across 320px, 375px, 414px, 768px tablet, and desktop viewports.
+   - Enforce minimum $\ge 44\text{px} \times 44\text{px}$ touch targets across all mobile buttons, action chips, and form controls for reliable field operation with gloved or rough hands.
+   - Eliminate horizontal scrollbars, text clipping, and misaligned flex/grid layouts on small viewports.
+5. **Devanagari Font Rendering & Text Expansion**:
+   - Ensure proper glyph, conjunct, and ligature rendering of Noto Sans Devanagari in both Hindi and Marathi.
+   - Accommodate 20%–40% text expansion in regional languages without layout breakage, awkward wrapping, or truncated action buttons.
+6. **UI State Polish (Loading, Empty, Error & Feedback)**:
+   - Replace generic spinners with contextual skeleton loaders matching actual card/table layouts.
+   - Design helpful, illustrated empty states with direct primary call-to-action buttons.
+   - Implement graceful error boundaries with actionable retry controls and clear non-technical explanations.
+   - Add polished micro-interactions and clear affirmative feedback on critical actions (breakdown logged, quote approved, handoff confirmed).
+7. **Continuous Automated Verification**:
+   - Automated layout regression tests verifying zero horizontal overflow at 320px/375px.
+   - Accessibility contract tests verifying WCAG 2.1 AA color contrast and tap target sizing.
+   - Translation key parity tests for public homepage dictionaries (`en`, `hi`, `mr`).
+
+---
+
+### Phase 17: Master System-Wide QA, Production Migration & Release Gate
+**Goal**: Execute comprehensive system-wide quality assurance, multi-role end-to-end regression, security penetration checks, governed production database migration (`hwdrypkvszwrcraujctw`), and release gate certification.  
+**Status**: **PLANNED**  
+**Dependencies**: Phases 11 through 16 completion.
+
+#### Scope & Requirements:
+1. **Continuous Testing Architecture (Phases 11–16 $\rightarrow$ Phase 17)**:
    - Automated unit, contract, and integration tests maintained continuously throughout every phase.
-   - Never defer testing to Phase 16 alone; each phase must enter Phase 16 with 100% green test passes.
+   - Never defer testing to Phase 17 alone; each phase must enter Phase 17 with 100% green test passes.
 2. **Master Verification Scope**:
    - **Multi-Role End-to-End Scenarios**:
      - Scenario 1: Farmer reports breakdown $\rightarrow$ Gemini visual assessment $\rightarrow$ OSRM matching $\rightarrow$ Technician accepts $\rightarrow$ Quote generated & approved $\rightarrow$ Parts requisition & handoff $\rightarrow$ Load testing sign-off $\rightarrow$ Permanent `service_history` committed $\rightarrow$ Farmer verified review.
      - Scenario 2: Immobile machine on-field emergency dispatch.
      - Scenario 3: Workshop drop-off flow with `RCP-TB-xxxx` check-in receipt and capacity tracking.
+     - Scenario 4: Governed cancellation lifecycle with Service Centre review and technician work-holds.
    - **Security & Authorization Audit**:
-     - Comprehensive RLS policy verification across all 20+ database tables.
+     - Comprehensive RLS policy verification across all database tables.
      - Zero unauthenticated leaks of farmer GPS, depot costs, or technician auth secrets.
      - Strict verification of admin-only RPCs (`verify_technician_kyc`, `approve_drop_off_facility`).
    - **Performance & Production Build Gate**:
      - Full production build (`npm run build`) in $< 2.0\text{ seconds}$ with zero TypeScript errors and zero bundle warnings.
      - Nitro serverless bundle optimization for instant cold-start execution on Vercel.
      - 100% test suite pass rate across all test files.
+3. **Governed Production Migration & Release Execution (`hwdrypkvszwrcraujctw`)**:
+   - **Environment Context**:
+     - Staging Supabase: `ubqgvhcfmrvnmrbllcom` (all existing migrations applied and verified).
+     - Production Supabase: `hwdrypkvszwrcraujctw` (production migration ledger is formally **unverified**; confirmed only that Phase 11 visual diagnostics and subsequent migrations have not been applied; direct production queries prohibited).
+   - **Production Migration Inventory Classification**:
+     - *Existing Migration Files Pending Production*:
+       - `20261103120000_phase11_visual_defect_diagnostics.sql` (Phase 11 diagnostics table, consent RPCs, claim tokens).
+       - Forward migrations on disk (`20261104100000_profile_security_separation.sql`, `20261104110000_complete_phase9_parts_desk_rpcs.sql`, `20261104120000_complete_phase9_realtime_and_eta.sql`, `20261104130000_complete_phase5_3_technician_registration_notification.sql`).
+     - *Planned Future Migrations (Not Yet Created)*:
+       - Future Phase 13 migrations (facilities, memberships, KYC).
+       - Future Phase 14 migrations (smart dispatch, bay capacity).
+       - Future Phase 15 migrations (preventive maintenance).
+       *(Note: Future migrations must not be assigned speculative filenames or execution orders until authored in their respective phases).*
+   - **Schema & Existing Data Compatibility**:
+     - Zero destructive column alterations, table drops, or schema mutations.
+     - Safe column whitelists (Phase A fallback architecture ensures zero downtime if PostgREST schema cache reload experiences transient delays).
+     - Ensure production scripts are cleansed of hardcoded test UUIDs, synthetic seed records, or staging credentials.
+   - **Production Verification & Post-Migration Smoke Test**:
+     - Execute migration pipeline via Supabase CLI against production (`hwdrypkvszwrcraujctw`) only during formal release window.
+     - Run production smoke verification suite (`scripts/production-smoke-test.mjs`):
+       - GoTrue authentication and profile resolution.
+       - RLS isolation verification (farmer cannot read depot costs or other farmers' GPS).
+       - Gemini AI visual diagnostics API endpoint readiness.
+       - OSRM route estimation health probe.
+   - **Backup, Recovery & Rollback (Strict $0.00 Free-Tier Compliance)**:
+     - *Free-Tier Backup*: Manual logical SQL backup (`pg_dump`) executed locally prior to applying any production migrations.
+     - *No Paid Dependencies*: Zero reliance on Point-in-Time Recovery (PITR is a paid add-on and excluded under the $0.00 budget invariant).
+     - *Manual Reverse Rollback*: Discrete, pre-tested reverse DDL rollback scripts authored and validated for every applied migration file.
+     - *Immediate Contingency*: Pre-migration SQL snapshot retained locally for manual restoration if critical errors occur.
 
 ---
 
@@ -254,7 +327,8 @@ The overarching design objective is to **dramatically compress the time between 
 | **Phase 13** | Technician Trust & Workshops | `repair_facilities`, `facility_memberships` (OWNER/MANAGER/TECHNICIAN), registered workshop location, in-person KYC, admin AI approval, verified ratings | Planned | Pending Phase 12 |
 | **Phase 14** | Smart Dispatch & Routing | Registered workshop OSRM routing, Haversine ban, Doorstep vs Drop-off, Immobile lock, bay capacity | Planned | Pending Phase 13 |
 | **Phase 15** | Preventive Maintenance & Offline| Vidarbha crop heuristics, offline caching | Planned | Pending Phase 14 |
-| **Phase 16** | Master QA & Release Gate | System regression, E2E validation, release readiness | Planned | Final release gate |
+| **Phase 16** | Frontend UI/UX & Polish | Public homepage redesign & trilingual localisation (EN/HI/MR), role portals, 320px–375px mobile, Devanagari resilience, touch targets, state polish | Planned | Pending Phase 15 |
+| **Phase 17** | Master QA, Prod Migration & Gate | System regression, E2E validation, governed production migration (hwdrypkvszwrcraujctw), release certification | Planned | Final release gate |
 
 ---
 

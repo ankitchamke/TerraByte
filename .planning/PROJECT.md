@@ -74,15 +74,16 @@ TerraByte is an end-to-end digital agricultural equipment repair operating syste
 - ✓ **Parts-Specific Real-Time Notifications**: Role-specific alerts for Service Centre, assigned technician, and farmer with privacy boundaries — *Phase 9.4*
 - ✓ **Profile Security Separation**: Decoupling `public.profiles` from `auth.users.id`, segregating credentials in `public.profile_auth_secrets` with zero admin read access — *Phase 10*
 - ✓ **Visual Defect Diagnostics (Google Gemini AI)**: Multimodal tractor damage assessment via Google Gemini 3.5 Flash-Lite, bounded claim tokens, fail-closed consent, fail-open submission, `<DefectAnnotationCanvas />`, and `<VisualDefectDiagnosticViewer />` — *Phase 11 (Completed & Staging Verified)*
+- ✓ **Multilingual Farmer Experience (English + Hindi + Marathi)**: Trilingual farmer interface (`en` | `hi` | `mr`) with Noto Sans Devanagari typography, compact top nav selector (`EN` / `हिं` / `म`), 208-key parity, canonical voice transcription preservation (Groq Whisper Large V3), responsive 320px–1440px overflow immunity, and verified staging demo reset — *Phase 12 (Completed & Staging Verified)*
 
-### Active Scope (Phase 12 Next)
-- [ ] **Phase 12: Multilingual Farmer Experience (English + Hindi + Marathi)**: Trilingual farmer interface with Noto Sans Devanagari typography, language switcher, canonical voice transcription preservation (Groq Whisper Large V3), and English technician/admin portals.
+### Active Scope (Phase 13 Next)
+- [ ] **Phase 13: Technician Trust, Shared Workshops & Accountability**: Independent `repair_facilities`, facility ownership vs technician membership separation, in-person physical KYC at Nagpur Service Centre, admin-verified AI skills, and repair-gated verified reviews (null default rating).
 
-### Planned Product Scopes (Phases 13–16)
-- **Phase 13: Technician Trust, Shared Workshops & Accountability**: Independent `repair_facilities`, facility ownership vs technician membership separation, in-person physical KYC, admin-verified AI skills, and repair-gated verified reviews (null default rating).
+### Planned Product Scopes (Phases 14–17)
 - **Phase 14: Smart Dispatch & Emergency Response**: Registered workshop-based OSRM road distance and driving ETA matching, strict prohibition of straight-line Haversine, dual delivery modes (Doorstep vs Workshop Drop-off), Immobile machinery lock (`is_immobile = true` -> Doorstep only), and workshop bay capacity limits.
 - **Phase 15: Preventive Maintenance Intelligence & Offline Field Reliability**: Rule-based Vidarbha crop heuristics, Service Worker offline ticket caching, and optimistic workbench mutations.
-- **Phase 16: Master System-Wide QA, E2E Verification & Release Gate**: Comprehensive regression suite across all roles, load/stress testing, security audit, and final release sign-off.
+- **Phase 16: Frontend UI/UX Improvement & Product Polish**: Public homepage redesign and subsequent trilingual localisation (English, Hindi, Marathi), comprehensive visual design system consistency, multi-role portal polish (Farmer, Technician, Service Centre), mobile (320px–375px)/tablet/desktop responsiveness, touch targets ($\ge 44\text{px}$), Devanagari typography & text expansion resilience, accessible validation, and state polish (loading skeletons, empty/error states).
+- **Phase 17: Master System-Wide QA, Production Migration & Release Gate**: Comprehensive regression suite across all roles, load/stress testing, governed production database migration (`hwdrypkvszwrcraujctw`), backup/recovery strategy, security audit, and final release sign-off.
 
 ---
 

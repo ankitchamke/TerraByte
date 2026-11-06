@@ -167,7 +167,7 @@ stateDiagram-v2
 
 > [!IMPORTANT]
 > **Implementation Scope & Proposed Designs Notice**:  
-> Schemas, tables, RPCs, and RLS policies for future phases (Phases 12–15) represent **proposed engineering designs** for upcoming phases. They are not approved or finalized until their respective phase work begins. Approved product decisions are distinct from database implementation details.
+> Schemas, tables, RPCs, and RLS policies for future phases (Phases 12–16) represent **proposed engineering designs** for upcoming phases. They are not approved or finalized until their respective phase work begins. Approved product decisions are distinct from database implementation details.
 
 ### 6.1 Database Tables Overview (20+ Tables)
 
@@ -227,4 +227,4 @@ erDiagram
 
 ---
 
-*TRD updated: 2026-11-04 — Synchronized with Master Project Architecture & Approved Decisions*
+*TRD updated: 2026-11-06 — Synchronized with Master Project Architecture & Approved Decisions*

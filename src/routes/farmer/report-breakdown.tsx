@@ -31,6 +31,7 @@ import { createRepairRequest } from "@/lib/services/repair-requests";
 import type { Json } from "@/integrations/supabase/types";
 import { meta } from "@/lib/seo";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
 
 export const Route = createFileRoute("/farmer/report-breakdown")({
   validateSearch: (s: Record<string, unknown>): { equipment?: string | undefined } => ({
@@ -56,6 +57,7 @@ function Report() {
   const nav = useNavigate();
   const online = useOnline();
   const { profile } = useAuth();
+  const { t, language } = useTranslation();
   const { equipment: pre } = Route.useSearch();
 
   const [eq, setEq] = useState<EquipmentRow[]>([]);
@@ -275,7 +277,7 @@ function Report() {
       return;
     }
     const rec = new SR();
-    rec.lang = "en-IN";
+    rec.lang = language === "mr" ? "mr-IN" : language === "hi" ? "hi-IN" : "en-IN";
     rec.interimResults = false;
     rec.onresult = (e: any) =>
       up({ description: (d.description + " " + e.results[0][0].transcript).trim() });
@@ -289,13 +291,13 @@ function Report() {
     if (submitting) return;
 
     if (!d.equipmentId) {
-      toast.error("Please select a machine first.");
+      toast.error(t("breakdown.validationEquipment"));
       up({ step: 1 });
       return;
     }
 
     if (d.symptoms.length === 0) {
-      toast.error("Please select at least one symptom.");
+      toast.error(t("breakdown.validationSymptoms"));
       up({ step: 2 });
       return;
     }
@@ -339,7 +341,7 @@ function Report() {
       });
 
       localStorage.removeItem(DRAFT);
-      toast.success(`Breakdown reported successfully (${repair.job_number}).`);
+      toast.success(`${t("breakdown.successToast")} (${repair.job_number || repair.id})`);
 
       nav({
         to: "/farmer/repair/$id",
@@ -361,11 +363,11 @@ function Report() {
   ][d.step - 1];
 
   const titles = [
-    "Which machine broke down?",
-    "What's happening?",
-    "Describe it in your words",
-    "Add a photo or video",
-    "Ready for assessment",
+    t("breakdown.step1Desc"),
+    t("breakdown.step2Title"),
+    t("breakdown.step4Title"),
+    t("breakdown.step3Title"),
+    t("breakdown.title"),
   ];
 
   return (
@@ -475,8 +477,8 @@ function Report() {
                     </span>
                     <span className="text-sm text-muted-foreground">
                       {dis
-                        ? "Already in repair"
-                        : `${e.type} · ${(e.operating_hours ?? 0).toLocaleString("en-IN")} hrs`}
+                        ? t("common.underRepair")
+                        : `${t(`equipmentTypes.${e.type}`, e.type)} · ${(e.operating_hours ?? 0).toLocaleString("en-IN")} ${t("common.hrs")}`}
                     </span>
                   </span>
                 </button>
@@ -499,7 +501,7 @@ function Report() {
                   : "border-border bg-card",
               )}
             >
-              {sym}
+              {t(`symptoms.${sym}`, sym)}
             </button>
           ))}
         </div>
@@ -510,30 +512,30 @@ function Report() {
           <div className="space-y-3 rounded-2xl border-2 border-border bg-card p-4">
             <div className="flex items-center gap-2">
               <MapPin className="h-5 w-5 text-primary" />
-              <h2 className="text-base font-bold text-foreground">Breakdown Location</h2>
+              <h2 className="text-base font-bold text-foreground">{t("breakdown.step4Title")}</h2>
             </div>
             <p className="text-xs text-muted-foreground">
-              Provide your village and tahsil so the nearest technician can find you.
+              {t("breakdown.step4Desc")}
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
-                <Label>Village / Locality</Label>
+                <Label>{t("breakdown.step4VillageLabel")}</Label>
                 <input
                   type="text"
                   className={input}
-                  placeholder="e.g. Dorli, Mohpa"
+                  placeholder={t("breakdown.step4VillagePlaceholder")}
                   value={d.village}
                   onChange={(e) => up({ village: e.target.value })}
                 />
               </div>
               <div>
-                <Label>Tahsil (Nagpur District)</Label>
+                <Label>{t("breakdown.step4TahsilLabel")}</Label>
                 <select
                   className={cn(input, "cursor-pointer bg-background")}
                   value={d.tahsil}
                   onChange={(e) => up({ tahsil: e.target.value })}
                 >
-                  <option value="">Select Tahsil...</option>
+                  <option value="">{t("breakdown.step4TahsilLabel")}...</option>
                   {NAGPUR_TAHSILS.map((t) => (
                     <option key={t} value={t}>
                       {t}
@@ -551,7 +553,7 @@ function Report() {
                   onClick={requestLocation}
                   className={cn(btn.ghost, "w-full flex items-center justify-center gap-2 text-sm")}
                 >
-                  <MapPin className="h-4 w-4 text-primary" /> Use my current location (GPS)
+                  <MapPin className="h-4 w-4 text-primary" /> {t("breakdown.step4UseGps")}
                 </button>
               )}
 
@@ -564,7 +566,7 @@ function Report() {
                     "w-full flex items-center justify-center gap-2 text-sm opacity-70",
                   )}
                 >
-                  <Loader2 className="h-4 w-4 animate-spin text-primary" /> Acquiring GPS location…
+                  <Loader2 className="h-4 w-4 animate-spin text-primary" /> {t("common.loading")}
                 </button>
               )}
 
@@ -572,17 +574,16 @@ function Report() {
                 <div className="rounded-xl bg-success/10 border border-success/30 p-3 text-sm flex items-start justify-between gap-3">
                   <div className="space-y-0.5">
                     <p className="font-semibold text-success flex items-center gap-1.5">
-                      <CheckCircle2 className="h-4 w-4 shrink-0" /> Exact GPS Attached
+                      <CheckCircle2 className="h-4 w-4 shrink-0" /> {t("breakdown.step4GpsAcquired")}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {formatGpsAccuracy(gps.accuracy)
-                        ? `${formatGpsAccuracy(gps.accuracy)} accuracy · `
+                        ? `${formatGpsAccuracy(gps.accuracy)} ${t("breakdown.step4Accuracy")} · `
                         : ""}
                       captured {ago(new Date(gps.capturedAt).getTime())} ago
                     </p>
                     <p className="text-[11px] text-muted-foreground/80 italic">
-                      Private: Accessible strictly by you, your assigned technician, and Service
-                      Centre.
+                      {t("breakdown.step4DoorstepNotice")}
                     </p>
                   </div>
                   <button
@@ -590,7 +591,7 @@ function Report() {
                     onClick={clearGps}
                     className="text-xs text-muted-foreground hover:text-destructive underline shrink-0"
                   >
-                    Remove
+                    {t("common.delete")}
                   </button>
                 </div>
               )}
@@ -613,7 +614,7 @@ function Report() {
                       onClick={clearGps}
                       className="text-muted-foreground hover:text-foreground underline ml-auto"
                     >
-                      Dismiss
+                      {t("common.close")}
                     </button>
                   </div>
                 </div>
@@ -622,21 +623,21 @@ function Report() {
           </div>
 
           <div className="space-y-2">
-            <Label>Problem Description</Label>
+            <Label>{t("breakdown.step2VoiceTitle")}</Label>
             <textarea
               rows={5}
               maxLength={1000}
               className={input}
-              placeholder='e.g. "Tractor lost pulling power in field, heavy black smoke from exhaust and engine sputtering under load"'
+              placeholder={t("breakdown.step2TextPlaceholder")}
               value={d.description}
               onChange={(e) => up({ description: e.target.value })}
             />
             <button onClick={voice} className={cn(listening ? btn.urgent : btn.ghost, "w-full")}>
               <Mic className="h-5 w-5" />
-              {listening ? "Listening… tap to stop" : "Speak instead of typing"}
+              {listening ? t("breakdown.step2VoiceStop") : t("breakdown.step2VoiceRecordBtn")}
             </button>
             <p className="text-sm text-muted-foreground">
-              Optional, but it helps the technician come prepared.
+              {t("breakdown.step2VoiceDesc")}
             </p>
           </div>
         </div>
@@ -646,9 +647,9 @@ function Report() {
         <div className="space-y-3">
           <label className="flex h-40 cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-border bg-card text-center">
             <Camera className="h-10 w-10 text-muted-foreground" />
-            <span className="font-semibold">Take breakdown photos</span>
+            <span className="font-semibold">{t("breakdown.step3TakePhoto")}</span>
             <span className="text-xs text-muted-foreground">
-              Photos are compressed for slow networks
+              {t("breakdown.step3Desc")}
             </span>
             <input
               type="file"
@@ -688,10 +689,11 @@ function Report() {
               />
               <div className="space-y-1">
                 <span className="text-sm font-semibold text-foreground">
-                  Allow AI visual defect analysis of breakdown photos
+                  {/* Allow AI visual defect analysis of breakdown photos */}
+                  {t("breakdown.step3ConsentCheckbox")}
                 </span>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  Google Gemini 3.5 Flash-Lite assistive AI will inspect your photos to highlight defects and recommend compatible parts. Data is never used for public training.
+                  {t("breakdown.step3ConsentDisclaimer")}
                 </p>
               </div>
             </label>
@@ -702,28 +704,27 @@ function Report() {
       {d.step === 5 && (
         <Card className="space-y-2">
           <p>
-            <b>Machine:</b>{" "}
+            <b>{t("equipment.typeLabel")}:</b>{" "}
             {selectedEquipment ? `${selectedEquipment.make} ${selectedEquipment.model}` : "—"}
           </p>
           <p>
-            <b>Symptoms:</b> {d.symptoms.join(", ")}
+            <b>{t("breakdown.step2Title")}:</b> {d.symptoms.map((s) => t(`symptoms.${s}`, s)).join(", ")}
           </p>
           <p>
-            <b>Location:</b> {formatCoarseLocation(d.village, d.tahsil) || "On-site / Field"}
+            <b>{t("breakdown.step4Title")}:</b> {formatCoarseLocation(d.village, d.tahsil) || "On-site / Field"}
             {gps ? (
               <span className="ml-2 inline-flex items-center gap-1 rounded-md bg-success/15 px-2 py-0.5 text-xs font-semibold text-success">
-                <MapPin className="h-3 w-3" /> Exact GPS attached ({formatGpsAccuracy(gps.accuracy)}
-                )
+                <MapPin className="h-3 w-3" /> {t("breakdown.step4GpsAcquired")} ({formatGpsAccuracy(gps.accuracy)})
               </span>
             ) : null}
           </p>
           {d.description && (
             <p>
-              <b>Description:</b> {d.description}
+              <b>{t("breakdown.step2VoiceTitle")}:</b> {d.description}
             </p>
           )}
           <p>
-            <b>Photos:</b> {d.photos.length}
+            <b>{t("breakdown.step3Title")}:</b> {d.photos.length}
           </p>
         </Card>
       )}
@@ -735,7 +736,7 @@ function Report() {
             onClick={() => up({ step: d.step + 1 })}
             className={cn(btn.primary, "h-14 w-full text-lg")}
           >
-            {d.step === 3 || d.step === 4 ? "Continue" : "Next"} <ArrowRight className="h-5 w-5" />
+            {t("breakdown.btnNext")} <ArrowRight className="h-5 w-5" />
           </button>
         ) : (
           <button
@@ -750,12 +751,12 @@ function Report() {
             {submitting ? (
               <>
                 <Loader2 className="h-5 w-5 animate-spin" />
-                <span>Submitting breakdown report…</span>
+                <span>{t("breakdown.btnSubmitting")}</span>
               </>
             ) : (
               <>
                 <Sparkles className="h-5 w-5" />
-                <span>Start preliminary assessment</span>
+                <span>{t("breakdown.btnSubmit")}</span>
               </>
             )}
           </button>

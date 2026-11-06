@@ -9,16 +9,30 @@ export const DESIGNATED_DEMO_EMAILS = [
   "admin.nagpur@terrabyte.demo",
 ] as const;
 
-export type DesignatedDemoEmail = (typeof DESIGNATED_DEMO_EMAILS)[number];
+/**
+ * Synthetic staging evaluation personas.
+ */
+export const STAGING_DEMO_EMAILS = [
+  "farmer.staging@terrabyte.app",
+  "tech.staging@terrabyte.app",
+  "admin.staging@terrabyte.app",
+] as const;
+
+export type DesignatedDemoEmail =
+  | (typeof DESIGNATED_DEMO_EMAILS)[number]
+  | (typeof STAGING_DEMO_EMAILS)[number];
 
 /**
- * Checks whether the specified email belongs to one of the 3 designated demo evaluation personas.
+ * Checks whether the specified email belongs to one of the authorized demo personas.
  * Returns false for null, undefined, real user emails, or arbitrary domains.
  */
 export function isDesignatedDemoAccount(email?: string | null): boolean {
   if (!email) return false;
   const clean = email.trim().toLowerCase();
-  return (DESIGNATED_DEMO_EMAILS as readonly string[]).includes(clean);
+  return (
+    (DESIGNATED_DEMO_EMAILS as readonly string[]).includes(clean) ||
+    (STAGING_DEMO_EMAILS as readonly string[]).includes(clean)
+  );
 }
 
 export interface ResetDemoResponse {

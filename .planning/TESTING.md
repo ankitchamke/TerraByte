@@ -4,7 +4,7 @@
 
 TerraByte adheres to a strict test-driven development and continuous backpressure model:
 - **Zero Test Cheating**: Existing test suites and assertions are never deleted, commented out, or weakened to force a passing build. Application code must be genuinely corrected.
-- **Continuous Automated Verification (Phases 11–15 $\rightarrow$ Phase 16)**: Every phase must maintain continuous automated testing. Testing is never postponed to Phase 16 alone; Phase 16 serves as the final system-wide release gate and end-to-end certification.
+- **Continuous Automated Verification (Phases 11–16 $\rightarrow$ Phase 17)**: Every phase must maintain continuous automated testing. Testing is never postponed to Phase 17 alone; Phase 17 serves as the final system-wide release gate, production migration verification, and end-to-end certification.
 - **Empirically Verified Baseline**: Test results recorded as current must reflect live executed commands. All figures in this document are confirmed via live execution.
 
 ---
@@ -15,27 +15,32 @@ The following baseline metrics were verified via live command execution on the `
 
 - **Automated Test Suite**:
   - Command: `npm test`
-  - Output: **160 passing tests across 6 test suites in 0.76s** (0 failed, 0 skipped, 0 flaky) — *verified on 2026-11-06*.
+  - Output: **171 passing tests across 9 test files in ~1.20s** (0 failed, 0 skipped, 0 flaky; Node test runner reports `ℹ tests 171`, `ℹ suites 0` as top-level `test()` assertions are executed) — *verified on 2026-11-06*.
 - **Production Bundle & Build Time**:
   - Command: `npm run build`
-  - Output: **Successfully built in 1.15s SSR / 2.25s client** (TanStack Start + Vite 8.1.5 + Nitro `vercel` serverless preset, 0 errors, 0 warnings) — *verified on 2026-11-06*.
+  - Output: **Successfully built in 1.20s SSR / 2.28s client** (TanStack Start + Vite 8.1.5 + Nitro `vercel` serverless preset, 0 errors, 0 warnings) — *verified on 2026-11-06*.
   - Status: Zero TypeScript errors (`npx tsc --noEmit` clean), zero bundle syntax errors, zero dead code warnings.
 - **Dedicated Staging Acceptance Suite (`ubqgvhcfmrvnmrbllcom`)**:
   - `scratch/phase-11/run_real_image_acceptance.mjs`: **18/18 PASS** — Real tractor engine bay photo (CC BY 4.0, zero PII, 2.84 MB), live `gemini-3.5-flash-lite` 4,324ms, zero defect hallucination, non-authoritative invariant, 30s cooldown gate, staff force rescan, audit history archival.
   - `scratch/phase-11/run_phase11_acceptance.mjs`: **24/24 PASS** — GoTrue auth sessions, consent lifecycle, concurrency locks, service-role privilege seal, catalogue compatibility filtering, and admin corruption recovery.
+  - `scratch/phase-12/test_responsive_viewports.mjs`: **15/15 PASS** — Chrome CDP responsive viewport tests (320px, 375px, 768px, 1024px, 1440px across EN, HI, MR) with 0px horizontal scroll overflow.
+  - Staging Reset Demo Execution: **1/1 PASS** — Controlled destructive execution of `public.reset_demo_data()` restoring 3 canonical equipment, 5 depot parts, 0 active repairs. Non-destructive regression check verified.
 
-### Active Test Suites Inventory
+### Active Test Suites Inventory (9 Test Files)
 
 | Suite File | Scope / Domain Covered | Passing Tests | Execution Time |
 | :--- | :--- | :---: | :---: |
-| `tests/parts-desk.test.mjs` | Central depot catalog, requisitions, stock movements, sales history, atomic handoffs (`FOR UPDATE`), role privacy | 105 tests | ~720ms |
-| `tests/profile-security-architecture.test.mjs` | Decoupled profiles, `profile_auth_secrets` isolation, parameterless `get_session_profile()` RPC, RLS access controls | 28 tests | ~240ms |
+| `tests/parts-desk.test.mjs` | Central depot catalog, requisitions, stock movements, sales history, atomic handoffs (`FOR UPDATE`), role privacy | 78 tests | ~720ms |
+| `tests/profile-security-architecture.test.mjs` | Decoupled profiles, `profile_auth_secrets` isolation, parameterless `get_session_profile()` RPC, RLS access controls | 30 tests | ~240ms |
 | `tests/route-estimate.test.mjs` | OSRM road distance, driving duration, Nagpur tahsil mapping, GPS accuracy, timing-safe Bearer health check | 21 tests | ~180ms |
+| `tests/i18n-dictionary-parity.test.mjs` | Phase 12 Multilingual: 100% dictionary key parity (`en`, `hi`, `mr`), Devanagari script presence, voice preservation invariant, zero-cost guarantee, header selector placement, compact labels (`EN`/`हिं`/`म`), name preservation | 11 tests | ~35ms |
 | `tests/auth-production-compatibility.test.mjs` | Phase A Authentication Recovery: 14 modules production fallback alongside `get_session_profile`, mock client `PGRST202` handling, persona reconstruction, safe column isolation | 10 tests | ~30ms |
 | `tests/visual-defect-frontend.test.mjs` | Phase 11 Visual Defect Diagnostics: image validation ($\le 4\text{ MB}$), fail-closed consent, fail-open breakdown submission, dead video removal, multi-portal UI integration | 6 tests | ~45ms |
+| `tests/cleanup-verification.test.mjs` | Demo hygiene, persona boundaries, safe reset verification | 6 tests | ~30ms |
 | `tests/diagnostics-contract.test.mjs` | Phase 11 Gemini contract: unauthenticated 401, photo size boundary ($\le 4\text{ MB}$), claim verification, Zod schema | 5 tests | ~85ms |
+| `tests/parts-matching.test.mjs` | Parts search matching, equipment compatibility, tahsil depot filtering | 4 tests | ~25ms |
 
-*(Total active verified tests: 160 tests passing).*
+*(Total active verified tests: 171 tests passing across 9 test files; 0 failed).*
 
 ---
 
@@ -72,7 +77,7 @@ All demo accounts use password: `[REDACTED]`. On `/login`, users can click the Q
 
 ---
 
-## 4. Phase-by-Phase Continuous Testing Requirements (Phases 11–15)
+## 4. Phase-by-Phase Continuous Testing Requirements (Phases 11–16)
 
 To guarantee continuous quality, every phase must implement automated tests satisfying these exact verification gates before being marked complete:
 
@@ -114,11 +119,19 @@ To guarantee continuous quality, every phase must implement automated tests sati
 - **TEST-15-02 (Offline Service Worker Caching)**: Test simulating network disconnection; active job cards and machine logbooks must remain readable offline.
 - **TEST-15-03 (Optimistic Mutation Sync)**: Offline queue test verifying technician status updates queue in IndexedDB and replay idempotently upon reconnection.
 
+### Phase 16: Frontend UI/UX Improvement & Product Polish
+- **TEST-16-01 (Design System & Color Contrast Compliance)**: Automated accessibility contrast test verifying all text and interactive elements satisfy WCAG 2.1 AA contrast requirements across light/outdoor theme tokens.
+- **TEST-16-02 (Mobile Viewport & Overflow Invariants)**: Layout test suite verifying zero horizontal scrolling or layout clipping at 320px, 375px, 768px, and 1280px viewports across Farmer, Technician, and Admin routes.
+- **TEST-16-03 (Touch Target Sizing $\ge 44\text{px}$)**: DOM inspection test verifying all interactive buttons, action chips, and form toggles meet minimum $44\text{px} \times 44\text{px}$ tap target bounds.
+- **TEST-16-04 (Devanagari Font Rendering & Text Expansion Resilience)**: Visual regression tests ensuring Hindi and Marathi labels do not break containers, overlap adjacent elements, or truncate critical information under 20%–40% character expansion.
+- **TEST-16-05 (UI State Fidelity & Error Boundaries)**: State testing verifying loading skeletons, empty states, error retry triggers, and validation feedback behave consistently across all primary workflows.
+- **TEST-16-06 (Public Homepage Redesign UI & Trilingual Parity)**: Contract test verifying the redesigned public homepage (`/`) contains zero unlocalized strings across English, Hindi, and Marathi, with 100% dictionary key parity, functioning public language toggle, responsive mobile layouts (320px–375px), and proper Devanagari typography.
+
 ---
 
-## 5. Phase 16: Master Release Gate & Verification Criteria
+## 5. Phase 17: Master Release Gate, Production Migration & Verification Criteria
 
-Before final production release and deployment sign-off, the application must pass this comprehensive release gate:
+Before final production release, deployment sign-off, and execution of production database migrations, the application must pass this comprehensive release gate:
 
 ### 5.1 Multi-Role End-to-End Regression Matrix
 1. **Scenario 1: Complete On-Field Repair Lifecycle**:
@@ -144,6 +157,30 @@ Before final production release and deployment sign-off, the application must pa
 - [ ] 100% of tests passing in `npm test` with zero failed or skipped tests.
 - [ ] Zero unhandled promise rejections, zero React hydration errors, zero console errors across all three operational portals.
 
+### 5.4 Governed Production Database Migration (`hwdrypkvszwrcraujctw`)
+- [ ] **Pre-Migration Integrity (Free-Tier $0.00 Invariant)**:
+  - Full manual logical database backup (`pg_dump`) executed locally prior to applying production schema modifications.
+  - Safe column whitelist compatibility verified ensuring zero schema-cache downtime (`PGRST202` resilience).
+  - Production scripts scrubbed of hardcoded test UUIDs, synthetic seed records, or staging credentials.
+  - Direct connection/queries to production prohibited during development; migration state treated as unverified baseline.
+- [ ] **Migration Inventory Classification**:
+  - Existing migration files pending production:
+    1. `20261103120000_phase11_visual_defect_diagnostics.sql` (Phase 11 diagnostics table, consent RPCs, claim tokens).
+    2. Forward migrations on disk (`20261104100000_profile_security_separation.sql`, `20261104110000_complete_phase9_parts_desk_rpcs.sql`, `20261104120000_complete_phase9_realtime_and_eta.sql`, `20261104130000_complete_phase5_3_technician_registration_notification.sql`).
+  - Planned future phase migrations (to be created and rehearsed on staging during their respective future phases; speculative filenames/orders prohibited):
+    - Future Phase 13 migrations (facilities, memberships, KYC).
+    - Future Phase 14 migrations (dispatch, bay capacity).
+    - Future Phase 15 migrations (preventive maintenance).
+- [ ] **Post-Migration Verification Smoke Suite (`scripts/production-smoke-test.mjs`)**:
+  - GoTrue authentication and profile resolution operational.
+  - RLS policies verified on production (quarantining coordinates, depot costs, and credentials).
+  - Gemini AI visual diagnostics API endpoint readiness confirmed.
+  - OSRM route estimation health probe verified.
+- [ ] **Free-Tier Rollback & Contingency Procedures**:
+  - Authored and verified manual reverse DDL rollback scripts for each applied migration.
+  - Pre-migration local SQL dump retained for manual restore if critical errors arise.
+  - Zero paid dependencies: Point-in-Time Recovery (PITR) is a paid add-on and excluded under the $0.00 budget invariant.
+
 ---
 
-*Testing document updated: 2026-11-04 — Synchronized with Master Project Architecture & Approved Decisions*
+*Testing document updated: 2026-11-06 — Synchronized with Master Project Architecture & Approved Decisions*

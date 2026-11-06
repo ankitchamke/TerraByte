@@ -75,6 +75,7 @@ import {
 } from "@/lib/tb-store";
 import { meta } from "@/lib/seo";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
 import { useRepairTicketRealtime, isUuid } from "@/hooks/use-repair-realtime";
 
 interface RepairHubSearch {
@@ -128,12 +129,13 @@ function formatTechCardData(t: VerifiedTechnicianWithProfile): Technician {
 }
 
 function RepairHub() {
+  const { t } = useTranslation();
   const { id } = Route.useParams();
   const { from, equipmentId } = Route.useSearch();
   const backTarget =
     from === "equipment" && equipmentId
-      ? { to: `/farmer/equipment/${equipmentId}`, label: "Machine Record" }
-      : { to: "/farmer", label: "Home" };
+      ? { to: `/farmer/equipment/${equipmentId}`, label: t("equipment.recordTitle") }
+      : { to: "/farmer", label: t("common.backToHome") };
   const navigate = useNavigate();
   const { profile } = useAuth();
   const tb = useTB();
@@ -878,7 +880,7 @@ function RepairHub() {
               >
                 {actionInProgress
                   ? "Authorizing repair…"
-                  : `Approve & Authorize Repair · ${inr(quoteTotals(viewQuote).total)}`}
+                  : `${t("repair.btnApproveQuote")} · ${inr(quoteTotals(viewQuote).total)}`}
               </button>
               <div className="grid grid-cols-2 gap-2">
                 {assignedTechData?.phone ? (
@@ -980,7 +982,7 @@ function RepairHub() {
                 : "Approved repair quote"}
             </h2>
             <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-              <CheckCircle2 className="h-3.5 w-3.5" /> Approved
+              <CheckCircle2 className="h-3.5 w-3.5" /> {t("statuses.quote_approved")}
             </span>
           </div>
           <p className="flex items-center gap-2 rounded-xl bg-emerald-500/10 p-3 text-xs font-medium text-emerald-800 dark:text-emerald-300">
@@ -1280,7 +1282,7 @@ function RepairHub() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {isUnassignedRequested ? "Cancel Repair Request" : "Request Repair Cancellation"}
+              {isUnassignedRequested ? t("repair.cancelRepairTitle") : t("repair.cancelRepairTitle")}
             </DialogTitle>
             <DialogDescription>
               {isUnassignedRequested
@@ -1291,7 +1293,7 @@ function RepairHub() {
 
           <form onSubmit={handleSubmitCancellation} className="space-y-4 py-2">
             <div>
-              <Label>Reason for cancellation</Label>
+              <Label>{t("repair.cancelReasonLabel")}</Label>
               <select
                 value={cancellationReason}
                 onChange={(e) => setCancellationReason(e.target.value)}
@@ -1340,7 +1342,7 @@ function RepairHub() {
                 onClick={() => setCancellationDialogOpen(false)}
                 className={cn(btn.ghost, "h-11")}
               >
-                {isUnassignedRequested ? "Keep Request" : "Keep Repair"}
+                {t("common.cancel")}
               </button>
               <button
                 type="submit"
@@ -1358,9 +1360,9 @@ function RepairHub() {
                     {isUnassignedRequested ? "Cancelling…" : "Submitting…"}
                   </>
                 ) : isUnassignedRequested ? (
-                  "Confirm Cancellation"
+                  t("repair.confirmCancelBtn")
                 ) : (
-                  "Submit Request"
+                  t("common.submit")
                 )}
               </button>
             </DialogFooter>

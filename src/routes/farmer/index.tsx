@@ -8,6 +8,7 @@ import { getFarmerEquipment, type EquipmentRow } from "@/lib/services/equipment"
 import { getFarmerRepairRequests, type RepairRequestWithEquipment } from "@/lib/services/repair-requests";
 import { meta } from "@/lib/seo";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
 
 export const Route = createFileRoute("/farmer/")({
   head: () => meta("My farm", "Your machines, active repairs and breakdown reporting."),
@@ -16,6 +17,7 @@ export const Route = createFileRoute("/farmer/")({
 
 function FarmerHome() {
   const { profile } = useAuth();
+  const { t } = useTranslation();
   const farmerId = profile?.id;
   const [repairs, setRepairs] = useState<RepairRequestWithEquipment[]>([]);
   const [loadingRepairs, setLoadingRepairs] = useState(true);
@@ -80,14 +82,16 @@ function FarmerHome() {
     <div className="space-y-6">
       <div className="flex items-end justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm text-muted-foreground">Namaskar,</p>
+          <p className="text-sm text-muted-foreground">{t("dashboard.greeting")}</p>
           <h1 className="truncate text-3xl font-bold">{farmerName}</h1>
         </div>
-        <DemoTag />
+        <div className="flex items-center gap-2">
+          <DemoTag />
+        </div>
       </div>
 
       {loadingRepairs ? (
-        <div className="py-6 text-center text-sm text-muted-foreground">Checking active repairs…</div>
+        <div className="py-6 text-center text-sm text-muted-foreground">{t("dashboard.checkingRepairs")}</div>
       ) : (
         active.map((r) => {
           const paused = r.status === "WAITING_FOR_PARTS";
@@ -124,7 +128,7 @@ function FarmerHome() {
                 )}
               >
                 {paused ? <AlertTriangle className="h-4 w-4" /> : <Clock className="h-4 w-4" />}
-                {needsAction ? "Action needed" : "Active repair"} ·{" "}
+                {needsAction ? t("common.actionNeeded") : t("common.activeRepair")} ·{" "}
                 <span className="font-mono">{r.job_number || r.id}</span>
               </div>
               <div className="p-5">
@@ -133,7 +137,11 @@ function FarmerHome() {
                     <h2 className="text-2xl font-bold">
                       {r.equipment?.make || "Equipment"} {r.equipment?.model || ""}
                     </h2>
-                    <p className="text-sm text-muted-foreground">{assessment.system || "Inspection required"}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {assessment.system
+                        ? t(`systems.${assessment.system}`, assessment.system)
+                        : t("dashboard.inspectionRequired")}
+                    </p>
                   </div>
                   <StatusPill
                     r={{
@@ -146,27 +154,27 @@ function FarmerHome() {
                 </div>
                 {paused && partsHold && (
                   <p className="mt-3 rounded-xl bg-warning/15 p-3 text-sm">
-                    <b>Waiting for:</b> {partsHold.part || "Required part"}
+                    <b>{t("dashboard.waitingForPart")}</b> {partsHold.part || t("common.details")}
                     <br />
-                    <b>Arrives:</b> {partsHold.eta || partsHold.revisedCompletion || "Pending supplier"}
+                    <b>{t("dashboard.arrives")}</b> {partsHold.eta || partsHold.revisedCompletion || t("dashboard.pendingSupplier")}
                   </p>
                 )}
                 <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                   <div>
-                    <Label>Technician</Label>
-                    <p className="font-semibold">{r.technician?.full_name ?? "Not yet assigned"}</p>
+                    <Label>{t("common.technician")}</Label>
+                    <p className="font-semibold">{r.technician?.full_name ?? t("common.notAssigned")}</p>
                   </div>
                   <div>
-                    <Label>Expected ready</Label>
+                    <Label>{t("dashboard.expectedReady")}</Label>
                     <p className="font-semibold">
                       {partsHold?.revisedCompletion ??
                         partsHold?.eta ??
-                        (r.technician ? "In progress" : "—")}
+                        (r.technician ? t("common.inProgress") : "—")}
                     </p>
                   </div>
                 </div>
                 <span className={cn(btn.primary, "mt-4 w-full")}>
-                  {isUnassignedRequest ? "Send request to technician" : "View Repair"}{" "}
+                  {isUnassignedRequest ? t("dashboard.sendRequestToTech") : t("dashboard.viewRepair")}{" "}
                   <ChevronRight className="h-4 w-4" />
                 </span>
               </div>
@@ -179,31 +187,31 @@ function FarmerHome() {
         to="/farmer/report-breakdown"
         className={cn(btn.urgent, "w-full", !loadingRepairs && active.length === 0 ? "h-24 text-xl" : "")}
       >
-        <AlertTriangle className="h-6 w-6" /> Report Equipment Breakdown
+        <AlertTriangle className="h-6 w-6" /> {t("dashboard.reportBreakdownBtn")}
       </Link>
       {!loadingRepairs && active.length === 0 && (
         <p className="-mt-3 text-center text-sm text-muted-foreground">
-          All machines running. Takes under 2 minutes if something breaks.
+          {t("dashboard.noActiveRepairsSub")}
         </p>
       )}
 
       <div>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-xl font-bold">My machines</h2>
+          <h2 className="text-xl font-bold">{t("dashboard.myMachines")}</h2>
           <Link
             to="/farmer/equipment"
             className="inline-flex h-10 items-center gap-1 text-sm font-semibold text-primary"
           >
-            <Plus className="h-4 w-4" /> Add / manage
+            <Plus className="h-4 w-4" /> {t("dashboard.addManage")}
           </Link>
         </div>
         {loadingEquipment ? (
-          <div className="py-6 text-center text-sm text-muted-foreground">Loading machines…</div>
+          <div className="py-6 text-center text-sm text-muted-foreground">{t("dashboard.loadingMachines")}</div>
         ) : equipment.length === 0 ? (
           <Card className="py-6 text-center text-sm text-muted-foreground">
-            No machines registered yet.{" "}
+            {t("dashboard.noMachinesYet")}{" "}
             <Link to="/farmer/equipment" className="font-semibold text-primary underline">
-              Add your first machine
+              {t("dashboard.addFirstMachine")}
             </Link>
           </Card>
         ) : (
@@ -228,7 +236,7 @@ function FarmerHome() {
                     {e.make} {e.model}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    {e.type} · {e.year ?? "—"} · {(e.operating_hours ?? 0).toLocaleString("en-IN")} hrs
+                    {t(`equipmentTypes.${e.type}`, e.type)} · {e.year ?? "—"} · {(e.operating_hours ?? 0).toLocaleString("en-IN")} {t("common.hrs")}
                   </p>
                 </div>
                 <span
@@ -239,7 +247,7 @@ function FarmerHome() {
                       : "bg-destructive/15 text-destructive"
                   )}
                 >
-                  {e.status}
+                  {e.status === "Operational" ? t("common.operational") : t("common.broken")}
                 </span>
               </Link>
             ))}
@@ -249,15 +257,14 @@ function FarmerHome() {
 
       <div className="grid grid-cols-2 gap-3">
         <Link to="/farmer/equipment" className={btn.ghost}>
-          <History className="h-4 w-4" /> Service history
+          <History className="h-4 w-4" /> {t("dashboard.serviceHistory")}
         </Link>
         <a href="tel:18002001234" className={btn.ghost}>
-          <Phone className="h-4 w-4" /> Helpline
+          <Phone className="h-4 w-4" /> {t("dashboard.helpline")}
         </a>
       </div>
       <Card className="bg-muted/50 text-sm text-muted-foreground">
-        No signal in the field? Call the TerraByte helpline{" "}
-        <b className="text-foreground">1800-200-1234</b> (demo) and we'll log the breakdown for you.
+        {t("dashboard.fieldHelplineNotice", { phone: "1800-200-1234" })}
       </Card>
     </div>
   );

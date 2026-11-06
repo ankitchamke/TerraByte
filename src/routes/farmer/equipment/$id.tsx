@@ -11,6 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { inr, type RepairStatus } from "@/lib/tb-store";
 import { meta } from "@/lib/seo";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
 
 interface EquipmentDetailSearch {
   from?: "home" | "list" | "repair" | undefined;
@@ -38,14 +39,15 @@ const fmtDate = (d: string | number) =>
   });
 
 function EquipmentDetail() {
+  const { t } = useTranslation();
   const { id } = Route.useParams();
   const { from, repairId } = Route.useSearch();
   const backTarget =
     from === "repair" && repairId
-      ? { to: `/farmer/repair/${repairId}`, label: "Repair Ticket" }
+      ? { to: `/farmer/repair/${repairId}`, label: t("repair.jobHeader") }
       : from === "home"
-      ? { to: "/farmer", label: "Home" }
-      : { to: "/farmer/equipment", label: "All machines" };
+      ? { to: "/farmer", label: t("common.backToHome") }
+      : { to: "/farmer/equipment", label: t("equipment.title") };
 
   const [e, setE] = useState<EquipmentRow | null>(null);
   const [recs, setRecs] = useState<ServiceHistoryRow[]>([]);
@@ -152,7 +154,7 @@ function EquipmentDetail() {
             </span>
           )}
           <div className="min-w-0">
-            <p className="font-mono text-xs uppercase tracking-widest opacity-60">{e.type}</p>
+            <p className="font-mono text-xs uppercase tracking-widest opacity-60">{t(`equipmentTypes.${e.type}`, e.type)}</p>
             <h1 className="text-3xl font-extrabold">
               {e.make} {e.model}
             </h1>
@@ -161,9 +163,9 @@ function EquipmentDetail() {
         </div>
         <div className="grid grid-cols-4 border-t border-soil-foreground/10 text-center">
           {[
-            ["Year", e.year ?? "—"],
-            ["Hours", (e.operating_hours ?? 0).toLocaleString("en-IN")],
-            ["Lifetime spend", inr(spend)],
+            [t("equipment.yearLabel"), e.year ?? "—"],
+            [t("equipment.hoursLabel"), (e.operating_hours ?? 0).toLocaleString("en-IN")],
+            ["Spend", inr(spend)],
             ["Downtime", `${down}h`],
           ].map(([k, v]) => (
             <div key={k} className="border-r border-soil-foreground/10 p-3 last:border-0">
@@ -184,7 +186,7 @@ function EquipmentDetail() {
           <AlertTriangle className="h-6 w-6 shrink-0 text-destructive" />
           <div className="min-w-0 flex-1">
             <p className="font-semibold">
-              Active repair <span className="font-mono">{activeRepair.id}</span>
+              {t("common.activeRepair")} <span className="font-mono">{activeRepair.id}</span>
             </p>
             <StatusPill r={activeRepair} audience="farmer" />
           </div>
@@ -196,17 +198,17 @@ function EquipmentDetail() {
           search={{ equipment: e.id }}
           className={cn(btn.urgent, "w-full")}
         >
-          <AlertTriangle className="h-6 w-6" /> Report breakdown for this machine
+          <AlertTriangle className="h-6 w-6" /> {t("dashboard.reportBreakdownBtn")}
         </Link>
       )}
 
       <div>
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-xl font-bold">Service history</h2>
+          <h2 className="text-xl font-bold">{t("equipment.serviceHistoryTitle")}</h2>
         </div>
         {recs.length === 0 && (
           <Card className="text-sm text-muted-foreground">
-            No service records yet. Completed repairs are added here automatically.
+            {t("equipment.noHistoryYet")}
           </Card>
         )}
         <ol className="relative space-y-4 border-l-2 border-primary/30 pl-5">

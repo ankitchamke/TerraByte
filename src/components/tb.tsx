@@ -46,6 +46,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
+import { FarmerLanguageSelector } from "@/components/farmer-language-selector";
 
 function getCategoryBadgeConfig(category: NotificationCategory) {
   switch (category) {
@@ -195,6 +197,7 @@ export function DemoTag({ className }: { className?: string }) {
 export function Shell({ role, children, wide }: { role: Role; children: ReactNode; wide?: boolean }) {
   const s = useTB();
   const { profile, email, userId } = useAuth();
+  const { t } = useTranslation();
   const online = useOnline();
   const nav = useNavigate();
   const router = useRouter();
@@ -214,15 +217,14 @@ export function Shell({ role, children, wide }: { role: Role; children: ReactNod
     setResetError(null);
 
     try {
-      // 1. Synchronize in-memory / localStorage demo store first
-      resetDemo();
-
-      // 2. Call secure PostgreSQL RPC with ZERO parameters
-      try {
-        await resetDemoData();
-      } catch (dbErr: any) {
-        console.warn("[TerraByte] Remote DB reset notice (in-memory demo store successfully reset):", dbErr);
+      // 1. Call secure PostgreSQL RPC with ZERO parameters and require successful database response
+      const rpcResult = await resetDemoData();
+      if (!rpcResult || !rpcResult.success) {
+        throw new Error(rpcResult?.message || "Database reset failed.");
       }
+
+      // 2. Synchronize in-memory / localStorage demo store ONLY after database confirmed success
+      resetDemo();
 
       // 3. Refresh authenticated profile from database
       await refreshProfile().catch(() => {});
@@ -236,7 +238,7 @@ export function Shell({ role, children, wide }: { role: Role; children: ReactNod
       // 6. Remount child route components so data hooks reload clean DB state
       setResetKey((prev) => prev + 1);
 
-      // 7. Close modal and show success toast
+      // 7. Close modal and show success toast ONLY on confirmed success
       setResetDialogOpen(false);
       toast.success("Demo environment reset to baseline.");
     } catch (err: any) {
@@ -425,7 +427,7 @@ export function Shell({ role, children, wide }: { role: Role; children: ReactNod
     <div className="min-h-screen bg-background">
       {!online && (
         <div className="sticky top-0 z-50 flex items-center justify-center gap-2 bg-warning px-4 py-2 text-sm font-semibold text-warning-foreground">
-          <WifiOff className="h-4 w-4" /> Offline — your entries are saved on this phone and will sync when signal returns
+          <WifiOff className="h-4 w-4" /> {role === "farmer" ? t("common.offlineBanner") : "Offline — your entries are saved on this phone and will sync when signal returns"}
         </div>
       )}
       <header className="sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur">
@@ -436,7 +438,7 @@ export function Shell({ role, children, wide }: { role: Role; children: ReactNod
             </span>
             <span className="min-w-0">
               <span className="block font-display text-lg font-bold leading-none">TerraByte</span>
-              <span className="block truncate text-xs text-muted-foreground">{who}</span>
+              <span className="block truncate text-xs text-muted-foreground">{role === "farmer" ? t("shell.farmerPortal") : who}</span>
             </span>
           </Link>
           {typeof window !== "undefined" && sessionStorage.getItem("tb_demo_origin") === "home" && (
@@ -453,10 +455,11 @@ export function Shell({ role, children, wide }: { role: Role; children: ReactNod
             </button>
           )}
           <div className="ml-auto flex items-center gap-1">
+            {role === "farmer" && <FarmerLanguageSelector className="mr-1" />}
             <Link
               to="/profile"
-              aria-label="Profile settings"
-              title="Profile settings"
+              aria-label={role === "farmer" ? t("shell.profileSettings") : "Profile settings"}
+              title={role === "farmer" ? t("shell.profileSettings") : "Profile settings"}
               className="grid h-11 w-11 place-items-center rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
             >
               <User className="h-5 w-5" />
@@ -728,6 +731,7 @@ export function StatusPill({
   r: Pick<Repair, "status" | "testing"> & { technicianId?: string | null; technician_id?: string | null };
   audience: "farmer" | "staff";
 }) {
+  const { t } = useTranslation();
   const techAssigned = r.technicianId || r.technician_id;
   const isUnassignedRequest = audience === "farmer" && r.status === "REQUESTED" && !techAssigned;
 
@@ -735,12 +739,13 @@ export function StatusPill({
   let toneClass = TONE[r.status];
 
   if (isUnassignedRequest) {
-    label = "Send request to technician";
+    label = audience === "farmer" ? t("dashboard.sendRequestToTech") : "Send request to technician";
     toneClass = "bg-accent/25 text-accent-foreground border-accent/50";
   } else if (r.testing && r.status === "IN_PROGRESS") {
-    label = audience === "farmer" ? "Testing Your Machine" : "Testing";
+    label = audience === "farmer" ? t("statuses.testing") : "Testing";
   } else {
-    label = (audience === "farmer" ? FARMER_LABEL : STAFF_LABEL)[r.status];
+    const rawLabel = (audience === "farmer" ? FARMER_LABEL : STAFF_LABEL)[r.status];
+    label = audience === "farmer" ? t(`statuses.${r.status.toLowerCase()}`, rawLabel) : rawLabel;
   }
 
   return (
@@ -776,14 +781,27 @@ export function stepIndex(r: Repair | any) {
   }
 }
 export function Stepper({ r }: { r: Repair | any }) {
+  const { t } = useTranslation();
   const i = stepIndex(r);
   const paused = r.status === "WAITING_FOR_PARTS";
   const onHold = r.status === "CANCELLATION_REQUESTED";
+
+  const stepLabels = [
+    t("repair.stepRequested"),
+    t("repair.stepAssigned"),
+    t("repair.stepDiagnosing"),
+    t("statuses.quote_approved"),
+    t("repair.stepInProgress"),
+    t("repair.stepTesting"),
+    t("repair.stepCompleted"),
+  ];
+
   return (
     <ol className="space-y-0">
       {STEPS.map((s, k) => {
         const done = k < i || (k === 6 && r.status === "COMPLETED");
         const cur = k === i && !done;
+        const localizedLabel = stepLabels[k] || s;
         return (
           <li key={s} className="relative flex gap-3 pb-4 last:pb-0">
             {k < STEPS.length - 1 && <span className={cn("absolute left-[13px] top-7 h-[calc(100%-20px)] w-0.5", k < i ? "bg-primary" : "bg-border")} />}
@@ -792,7 +810,7 @@ export function Stepper({ r }: { r: Repair | any }) {
               {done ? <Check className="h-4 w-4" /> : k + 1}
             </span>
             <span className={cn("pt-0.5 text-sm", cur ? "font-bold" : done ? "font-medium" : "text-muted-foreground")}>
-              {cur && paused ? "Paused: Waiting for Spare Parts" : cur && onHold ? "Cancellation Pending Review" : s}
+              {cur && paused ? t("statuses.waiting_for_parts") : cur && onHold ? "Cancellation Pending Review" : localizedLabel}
             </span>
           </li>
         );

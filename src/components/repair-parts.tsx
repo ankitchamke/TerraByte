@@ -3,8 +3,10 @@ import { Card, Label } from "@/components/tb";
 import { fmtTime, inr, quoteTotals, type Quote, type Repair, type Technician } from "@/lib/tb-store";
 import { formatEtaDateTime } from "@/lib/date-utils";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
 
 export function AssessmentCard({ r, compact }: { r: Repair; compact?: boolean }) {
+  const { t } = useTranslation();
   const a = r?.assessment || ({} as any);
   const severity = a.severity || "Moderate";
   const system = a.system || "General Mechanical";
@@ -26,7 +28,7 @@ export function AssessmentCard({ r, compact }: { r: Repair; compact?: boolean })
         <span className="rounded-sm border border-dashed border-info/50 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-info">Assistive · Demo engine</span>
       </div>
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        <div><Label>Likely affected system</Label><p className="text-lg font-bold">{system}</p></div>
+        <div><Label>Likely affected system</Label><p className="text-lg font-bold">{t(`systems.${system}`, system)}</p></div>
         <div><Label>Severity</Label><span className={cn("inline-block rounded-full px-3 py-1 text-sm font-bold", sevTone)}>{severity}</span></div>
         <div className="sm:col-span-2"><Label>Possible issue</Label><p>{possibleIssue}</p></div>
         {!compact && partsCategory.length > 0 && (

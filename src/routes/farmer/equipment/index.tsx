@@ -14,6 +14,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { fileToSmallDataUrl } from "@/lib/image";
 import { meta } from "@/lib/seo";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/lib/i18n";
 
 export const Route = createFileRoute("/farmer/equipment/")({
   head: () => meta("My equipment", "Register and manage your agricultural machines."),
@@ -30,6 +31,7 @@ const schema = z.object({
 });
 
 function EquipmentList() {
+  const { t } = useTranslation();
   const [eq, setEq] = useState<EquipmentRow[]>([]);
   const [serviceCounts, setServiceCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
@@ -113,54 +115,54 @@ function EquipmentList() {
 
   return (
     <div className="space-y-5">
-      <ContextualBack to="/farmer" label="Home" />
+      <ContextualBack to="/farmer" label={t("common.backToHome")} />
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">My equipment</h1>
+        <h1 className="text-3xl font-bold">{t("equipment.title")}</h1>
         <button onClick={() => setOpen(!open)} className={btn.primary}>
           {open ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-          {open ? "Close" : "Add"}
+          {open ? t("common.close") : t("equipment.addBtn")}
         </button>
       </div>
       {open && (
         <Card className="space-y-4">
           <div>
-            <Label>Type</Label>
+            <Label>{t("equipment.typeLabel")}</Label>
             <div className="flex flex-wrap gap-2">
-              {TYPES.map((t) => (
+              {TYPES.map((typeKey) => (
                 <button
-                  key={t}
-                  onClick={() => setF({ ...f, type: t })}
+                  key={typeKey}
+                  onClick={() => setF({ ...f, type: typeKey })}
                   className={cn(
                     "h-11 rounded-xl border-2 px-4 text-sm font-semibold",
-                    f.type === t ? "border-primary bg-primary text-primary-foreground" : "border-border"
+                    f.type === typeKey ? "border-primary bg-primary text-primary-foreground" : "border-border"
                   )}
                 >
-                  {t}
+                  {t(`equipmentTypes.${typeKey}`, typeKey)}
                 </button>
               ))}
             </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <Label>Manufacturer</Label>
+              <Label>{t("equipment.makeLabel")}</Label>
               <input
                 className={input}
-                placeholder="Mahindra"
+                placeholder={t("equipment.makePlaceholder")}
                 value={f.make}
                 onChange={(e) => setF({ ...f, make: e.target.value })}
               />
             </div>
             <div>
-              <Label>Model</Label>
+              <Label>{t("equipment.modelLabel")}</Label>
               <input
                 className={input}
-                placeholder="575 DI"
+                placeholder={t("equipment.modelPlaceholder")}
                 value={f.model}
                 onChange={(e) => setF({ ...f, model: e.target.value })}
               />
             </div>
             <div>
-              <Label>Year of purchase</Label>
+              <Label>{t("equipment.yearLabel")}</Label>
               <input
                 className={input}
                 inputMode="numeric"
@@ -169,7 +171,7 @@ function EquipmentList() {
               />
             </div>
             <div>
-              <Label>Operating hours</Label>
+              <Label>{t("equipment.hoursLabel")}</Label>
               <input
                 className={input}
                 inputMode="numeric"
@@ -178,16 +180,17 @@ function EquipmentList() {
               />
             </div>
             <div className="sm:col-span-2">
-              <Label>Registration / serial / chassis no.</Label>
+              <Label>{t("equipment.serialLabel")}</Label>
               <input
                 className={input}
+                placeholder={t("equipment.serialPlaceholder")}
                 value={f.serial}
                 onChange={(e) => setF({ ...f, serial: e.target.value })}
               />
             </div>
           </div>
           <label className={cn(btn.ghost, "w-full cursor-pointer")}>
-            <Camera className="h-4 w-4" /> {f.photo ? "Photo added ✓" : "Add machine photo (optional)"}
+            <Camera className="h-4 w-4" /> {f.photo ? "Photo added ✓" : t("equipment.photoLabel")}
             <input
               type="file"
               accept="image/*"
@@ -200,13 +203,13 @@ function EquipmentList() {
             />
           </label>
           <button disabled={saving} onClick={save} className={cn(btn.primary, "w-full")}>
-            {saving ? "Registering…" : "Register machine"}
+            {saving ? t("equipment.btnSaving") : t("equipment.btnSaveMachine")}
           </button>
         </Card>
       )}
 
       {loading ? (
-        <div className="py-12 text-center text-muted-foreground">Loading equipment…</div>
+        <div className="py-12 text-center text-muted-foreground">{t("dashboard.loadingMachines")}</div>
       ) : error ? (
         <Card className="text-destructive">
           <p>Failed to load equipment: {error}</p>
@@ -217,9 +220,9 @@ function EquipmentList() {
       ) : eq.length === 0 ? (
         <Card className="py-8 text-center text-muted-foreground">
           <Tractor className="mx-auto mb-2 h-10 w-10 opacity-40" />
-          <p className="font-semibold text-foreground">No equipment registered yet</p>
+          <p className="font-semibold text-foreground">{t("dashboard.noMachinesYet")}</p>
           <p className="mt-1 text-sm">
-            Add your tractor, harvester, or pump to report repairs and track maintenance.
+            {t("equipment.subtitle")}
           </p>
         </Card>
       ) : (
@@ -250,17 +253,17 @@ function EquipmentList() {
                         : "bg-destructive/15 text-destructive"
                     )}
                   >
-                    {e.status}
+                    {e.status === "Operational" ? t("common.operational") : t("common.broken")}
                   </span>
                 </div>
                 <h2 className="mt-3 text-xl font-bold">
                   {e.make} {e.model}
                 </h2>
                 <p className="text-sm text-muted-foreground">
-                  {e.type} · {e.year ?? "—"} · {(e.operating_hours ?? 0).toLocaleString("en-IN")} hrs
+                  {t(`equipmentTypes.${e.type}`, e.type)} · {e.year ?? "—"} · {(e.operating_hours ?? 0).toLocaleString("en-IN")} {t("common.hrs")}
                 </p>
                 <p className="mt-2 font-mono text-xs text-muted-foreground">
-                  {recs} service record{recs === 1 ? "" : "s"}
+                  {recs} {t("dashboard.serviceHistory")}
                 </p>
               </Link>
             );

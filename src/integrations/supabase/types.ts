@@ -1220,6 +1220,25 @@ export type Database = {
         };
         Returns: Json;
       };
+      admin_set_technician_verification: {
+        Args: {
+          p_technician_profile_id: string;
+          p_is_verified: boolean;
+        };
+        Returns: Json;
+      };
+      get_technician_workshop_profile: {
+        Args: {
+          p_profile_id?: string | null;
+        };
+        Returns: Json;
+      };
+      get_technician_private_profile: {
+        Args: {
+          p_technician_profile_id: string;
+        };
+        Returns: Json;
+      };
     };
     Enums: {
       equipment_status: "Operational" | "In Repair" | "Needs Attention";

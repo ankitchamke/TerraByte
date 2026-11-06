@@ -323,8 +323,8 @@ The overarching design objective is to **dramatically compress the time between 
 | **Phase 9.4**| Parts Notifications | Role-specific parts alerts & boundaries | Completed | Verified in test suite |
 | **Phase 10** | Profile Security Separation | Decoupled `profiles`, `profile_auth_secrets` | Completed | 28 tests passing |
 | **Phase 11** | Visual Defect Diagnostics (AI) | Gemini 3.5 Flash-Lite, `<DefectAnnotationCanvas />`, `<VisualDefectDiagnosticViewer />`, fail-closed consent, fail-open breakdown submission, staging separation | **Completed** | 160 tests passing, 24 staging checks, 18 real-image checks, 8 consent checks |
-| **Phase 12** | Multilingual Farmer Experience | Trilingual Farmer UI (English, Hindi, Marathi), Noto Sans Devanagari, voice input preserved | **Next** *(Planned)* | Ready for implementation; dependencies satisfied |
-| **Phase 13** | Technician Trust & Workshops | `repair_facilities`, `facility_memberships` (OWNER/MANAGER/TECHNICIAN), registered workshop location, in-person KYC, admin AI approval, verified ratings | Planned | Pending Phase 12 |
+| **Phase 12** | Multilingual Farmer Experience | Trilingual Farmer UI (English, Hindi, Marathi), Noto Sans Devanagari, voice input preserved, staging reset paired auth | **Completed** | 171 passing tests, 15/15 responsive viewports, staging demo reset verified |
+| **Phase 13** | Technician Trust & Workshops | `repair_facilities`, `facility_memberships` (OWNER/MANAGER/TECHNICIAN), registered workshop location, in-person KYC, admin AI approval, verified ratings | **Next** *(Initialized)* | Phase 13 branch initialized, plan documented, ready for implementation |
 | **Phase 14** | Smart Dispatch & Routing | Registered workshop OSRM routing, Haversine ban, Doorstep vs Drop-off, Immobile lock, bay capacity | Planned | Pending Phase 13 |
 | **Phase 15** | Preventive Maintenance & Offline| Vidarbha crop heuristics, offline caching | Planned | Pending Phase 14 |
 | **Phase 16** | Frontend UI/UX & Polish | Public homepage redesign & trilingual localisation (EN/HI/MR), role portals, 320px–375px mobile, Devanagari resilience, touch targets, state polish | Planned | Pending Phase 15 |
@@ -332,4 +332,4 @@ The overarching design objective is to **dramatically compress the time between 
 
 ---
 
-*Roadmap updated: 2026-11-06 — Fully synchronized with Master Project Architecture & Verified Staging Baseline (160 passing tests in 1.10s, 0 errors, 1.25s SSR / 2.69s client build on 2026-11-06)*
+*Roadmap updated: 2026-11-06 — Fully synchronized with Master Project Architecture & Verified Staging Baseline (171 passing tests in 1.20s, 0 errors, 1.20s SSR / 2.28s client build on 2026-11-06)*

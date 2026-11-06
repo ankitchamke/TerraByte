@@ -23,6 +23,14 @@ export interface AssignTechnicianInput {
   technician_id: string; // The technician's profile UUID (profiles.id / technician_profiles.profile_id)
 }
 
+/**
+ * Explicit safe column projection for public and operational technician discovery.
+ * Strictly excludes sensitive KYC audit details (kyc_masked_id, kyc_remarks) and AI suggested skills
+ * while preserving necessary operational, reputation, and relational profile attributes.
+ */
+export const TECHNICIAN_SAFE_PROJECTION =
+  "id, profile_id, workshop_name, brands, skills, verified_skills, rating, review_count, is_available, is_verified, kyc_verified, jobs_completed, distance_km, eta_minutes, primary_facility_id, created_at, updated_at, profile:profile_id(id, full_name, phone, village)";
+
 let cachedProfile: { auth_user_id: string; id: string; role: string; expiresAt: number } | null =
   null;
 
@@ -130,7 +138,7 @@ export async function getEligibleTechnicians(
   // 2. Query all verified technicians from PostgreSQL
   const { data: techRows, error: techError } = await supabase
     .from("technician_profiles")
-    .select("*, profile:profile_id(id, full_name, phone, village)")
+    .select(TECHNICIAN_SAFE_PROJECTION)
     .eq("is_verified", true);
 
   if (techError) {
@@ -370,7 +378,7 @@ export async function getAssignedTechnician(
 
   const { data: tech, error: techError } = await supabase
     .from("technician_profiles")
-    .select("*, profile:profile_id(id, full_name, phone, village)")
+    .select(TECHNICIAN_SAFE_PROJECTION)
     .eq("profile_id", repair.technician_id)
     .maybeSingle();
 
@@ -389,7 +397,7 @@ export async function getMyTechnicianProfile(): Promise<VerifiedTechnicianWithPr
 
   const { data, error } = await supabase
     .from("technician_profiles")
-    .select("*, profile:profile_id(id, full_name, phone, village)")
+    .select(TECHNICIAN_SAFE_PROJECTION)
     .eq("profile_id", profile.id)
     .maybeSingle();
 
@@ -435,7 +443,7 @@ export async function getVerifiedTechnicians(): Promise<VerifiedTechnicianWithPr
 
   const { data, error } = await supabase
     .from("technician_profiles")
-    .select("*, profile:profile_id(id, full_name, phone, village)")
+    .select(TECHNICIAN_SAFE_PROJECTION)
     .order("created_at", { ascending: true });
 
   if (error) {
@@ -448,6 +456,7 @@ export async function getVerifiedTechnicians(): Promise<VerifiedTechnicianWithPr
 /**
  * Sets verification status for a technician profile (admin-only).
  * When approved (isVerified = true), dispatches an idempotent notification to the technician.
+ * Uses the hardened SECURITY DEFINER admin RPC to update protected verification governance.
  */
 export async function setTechnicianVerification(
   profileId: string,
@@ -461,10 +470,11 @@ export async function setTechnicianVerification(
     );
   }
 
-  const { error } = await supabase
-    .from("technician_profiles")
-    .update({ is_verified: isVerified })
-    .or(`profile_id.eq.${profileId},id.eq.${profileId}`);
+  // Use the hardened admin RPC to execute verified mutation securely
+  const { error } = await supabase.rpc("admin_set_technician_verification", {
+    p_technician_profile_id: profileId,
+    p_is_verified: isVerified,
+  });
 
   if (error) {
     throw new Error(`Failed to update technician verification: ${error.message}`);

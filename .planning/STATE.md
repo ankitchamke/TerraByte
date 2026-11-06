@@ -12,19 +12,19 @@
 
 ## 2. Current Position & Milestone Status
 
-- **Current Phase**: **Phase 12 — Multilingual Farmer Experience (COMPLETED & STAGING VERIFIED)**
-- **Branch**: `phase-12` (Connected to Lovable; strictly additive Git history, no force-pushing/rebasing)
+- **Current Phase**: **Phase 13 — Technician Trust, Shared Workshops & Accountability (INITIALIZED & PLANNING READY)**
+- **Branch**: `phase-13` (Created from completed `phase-12` base commit `7996ccc`; strictly additive Git history, no force-pushing/rebasing)
 - **Status Summary**:
   - Phases 1–10: **COMPLETED & VERIFIED**
   - Phase A (Auth Recovery): **COMPLETED & VERIFIED** — Resolved all 18 `get_session_profile` call sites across 14 modules with safe column fallback (`profiles.id, role, full_name, phone, village`), zero DB modifications, and verified mock client recovery.
   - Phase 11 (Visual Diagnostics): **COMPLETED & VERIFIED ON STAGING** — Dedicated Supabase staging (`ubqgvhcfmrvnmrbllcom`), 18 tables, 49 RLS policies, synthetic seed fixtures, interactive `DefectAnnotationCanvas`, multi-portal `VisualDefectDiagnosticViewer`, fail-closed consent opt-in, fail-open breakdown submission, live catalogue tractor compatibility matching, and staff force rescan lifecycle verified end-to-end. Production (`hwdrypkvszwrcraujctw`) strictly air-gapped and untouched.
   - Phase 12 (Multilingual Experience): **COMPLETED & VERIFIED ON STAGING** — Trilingual Farmer Portal (English, Hindi, Marathi) with 100% dictionary key parity (208 keys), Noto Sans Devanagari typography, compact top-nav segmented selector (`EN` / `हिं` / `म`), canonical Groq Whisper Large V3 voice transcription preservation, responsive 320px–1440px overflow immunity, and verified staging Reset Demo RPC paired authorization.
-  - Phase 13: **NEXT — PLANNED** (Technician Trust, Shared Workshops & Physical KYC)
+  - Phase 13: **ACTIVE / NEXT — INITIALIZED** (Technician Trust, Shared Workshops & Physical KYC — branch `phase-13` created, implementation plan authored)
   - Phases 14–17: **PLANNED** (Future phases; not yet implemented)
   - Post-Hackathon: **DEFERRED** (Payments, WhatsApp bot, OEM telematics, FPO networks, towing/flatbed recovery, external ERP inventory)
 
 ```text
-Progress: [███████████████░░░░░] 76% (Phase 12 Complete of 17-Phase Roadmap)
+Progress: [███████████████░░░░░] 76% (Phase 12 Complete, Phase 13 Initialized of 17-Phase Roadmap)
 ```
 
 ---
@@ -124,7 +124,7 @@ The following figures were verified live via empirical command execution on **20
 5. **Mandatory Doorstep Service for Immobile Equipment**: If machine is completely stopped/immobile (`is_immobile = true`), service is locked to `DOORSTEP`. Workshop Drop-off is disabled. Towing and flatbed recovery are excluded from current scope.
 6. **OSRM Road Routing Only**: In-app road distance and estimated driving duration computed via OSRM. **Zero Haversine/crow-flies distance in UI**. If OSRM fails, display `"Road Distance Temporarily Unavailable"`. Never fabricate ETAs or use outages to reject technicians. Google Maps navigation links use verified coordinates.
 7. **Verified Completed Repair Ratings**: Reviews restricted strictly to farmers with a completed `service_history` record. 1 review per repair. Unrated technicians display `"New / Unrated"`, never a fabricated 5.00 default.
-8. **Farmer-Facing English + Hindi Interface**: Interface localized in English and Devanagari Hindi using Noto Sans Devanagari typography. Zero Marathi in application UI. Voice transcription continues supporting Hindi, Marathi, and English independently.
+8. **Farmer-Facing Trilingual Interface**: Farmer Portal localized in English, Hindi, and Marathi (`en` | `hi` | `mr`) using Noto Sans Devanagari typography. Technician and Admin portals remain English. Voice transcription continues preserving Hindi, Marathi, and English independently.
 
 ---
 

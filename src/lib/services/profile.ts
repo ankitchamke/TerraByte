@@ -168,6 +168,24 @@ export async function getTechnicianWorkshopDetails(): Promise<{
 
   if (!user) return null;
 
+  // 1. Prefer secure SECURITY DEFINER RPC that enforces owner-only or admin access to workshop phone
+  try {
+    const { data: rpcData, error: rpcError } = await supabase.rpc(
+      "get_technician_workshop_profile",
+    );
+
+    if (!rpcError && rpcData) {
+      const parsed = typeof rpcData === "string" ? JSON.parse(rpcData as string) : rpcData;
+      return {
+        workshop_name: (parsed as any).workshop_name || "",
+        phone: (parsed as any).phone || null,
+      };
+    }
+  } catch (rpcErr) {
+    console.warn("[TerraByte] Warning: RPC get_technician_workshop_profile failed, falling back:", rpcErr);
+  }
+
+  // 2. Fallback for environments where RPC is not yet registered
   const { data: sessionData } = await supabase.rpc("get_session_profile");
   let profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
 
@@ -186,7 +204,7 @@ export async function getTechnicianWorkshopDetails(): Promise<{
 
   const { data: tech, error } = await supabase
     .from("technician_profiles")
-    .select("workshop_name, phone")
+    .select("workshop_name")
     .or(`profile_id.eq.${profile.id},id.eq.${profile.id}`)
     .maybeSingle();
 
@@ -195,7 +213,7 @@ export async function getTechnicianWorkshopDetails(): Promise<{
     return null;
   }
 
-  return tech ?? null;
+  return tech ? { workshop_name: tech.workshop_name, phone: null } : null;
 }
 
 /**

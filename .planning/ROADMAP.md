@@ -28,8 +28,8 @@ The overarching design objective is to **dramatically compress the time between 
 - [x] **Phase 9.3: Unavailable Parts Sourcing & ETA Coordination** — Per-item sourcing ETAs on requisitions, critical-path synchronization to `parts_hold`, out-of-stock handoff locks.
 - [x] **Phase 9.4: Dedicated Parts Notifications** — Role-specific in-app notifications for Service Centre, assigned technician, and farmer with privacy boundaries.
 - [x] **Phase 10: Profile Security Separation** — Decouple `public.profiles` from `auth.users.id`, segregating credentials in `public.profile_auth_secrets` with zero admin read access.
-- [ ] **Phase 11: Visual Defect Diagnostics (Google Gemini AI)** — Multimodal tractor damage assessment via Google Gemini 3.5 Flash-Lite, bounded token claims, fail-closed consent, and fail-open submission. *(Status: IN PROGRESS — Midway)*
-- [ ] **Phase 12: Multilingual Experience (English + Hindi Farmer UI)** — Bilingual farmer interface with Noto Sans Devanagari typography, language switcher, and Marathi voice transcription preservation. *(Status: PLANNED)*
+- [x] **Phase 11: Visual Defect Diagnostics (Google Gemini AI)** — Multimodal tractor damage assessment via Google Gemini 3.5 Flash-Lite, bounded token claims, fail-closed consent, and fail-open submission. *(Status: COMPLETED & STAGING VERIFIED)*
+- [ ] **Phase 12: Multilingual Experience (English + Hindi Farmer UI)** — Bilingual farmer interface with Noto Sans Devanagari typography, language switcher, and Marathi voice transcription preservation. *(Status: NEXT — PLANNED)*
 - [ ] **Phase 13: Technician Trust, Shared Workshops & Accountability** — Independent `repair_facilities`, workshop ownership vs technician membership separation via `facility_memberships`, in-person physical KYC, admin-verified AI skills, verified repair reviews (null defaults). *(Status: PLANNED)*
 - [ ] **Phase 14: Smart Dispatch & Emergency Response** — Workshop-based OSRM road distance & driving duration matching, strict ban on straight-line Haversine, dual delivery modes (Doorstep vs Workshop Drop-Off), Immobile machinery lock (`is_immobile = true` -> Doorstep only), bay capacity limits. *(Status: PLANNED)*
 - [ ] **Phase 15: Preventive Maintenance Intelligence & Offline Field Reliability** — Rule-based agro-climatic maintenance heuristics (Vidarbha Kharif/Rabi cycles), Service Worker caching, optimistic updates for intermittent rural cellular connectivity. *(Status: PLANNED)*
@@ -52,46 +52,36 @@ The overarching design objective is to **dramatically compress the time between 
 
 ### Phase 11: Visual Defect Diagnostics (Google Gemini AI)
 **Goal**: Integrate assistive multimodal AI visual diagnostics into equipment breakdown intake using Google Gemini 3.5 Flash-Lite under strict free-tier rate limits, bounded security claims, and robust fail-safe error handling.  
-**Status**: **IN PROGRESS (Midway)**  
-**Verification Baseline**: 5 contract tests passing (`tests/diagnostics-contract.test.mjs`).
+**Status**: **COMPLETED & STAGING VERIFIED**  
+**Verification Baseline**: 11 automated tests passing (`tests/diagnostics-contract.test.mjs` and `tests/visual-defect-frontend.test.mjs`), 24 staging acceptance checks, 18 real-image acceptance checks, and 8-step live consent acceptance pass.
 
-#### Completed Backend & Core Architecture (Done):
+#### Completed Deliverables:
 1. **Database Schema & Migrations**:
-   - `supabase/migrations/20261103120000_phase11_visual_defect_diagnostics.sql` applied.
+   - `supabase/migrations/20261103120000_phase11_visual_defect_diagnostics.sql` applied on staging (`ubqgvhcfmrvnmrbllcom`).
    - Created `public.repair_defect_diagnostics` audit table with strict foreign keys to `repair_requests` and `profiles`.
    - Atomic SECURITY DEFINER RPC `verify_diagnostic_claim_token()` validates single-use server-side claim tokens and prevents replay attacks.
-   - RLS policies configured ensuring farmers can view diagnostics only for their own tickets, while assigned technicians and service centre staff have authorized visibility.
-2. **Server-Side API Route**:
-   - `src/routes/api/assess-visual-defect.ts` handles image ingestion via Nitro serverless endpoint.
+   - `public.grant_repair_visual_consent()` and `public.revoke_repair_visual_consent()` manage fail-closed consent lifecycles.
+   - RLS policies configured ensuring farmers view diagnostics only for their own tickets, while assigned technicians and service centre staff have authorized visibility.
+2. **Server-Side API Route & Gemini Service**:
+   - `src/routes/api/assess-visual-defect.ts` handles image ingestion via Nitro serverless endpoint with fail-closed configuration and anti-cross-contamination guards.
    - Authenticates session caller via Supabase Auth (rejects unauthenticated requests with HTTP 401).
-   - Validates payload size (strictly bounded $\le 4\text{ MB}$, max 4 photos) and MIME types (`image/jpeg`, `image/png`, `image/webp`).
-   - Generates and verifies ephemeral claim tokens to prevent unauthorized or decoupled inference invocations.
-3. **Gemini Service Client**:
-   - `src/lib/services/gemini-diagnostic.ts` interfaces with Google Gemini 3.5 Flash-Lite.
-   - Structured JSON output schema enforced with Zod (`VisualDiagnosticResponseSchema`): component identification, visual defect description, confidence score (0.00–1.00), severity rating (`CRITICAL`, `MAJOR`, `MODERATE`, `MINOR`), and immediate safety recommendations.
-   - Robust timeout handling (10-second ceiling) and rate-limit backpressure guards.
-4. **Automated Verification**:
-   - 5 contract tests passing in `tests/diagnostics-contract.test.mjs`.
-
-#### Five Remaining Frontend & Integration Tasks (To Be Implemented):
-1. **Task 11.1 (Intake Consent UI in `src/routes/farmer/report-breakdown.tsx`)**:
-   - **Fail-Closed Consent Authorization**: The farmer must explicitly toggle an opt-in checkbox (*"Allow AI visual analysis of equipment photos"*). If unselected, image bytes are **never** transmitted to Gemini; the ticket relies exclusively on deterministic rule-based symptom diagnostics.
-   - **Non-Blocking on Denial**: Refusing consent must never prevent the farmer from submitting the breakdown report.
-2. **Task 11.2 (Client API Integration in `src/routes/farmer/report-breakdown.tsx`)**:
-   - Connect photo submission to call `/api/assess-visual-defect` with ephemeral claim token under RLS.
-   - **Fail-Open Breakdown Submission**: AI diagnostics are strictly non-blocking. If Gemini API times out, returns HTTP 429 (rate limit), throws an error, or if `GEMINI_API_KEY` is missing, the breakdown report **must still succeed and create the repair ticket**. The farmer is notified with an unobtrusive notice (*"AI analysis unavailable; standard breakdown logged successfully"*), and the repair proceeds normally with fallback rule-based diagnostic assessment.
-3. **Task 11.3 (Dead Video Handler Cleanup in `src/routes/farmer/report-breakdown.tsx`)**:
-   - Inspect and clean up obsolete/non-functional video file input and handler stubs in `report-breakdown.tsx`.
-   - Restrict media upload strictly to photos (`image/*`, max 4 photos, $\le 4\text{ MB}$ each) to maintain payload constraints and eliminate dead code paths.
-4. **Task 11.4 (`<VisualDiagnosticsCard />` Component)**:
-   - Develop reusable visual diagnostics card displaying AI analysis (affected component, defect description, confidence badge, severity, safety advisories).
-   - Clearly display assistive disclaimer on the card: *"AI-assisted preliminary diagnostic. Physical on-site inspection by certified technician is authoritative."*
-5. **Task 11.5 (Multi-Portal Detail Integration)**:
-   - Embed `<VisualDiagnosticsCard />` in:
+   - Validates payload size (bounded $\le 4\text{ MB}$, max 4 photos) and MIME types (`image/jpeg`, `image/png`, `image/webp`).
+   - `src/lib/services/gemini-diagnostic.ts` interfaces with Google Gemini 3.5 Flash-Lite with structured Zod schema output, 10s SLA ceiling, in-flight consent cancellation polling, and rate-limit backpressure guards.
+3. **Frontend Intake Consent & Safe Submission**:
+   - `src/routes/farmer/report-breakdown.tsx`: Implemented fail-closed consent opt-in checkbox (*"Allow AI visual analysis of equipment photos"*). If unselected, image bytes are never transmitted to Gemini.
+   - **Fail-Open Breakdown Submission**: AI errors, timeouts, or rate limits never block ticket creation.
+   - Cleaned up obsolete video file input and handler stubs; restricted strictly to photos ($\le 4\text{ MB}$).
+4. **Interactive Diagnostics UI & Multi-Portal Views**:
+   - Developed `<DefectAnnotationCanvas />` (`src/components/diagnostics/defect-annotation-canvas.tsx`) with SVG coordinate bounding boxes, severity badges, and interactive inspection.
+   - Developed `<VisualDefectDiagnosticViewer />` (`src/components/diagnostics/visual-defect-diagnostic-viewer.tsx`) with live catalog tractor compatibility matching, assistive disclaimers, and re-scan triggers.
+   - Embedded across:
      - Farmer Repair Detail view (`/farmer/repair/$id`)
      - Technician Job Workbench (`/technician/job/$id`)
-     - Service Centre Dispatch Detail (`/admin/repairs/$id`)
-   - Preserve farmer's original description/transcript intact without overwriting it with AI output.
+     - Service Centre Dispatch Detail (`/admin/repair/$id`) with staff force rescan capability.
+5. **Environment Separation & Build Isolation**:
+   - Established strict staging (`ubqgvhcfmrvnmrbllcom`) vs production (`hwdrypkvszwrcraujctw`) separation.
+   - Removed unsafe `"dev:production"` script. Local dev defaults to staging.
+   - Automated Vercel build mode dispatcher (`scripts/vercel-build.mjs`) selects `build:staging` for preview and `build:production` for production.
 
 ---
 
@@ -252,8 +242,8 @@ The overarching design objective is to **dramatically compress the time between 
 | **Phase 9.3**| Unavailable Parts & ETAs | Sourcing ETAs, `parts_hold` synchronization | Completed | Verified in test suite |
 | **Phase 9.4**| Parts Notifications | Role-specific parts alerts & boundaries | Completed | Verified in test suite |
 | **Phase 10** | Profile Security Separation | Decoupled `profiles`, `profile_auth_secrets` | Completed | 28 tests passing |
-| **Phase 11** | Visual Defect Diagnostics (AI) | Gemini 3.5 Flash-Lite, token claim RPC; 5 remaining frontend tasks: consent UI, API integration, dead video cleanup, `<VisualDiagnosticsCard />`, multi-portal views | **In Progress** *(Midway)* | 5 contract tests passing; Backend done; 5 frontend tasks underway |
-| **Phase 12** | Multilingual (English + Hindi) | Hindi Farmer UI, Noto Sans Devanagari, Marathi voice input preserved | Planned | Pending Phase 11 |
+| **Phase 11** | Visual Defect Diagnostics (AI) | Gemini 3.5 Flash-Lite, `<DefectAnnotationCanvas />`, `<VisualDefectDiagnosticViewer />`, fail-closed consent, fail-open breakdown submission, staging separation | **Completed** | 160 tests passing, 24 staging checks, 18 real-image checks, 8 consent checks |
+| **Phase 12** | Multilingual (English + Hindi) | Hindi Farmer UI, Noto Sans Devanagari, Marathi voice input preserved | **Next** *(Planned)* | Ready for implementation; dependencies satisfied |
 | **Phase 13** | Technician Trust & Workshops | `repair_facilities`, `facility_memberships` (OWNER/MANAGER/TECHNICIAN), registered workshop location, in-person KYC, admin AI approval, verified ratings | Planned | Pending Phase 12 |
 | **Phase 14** | Smart Dispatch & Routing | Registered workshop OSRM routing, Haversine ban, Doorstep vs Drop-off, Immobile lock, bay capacity | Planned | Pending Phase 13 |
 | **Phase 15** | Preventive Maintenance & Offline| Vidarbha crop heuristics, offline caching | Planned | Pending Phase 14 |
@@ -261,4 +251,4 @@ The overarching design objective is to **dramatically compress the time between 
 
 ---
 
-*Roadmap updated: 2026-11-04 — Fully synchronized with Master Project Architecture & Approved Roadmaps (Verified with 144 passing tests in 1.23s, 1.15s SSR / 2.51s client build on 2026-11-04)*
+*Roadmap updated: 2026-11-06 — Fully synchronized with Master Project Architecture & Verified Staging Baseline (160 passing tests in 1.10s, 0 errors, 1.25s SSR / 2.69s client build on 2026-11-06)*

@@ -73,14 +73,12 @@ TerraByte is an end-to-end digital agricultural equipment repair operating syste
 - ✓ **Unavailable Parts Sourcing & ETA Coordination**: Per-item sourcing ETAs on requisitions, critical-path synchronization to `parts_hold`, and out-of-stock handoff locks — *Phase 9.3*
 - ✓ **Parts-Specific Real-Time Notifications**: Role-specific alerts for Service Centre, assigned technician, and farmer with privacy boundaries — *Phase 9.4*
 - ✓ **Profile Security Separation**: Decoupling `public.profiles` from `auth.users.id`, segregating credentials in `public.profile_auth_secrets` with zero admin read access — *Phase 10*
+- ✓ **Visual Defect Diagnostics (Google Gemini AI)**: Multimodal tractor damage assessment via Google Gemini 3.5 Flash-Lite, bounded claim tokens, fail-closed consent, fail-open submission, `<DefectAnnotationCanvas />`, and `<VisualDefectDiagnosticViewer />` — *Phase 11 (Completed & Staging Verified)*
 
-### Active (In Progress — Phase 11 Midway)
-- [ ] **Phase 11 (Visual Defect Diagnostics — Google Gemini AI)**:
-  - *Backend Completed*: Migration `20261103120000_phase11_visual_defect_diagnostics.sql`, claim token verification RPC `verify_diagnostic_claim_token()`, API route `/api/assess-visual-defect`, service `src/lib/services/gemini-diagnostic.ts`, and 5 contract tests passing.
-  - *Frontend Underway*: Fail-closed consent opt-in UI in `report-breakdown.tsx`, fail-open non-blocking breakdown submission, dead video handler cleanup, and `<VisualDiagnosticsCard />` integration.
+### Active Scope (Phase 12 Next)
+- [ ] **Phase 12: Multilingual Farmer Experience (English + Hindi + Marathi)**: Trilingual farmer interface with Noto Sans Devanagari typography, language switcher, canonical voice transcription preservation (Groq Whisper Large V3), and English technician/admin portals.
 
-### Planned Product Scopes (Phases 12–16)
-- **Phase 12: Multilingual Experience (English + Hindi Farmer UI)**: Bilingual farmer interface with Noto Sans Devanagari typography. (Marathi UI explicitly excluded; Whisper Marathi voice typing retained).
+### Planned Product Scopes (Phases 13–16)
 - **Phase 13: Technician Trust, Shared Workshops & Accountability**: Independent `repair_facilities`, facility ownership vs technician membership separation, in-person physical KYC, admin-verified AI skills, and repair-gated verified reviews (null default rating).
 - **Phase 14: Smart Dispatch & Emergency Response**: Registered workshop-based OSRM road distance and driving ETA matching, strict prohibition of straight-line Haversine, dual delivery modes (Doorstep vs Workshop Drop-off), Immobile machinery lock (`is_immobile = true` -> Doorstep only), and workshop bay capacity limits.
 - **Phase 15: Preventive Maintenance Intelligence & Offline Field Reliability**: Rule-based Vidarbha crop heuristics, Service Worker offline ticket caching, and optimistic workbench mutations.
@@ -134,7 +132,7 @@ flowchart TD
 | **ADR-003** | Workshop Capacity Tracking | Workshops enforce `max_equipment_capacity`. Active repairs tracked; over-capacity workshops blocked from new drop-offs. | Phase 14 |
 | **ADR-004** | Privacy-Conscious Physical KYC | Physical in-person KYC at Nagpur Service Centre only. Zero Aadhaar document uploads; zero full Aadhaar number storage. Admin-only RPC verification. | Phase 13 |
 | **ADR-005** | Authoritative OSRM Road Routing | Road distance and driving duration calculated from registered workshop coordinates using OSRM with **no continuous live GPS tracking**. Straight-line Haversine distance strictly banned. Graceful outage fallback: *"Road Distance Temporarily Unavailable"*. OSRM driving duration is an estimated road duration without real-time traffic conditions. | Phase 14 |
-| **ADR-006** | Multilingual Scope Boundaries | Farmer UI localized in English and Hindi (`en` \| `hi`) with Noto Sans Devanagari typography. Marathi UI removed from web scope. Whisper voice input preserves Marathi independently. | Phase 12 |
+| **ADR-006** | Multilingual Scope Boundaries | Farmer UI localized in English, Hindi, and Marathi (`en` \| `hi` \| `mr`) with Noto Sans Devanagari typography. Technician/admin portals remain English. Groq Whisper voice input preserves canonical native spoken transcripts. | Phase 12 |
 | **ADR-007** | Admin Gate for AI Expertise | AI suggests technician brand and skill tags based on repair history; Service Centre admin must explicitly approve tags before public display. | Phase 13 |
 | **ADR-008** | Verified-Only Ratings Engine | Reviews gated strictly by completed `service_history` records. Unrated technicians default to `NULL` (*"New / Unrated"*). No fake 5.00 ratings. | Phase 13 |
 

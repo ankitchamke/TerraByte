@@ -29,7 +29,7 @@ The overarching design objective is to **dramatically compress the time between 
 - [x] **Phase 9.4: Dedicated Parts Notifications** — Role-specific in-app notifications for Service Centre, assigned technician, and farmer with privacy boundaries.
 - [x] **Phase 10: Profile Security Separation** — Decouple `public.profiles` from `auth.users.id`, segregating credentials in `public.profile_auth_secrets` with zero admin read access.
 - [x] **Phase 11: Visual Defect Diagnostics (Google Gemini AI)** — Multimodal tractor damage assessment via Google Gemini 3.5 Flash-Lite, bounded token claims, fail-closed consent, and fail-open submission. *(Status: COMPLETED & STAGING VERIFIED)*
-- [ ] **Phase 12: Multilingual Experience (English + Hindi Farmer UI)** — Bilingual farmer interface with Noto Sans Devanagari typography, language switcher, and Marathi voice transcription preservation. *(Status: NEXT — PLANNED)*
+- [ ] **Phase 12: Multilingual Farmer Experience (English + Hindi + Marathi)** — Trilingual farmer interface (English, Hindi, Marathi) with Noto Sans Devanagari typography, language switcher, and Marathi/Hindi/English voice transcription preservation. *(Status: NEXT — PLANNED)*
 - [ ] **Phase 13: Technician Trust, Shared Workshops & Accountability** — Independent `repair_facilities`, workshop ownership vs technician membership separation via `facility_memberships`, in-person physical KYC, admin-verified AI skills, verified repair reviews (null defaults). *(Status: PLANNED)*
 - [ ] **Phase 14: Smart Dispatch & Emergency Response** — Workshop-based OSRM road distance & driving duration matching, strict ban on straight-line Haversine, dual delivery modes (Doorstep vs Workshop Drop-Off), Immobile machinery lock (`is_immobile = true` -> Doorstep only), bay capacity limits. *(Status: PLANNED)*
 - [ ] **Phase 15: Preventive Maintenance Intelligence & Offline Field Reliability** — Rule-based agro-climatic maintenance heuristics (Vidarbha Kharif/Rabi cycles), Service Worker caching, optimistic updates for intermittent rural cellular connectivity. *(Status: PLANNED)*
@@ -85,27 +85,34 @@ The overarching design objective is to **dramatically compress the time between 
 
 ---
 
-### Phase 12: Multilingual Experience (English + Hindi Farmer UI)
-**Goal**: Deliver a culturally accessible, bilingual interface tailored to Vidarbha rural operators, focusing initial localization strictly on the farmer-facing experience.  
-**Status**: **PLANNED**  
+### Phase 12: Multilingual Farmer Experience (English + Hindi + Marathi)
+**Goal**: Deliver a culturally accessible, trilingual interface tailored to Vidarbha rural operators, focusing localization strictly on the farmer-facing experience while preserving English for technician and service centre administration.  
+**Status**: **NEXT — PLANNED**  
 **Dependencies**: Phase 11 completion.
 
 #### Scope & Requirements:
 1. **Target Languages & Scope**:
-   - **Supported Languages**: English (`en`) and Hindi (`hi`).
+   - **Supported Languages**: English (`en`), Hindi (`hi`), and Marathi (`mr`).
    - **Target Audience**: Farmer Portal (`/farmer/*`, breakdown reporting, tracking stepper, quote review, equipment fleet).
-   - **Explicit Marathi Exclusion**: All proposed Marathi UI localization is completely removed from the web interface. Farmer UI is strictly English + Hindi. (Voice input retains Marathi transcription support independently via Whisper / Web Speech API).
-   - **Administrative Scope**: Technician and Service Centre administration portals remain in English for this release.
-2. **Typography & Layout Integrity**:
-   - Configure **Noto Sans Devanagari** web font stack for proper rendering of Hindi ligatures and conjuncts.
-   - Zero horizontal overflow or clipped text in Hindi on mobile screens (test with 320px–375px viewports).
-3. **Localization Architecture**:
+   - **Administrative Scope**: Technician and Service Centre administration portals remain strictly in English for this release.
+   - **Historical Evolution Note**: Earlier project scoping (ADR-006) temporarily bounded web UI to English + Hindi. In alignment with confirmed Vidarbha operator demographics, Phase 12 extends full farmer UI support to Marathi (`mr`) alongside Hindi and English.
+2. **Speech-to-Text & Transcript Canonical Invariant**:
+   - Existing Groq Whisper Large V3 voice transcription service maintains automatic multi-language detection across Marathi, Hindi, and English.
+   - **Preserve Canonical Spoken Transcript**: Spoken voice input is transcribed in its native spoken language as the canonical record.
+   - **No Overwriting**: The system must never automatically overwrite original spoken transcripts with machine translations.
+3. **Free-Tier & Zero External Cost Guarantee**:
+   - Zero paid translation APIs, commercial SDKs, or external per-token localization services.
+   - Lightweight, maintainable, type-safe dictionary mapping (zero heavy runtime i18n bundle overhead).
+4. **Typography & Layout Integrity**:
+   - Configure **Noto Sans Devanagari** web font stack for proper rendering of Devanagari ligatures and conjuncts across Hindi and Marathi.
+   - Zero horizontal overflow or clipped text in Hindi or Marathi on mobile screens (verify with 320px–375px viewports).
+5. **Localization Architecture & Preference**:
    - Lightweight, type-safe dictionary approach (zero heavy i18n runtime bundles).
    - Language selector toggle located in Shell header and Farmer dashboard.
    - Persist user language preference in `localStorage` and optionally in `profile.preferred_language`.
-4. **Continuous Automated Testing**:
-   - Unit tests verifying dictionary key completeness across `en` and `hi`.
-   - Layout regression tests ensuring no broken UI components under Devanagari text length expansion.
+6. **Continuous Automated Testing**:
+   - Unit tests verifying 100% dictionary key parity across `en`, `hi`, and `mr`.
+   - Responsive layout tests ensuring no broken UI components under Devanagari text expansion.
 
 ---
 
@@ -243,7 +250,7 @@ The overarching design objective is to **dramatically compress the time between 
 | **Phase 9.4**| Parts Notifications | Role-specific parts alerts & boundaries | Completed | Verified in test suite |
 | **Phase 10** | Profile Security Separation | Decoupled `profiles`, `profile_auth_secrets` | Completed | 28 tests passing |
 | **Phase 11** | Visual Defect Diagnostics (AI) | Gemini 3.5 Flash-Lite, `<DefectAnnotationCanvas />`, `<VisualDefectDiagnosticViewer />`, fail-closed consent, fail-open breakdown submission, staging separation | **Completed** | 160 tests passing, 24 staging checks, 18 real-image checks, 8 consent checks |
-| **Phase 12** | Multilingual (English + Hindi) | Hindi Farmer UI, Noto Sans Devanagari, Marathi voice input preserved | **Next** *(Planned)* | Ready for implementation; dependencies satisfied |
+| **Phase 12** | Multilingual Farmer Experience | Trilingual Farmer UI (English, Hindi, Marathi), Noto Sans Devanagari, voice input preserved | **Next** *(Planned)* | Ready for implementation; dependencies satisfied |
 | **Phase 13** | Technician Trust & Workshops | `repair_facilities`, `facility_memberships` (OWNER/MANAGER/TECHNICIAN), registered workshop location, in-person KYC, admin AI approval, verified ratings | Planned | Pending Phase 12 |
 | **Phase 14** | Smart Dispatch & Routing | Registered workshop OSRM routing, Haversine ban, Doorstep vs Drop-off, Immobile lock, bay capacity | Planned | Pending Phase 13 |
 | **Phase 15** | Preventive Maintenance & Offline| Vidarbha crop heuristics, offline caching | Planned | Pending Phase 14 |

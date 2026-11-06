@@ -142,7 +142,17 @@ Phase 11 delivered multimodal visual defect diagnostics using Google Gemini 3.5 
 
 ---
 
-## 3. Phase A: Authentication Recovery & RPC Fallback
+## 3. Phase 12: Multilingual Farmer Experience
+
+Phase 12 delivers a trilingual farmer portal experience (English, Hindi, Marathi) with Noto Sans Devanagari typography, canonical voice transcription preservation (Groq Whisper Large V3), zero external cost, and 100% dictionary key parity.
+
+| Document | Purpose / Summary |
+| :--- | :--- |
+| [`PHASE12_IMPLEMENTATION_PLAN.md`](phase-12/PHASE12_IMPLEMENTATION_PLAN.md) | Structured implementation plan for trilingual Farmer Portal localization, typography, canonical transcript invariants, and testing gates. |
+
+---
+
+## 4. Phase A: Authentication Recovery & RPC Fallback
 
 Phase A resolved the production authentication regression triggered by the parameterless `public.get_session_profile()` RPC absent from schema cache (`PGRST202`).
 
@@ -152,7 +162,7 @@ Phase A resolved the production authentication regression triggered by the param
 
 ---
 
-## 4. Phase A.1: Live Acceptance & Existing Workflow Testing
+## 5. Phase A.1: Live Acceptance & Existing Workflow Testing
 
 Phase A.1 verified real authentication, session persistence, logout/login, registration endpoints, role-based workflows, and security isolation against the live Supabase production project (`hwdrypkvszwrcraujctw`).
 
@@ -165,7 +175,7 @@ Phase A.1 verified real authentication, session persistence, logout/login, regis
 
 ---
 
-## 5. Archive & Historical Audits
+## 6. Archive & Historical Audits
 
 Superseded or historical reports covering earlier phases before the staging isolation and forward migration architecture were finalized.
 

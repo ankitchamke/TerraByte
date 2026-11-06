@@ -86,11 +86,12 @@ To guarantee continuous quality, every phase must implement automated tests sati
 - **TEST-11-07 (Dead Media Cleanup)**: Unit test verifying that only photo files are accepted and processed in breakdown intake. *(PASS)*
 - **TEST-11-08 (Staging E2E Acceptance)**: Full lifecycle acceptance on dedicated staging environment (`ubqgvhcfmrvnmrbllcom`), verifying consent, cooldowns, retries, tractor model catalogue compatibility, and admin corruption recovery. *(PASS — See `docs/audits/phase-11/PHASE_11_STAGING_ACCEPTANCE_REPORT.md`)*
 
-### Phase 12: Multilingual Experience (English + Hindi Farmer UI)
-- **TEST-12-01 (Dictionary Completeness)**: Automated key parity test verifying 100% of translation keys in `en` dictionary exist in `hi` dictionary.
-- **TEST-12-02 (Devanagari Font Rendering)**: UI visual regression test ensuring Hindi conjuncts and ligatures render properly using Noto Sans Devanagari.
-- **TEST-12-03 (Responsive Layout & Text Expansion)**: Viewport test (320px–375px) ensuring Hindi text length expansion causes zero horizontal overflow, button clipping, or card misalignment.
-- **TEST-12-04 (Marathi Voice Transcription Preservation)**: Speech-to-text test ensuring Marathi audio input correctly populates the problem description via Whisper / Web Speech API.
+### Phase 12: Multilingual Farmer Experience (English + Hindi + Marathi)
+- **TEST-12-01 (Dictionary Key Parity Across Languages)**: Automated key parity test verifying 100% of translation keys in `en` dictionary exist in both `hi` (Hindi) and `mr` (Marathi) dictionaries without missing keys or dangling identifiers.
+- **TEST-12-02 (Devanagari Font Rendering & Typographic Integrity)**: UI visual regression test ensuring Hindi and Marathi conjuncts, ligatures, and matras render properly using Noto Sans Devanagari.
+- **TEST-12-03 (Responsive Layout & Text Expansion on Mobile)**: Viewport tests (320px–375px) ensuring Hindi and Marathi text length expansion causes zero horizontal overflow, button clipping, or card misalignment across farmer portal screens.
+- **TEST-12-04 (Voice Transcription Canonical Preservation)**: Speech-to-text contract tests ensuring Groq Whisper Large V3 automatic language detection preserves original-language transcripts (Marathi, Hindi, English) without automatically overwriting spoken text with translations.
+- **TEST-12-05 (Zero-Cost & Free-Tier Guard)**: Assertion test confirming zero external paid translation API keys, rate-billing subscriptions, or per-token charges exist in configuration.
 
 ### Phase 13: Technician Trust, Shared Workshops & Accountability
 - **TEST-13-01 (Shared Facility RLS)**: Access control tests verifying workshop owners can edit their facility profile, while member technicians in `facility_memberships` (`OWNER`, `MANAGER`, `TECHNICIAN`) have role-appropriate access.

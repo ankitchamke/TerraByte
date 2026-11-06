@@ -208,18 +208,20 @@ erDiagram
 
 ## 7. Multilingual Architecture (Phase 12)
 
-- **Scope**: Farmer Portal (`/farmer/*`, intake, stepper, quotes, fleet).
-- **Supported Languages**: English (`en`) and Hindi (`hi`).
-- **Typography**: Noto Sans Devanagari font stack for Devanagari script integrity.
-- **Explicit Marathi Exclusion**: Marathi UI is completely excluded from the web application. Whisper voice input preserves Marathi audio transcription independently.
-- **Architecture**: Lightweight, type-safe dictionary mapping (zero heavy runtime i18n dependencies). Language preference stored in `localStorage`.
+- **Scope**: Farmer Portal (`/farmer/*`, intake, stepper, quotes, fleet). Technician and Service Centre administration portals remain strictly in English.
+- **Supported Languages**: English (`en`), Hindi (`hi`), and Marathi (`mr`).
+- **Typography**: Noto Sans Devanagari web font stack supporting native script rendering for Hindi and Marathi ligatures and conjuncts.
+- **Voice Transcription Canonical Invariant**: Groq Whisper Large V3 automatic language detection across Marathi, Hindi, and English is preserved without changes. Original spoken transcripts remain canonical and are never automatically overwritten with machine translations.
+- **Zero Cost & Free-Tier Guard**: Strictly 100% free of cost. Zero paid translation APIs or services.
+- **Architecture**: Lightweight, type-safe dictionary mapping (zero heavy runtime i18n bundle overhead). Language preference stored in `localStorage` and optionally synchronized with `profile.preferred_language`.
+- **Responsive Mobile Invariant**: 320px–375px mobile viewport validation ensuring zero text clipping or horizontal layout breaking under Devanagari text expansion.
 
 ---
 
 ## 8. Verification & Release Criteria
 
-- **Automated Test Suite**: 144 passing tests across 6 test suites in 1.23s (0 failures, 0 skipped, verified on 2026-11-04).
-- **Production Build**: Zero TypeScript errors, built in 1.15s SSR / 2.51s client (Vite 8.1.5 + Nitro `vercel` serverless preset, verified on 2026-11-04).
+- **Automated Test Suite**: 160 passing tests across 8 test suites in 1.19s (0 failures, 0 skipped, verified on 2026-11-06).
+- **Production Build**: Zero TypeScript errors, built in 1.18s SSR / 3.25s client (Vite 8.1.5 + Nitro `vercel` serverless preset, verified on 2026-11-06).
 - **Security Audit**: 100% of tables protected by RLS; zero unauthenticated leaks of farmer GPS, depot costs, or auth secrets.
 - **Free-Tier Integrity**: $0.00 spend verified; zero paid API keys required.
 

@@ -93,18 +93,32 @@ This document records the architectural decision records (ADRs) governing TerraB
 ---
 
 ### ADR-006: Multilingual Scope Boundaries (English + Hindi Farmer UI)
-- **Status**: **Approved (Implementation Scheduled for Phase 12)**
-- **Context**: To maximize accessibility for rural operators while maintaining code maintainability under hackathon delivery timelines, linguistic scope must be sharply defined.
-- **Decision**:
-  1. The Farmer Portal (`/farmer/*`, intake wizard, stepper, quotes, fleet) shall support **English (`en`) and Hindi (`hi`)**.
+- **Status**: **Superseded in part by Amendment below (Implementation Scheduled for Phase 12)**
+- **Historical Context**: To maximize accessibility for rural operators while maintaining code maintainability under initial hackathon delivery timelines, linguistic scope was originally bounded strictly to English and Hindi.
+- **Original Decision (Historical Baseline)**:
+  1. The Farmer Portal (`/farmer/*`, intake wizard, stepper, quotes, fleet) was planned for **English (`en`) and Hindi (`hi`)**.
   2. Configure **Noto Sans Devanagari** typography for Devanagari script integrity.
-  3. **Explicit Marathi UI Removal**: All proposed Marathi UI localization is completely removed from web application screens. Farmer UI is strictly English + Hindi.
+  3. **Original Marathi Web UI Deferral**: Proposed Marathi web UI localization was deferred from the initial two-language baseline, while preserving speech-to-text Marathi transcription independently via Whisper.
   4. **Voice Transcription Preservation**: Audio speech-to-text input retains Marathi transcription support independently via Whisper / Web Speech API.
   5. Technician and Service Centre administration interfaces remain in English for this release.
 - **Consequences**:
-  - Prevents translation fragmentation and excessive UI maintenance.
-  - Guarantees high-quality, fully translated Hindi experience for farmers.
-- **Target Phase**: Phase 12 (Multilingual Experience).
+  - Maintained tight delivery velocity during early development.
+  - Required subsequent scope revisit to serve Vidarbha's core Marathi-speaking farming community.
+
+#### ADR-006 Amendment: Trilingual Farmer Experience (English + Hindi + Marathi)
+- **Status**: **Approved (Phase 12 Scope)**
+- **Context**: In Vidarbha (Nagpur, Wardha, Amravati, Chandrapur), Marathi is the primary spoken and written language among rural equipment operators. Following the successful completion of Phase 11, the scope for Phase 12 has been officially confirmed as a trilingual farmer experience.
+- **Amended Decision**:
+  1. **Farmer Portal Languages**: The Farmer Portal (`/farmer/*`, breakdown reporting, tracking stepper, quote review, equipment fleet) shall support **English (`en`)**, **Hindi (`hi`)**, and **Marathi (`mr`)**.
+  2. **Administration Scope Invariant**: Technician and Service Centre administration portals remain strictly in **English** for the current scope.
+  3. **Typography**: Configure **Noto Sans Devanagari** typography to support native script rendering for both Hindi and Marathi ligatures and conjuncts.
+  4. **Voice Transcription Canonical Record**: Groq Whisper Large V3 automatic language detection across Marathi, Hindi, and English remains unchanged. The original spoken language transcript is preserved as the canonical record and is **never** automatically overwritten with machine translations.
+  5. **Cost Invariant**: All localization must remain 100% free of cost. Zero paid translation APIs, per-token MT services, or commercial runtime dependencies.
+  6. **Architecture**: Lightweight, type-safe dictionary mapping (zero heavy runtime i18n bundle overhead). Language preference is persisted in `localStorage` and optionally synchronized with `profile.preferred_language`.
+  7. **Testing & Verification**:
+     - Automated dictionary key parity test verifying 100% parity across `en`, `hi`, and `mr`.
+     - Mobile responsive verification across 320px–375px viewports ensuring zero overflow or clipping under Devanagari text expansion.
+- **Target Phase**: Phase 12 (Multilingual Farmer Experience).
 
 ---
 

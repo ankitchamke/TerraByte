@@ -11,7 +11,7 @@ This document specifies the verification criteria, test matrix, and evaluator wa
 
 ## 2. Quick Evaluator & Hackathon Judge Test Script (5-Minute Interactive Demo)
 
-All demo accounts use password: `terrabyte2026`. On `/login`, you can either click the Quick Demo buttons or type credentials manually:
+All demo accounts use password: `[REDACTED]`. On `/login`, you can either click the Quick Demo buttons or type credentials manually:
 
 | Persona | Login Email | Location | Pre-Configured Seeded Scenario |
 | :--- | :--- | :--- | :--- |
@@ -339,7 +339,7 @@ No phase promotion or production deployment may occur if:
 > The automated test suite has passed. The following manual QA steps are documented for the owner's verification and have **not** been marked as passed.
 
 ### Step 1: Service Centre Parts Desk Overview & Location Verification
-1. Log in as **Nagpur Service Centre** (`admin.nagpur@terrabyte.demo` / `terrabyte2026`).
+1. Log in as **Nagpur Service Centre** (`admin.nagpur@terrabyte.demo` / `[REDACTED]`).
 2. Navigate to `/admin/parts-desk`:
    - Under **Technician Requests**, verify each request card displays:
      - **Service Location**: e.g., *"Katol, Nagpur"* (distinguished from part shelf location).
@@ -360,13 +360,13 @@ No phase promotion or production deployment may occur if:
 3. Verify stock increments and a `RETURNED` movement is recorded.
 
 ### Step 4: Technician Parts Requisition from Active Job
-1. Sign in as **Ramesh Kumar** (`tech.nagpur@terrabyte.demo` / `terrabyte2026`).
+1. Sign in as **Ramesh Kumar** (`tech.nagpur@terrabyte.demo` / `[REDACTED]`).
 2. Open active job on `/technician`.
 3. In QuoteBuilder, verify the new **"Select from Depot Catalog"** dropdown allows selecting listed parts with pre-filled prices and specifications.
 4. Verify RouteEstimateCard and directions button are functional with Phase 8 OSRM routing.
 
 ### Step 5: Service Centre Admin Reset Demo Verification
-1. Sign in as **Nagpur Service Centre** (`admin.nagpur@terrabyte.demo` / `terrabyte2026`).
+1. Sign in as **Nagpur Service Centre** (`admin.nagpur@terrabyte.demo` / `[REDACTED]`).
 2. In the top navigation bar, click the circular reset icon (**RotateCcw** / "Reset demo data").
 3. Inspect the confirmation dialog:
    - Verify heading reads: *"Reset demo data? — TerraByte Demonstration Environment"*.

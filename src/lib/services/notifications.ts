@@ -15,7 +15,8 @@ export interface GetNotificationsOptions {
   unreadOnly?: boolean;
   limit?: number;
 }
-let cachedProfile: { auth_user_id: string; id: string; role: string; expiresAt: number } | null = null;
+let cachedProfile: { auth_user_id: string; id: string; role: string; expiresAt: number } | null =
+  null;
 
 /**
  * Resolves the authenticated user's profile ID and role.
@@ -27,7 +28,12 @@ async function getAuthenticatedProfile(): Promise<{ id: string; role: string }> 
   } = await supabase.auth.getSession();
   const sessionUser = session?.user;
 
-  if (sessionUser && cachedProfile && cachedProfile.auth_user_id === sessionUser.id && Date.now() < cachedProfile.expiresAt) {
+  if (
+    sessionUser &&
+    cachedProfile &&
+    cachedProfile.auth_user_id === sessionUser.id &&
+    Date.now() < cachedProfile.expiresAt
+  ) {
     return { id: cachedProfile.id, role: cachedProfile.role };
   }
 
@@ -37,14 +43,30 @@ async function getAuthenticatedProfile(): Promise<{ id: string; role: string }> 
     throw new Error("Authentication required: Please sign in to access notifications.");
   }
 
-  if (cachedProfile && cachedProfile.auth_user_id === user.id && Date.now() < cachedProfile.expiresAt) {
+  if (
+    cachedProfile &&
+    cachedProfile.auth_user_id === user.id &&
+    Date.now() < cachedProfile.expiresAt
+  ) {
     return { id: cachedProfile.id, role: cachedProfile.role };
   }
 
   const { data: sessionData, error: profileError } = await supabase.rpc("get_session_profile");
-  const profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
+  let profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
 
-  if (profileError || !profile) {
+  if (!profile) {
+    const { data: fallbackRow } = await supabase
+      .from("profiles")
+      .select("id, role")
+      .or(`auth_user_id.eq.${user.id},id.eq.${user.id}`)
+      .maybeSingle();
+
+    if (fallbackRow) {
+      profile = fallbackRow as unknown as typeof profile;
+    }
+  }
+
+  if (!profile) {
     throw new Error("User profile not found. Please ensure your profile is initialized.");
   }
 
@@ -172,7 +194,13 @@ export function getNotificationCategory(text: string): NotificationCategory {
   const t = text.toLowerCase();
   if (t.includes("breakdown")) return "Breakdown";
   if (t.includes("quote")) return "Quote";
-  if (t.includes("spare part") || t.includes("parts") || t.includes("eta") || t.includes("requisition")) return "Parts";
+  if (
+    t.includes("spare part") ||
+    t.includes("parts") ||
+    t.includes("eta") ||
+    t.includes("requisition")
+  )
+    return "Parts";
   if (t.includes("testing") || t.includes("tested")) return "Testing";
   if (
     t.includes("approved by the service centre") ||
@@ -183,7 +211,13 @@ export function getNotificationCategory(text: string): NotificationCategory {
     return "Account";
   }
   if (t.includes("assigned")) return "Assignment";
-  if (t.includes("cancelled") || t.includes("cancellation") || t.includes("declined") || t.includes("rejected")) return "Alert";
+  if (
+    t.includes("cancelled") ||
+    t.includes("cancellation") ||
+    t.includes("declined") ||
+    t.includes("rejected")
+  )
+    return "Alert";
   if (
     t.includes("repair") ||
     t.includes("resumed") ||
@@ -203,18 +237,15 @@ export function getNotificationCategory(text: string): NotificationCategory {
  * For Service Centre (admin), filters down to actionable operational events only.
  */
 export async function getNotificationsForCurrentUser(
-  options?: GetNotificationsOptions
+  options?: GetNotificationsOptions,
 ): Promise<NotificationRow[]> {
   const profile = await getAuthenticatedProfile();
 
-  let query = supabase
-    .from("notifications")
-    .select("*")
-    .order("created_at", { ascending: false });
+  let query = supabase.from("notifications").select("*").order("created_at", { ascending: false });
 
   // Strictly filter notifications intended for the current user/role
   query = query.or(
-    `recipient_user_id.eq.${profile.id},and(recipient_user_id.is.null,recipient_role.eq.${profile.role})`
+    `recipient_user_id.eq.${profile.id},and(recipient_user_id.is.null,recipient_role.eq.${profile.role})`,
   );
 
   if (options?.unreadOnly) {
@@ -281,10 +312,7 @@ export async function markAllNotificationsAsRead(): Promise<void> {
     const unread = await getNotificationsForCurrentUser({ unreadOnly: true });
     const ids = unread.map((n) => n.id);
     if (ids.length === 0) return;
-    const { error } = await supabase
-      .from("notifications")
-      .update({ is_read: true })
-      .in("id", ids);
+    const { error } = await supabase.from("notifications").update({ is_read: true }).in("id", ids);
 
     if (error) {
       throw new Error(`Failed to mark notifications as read: ${error.message}`);
@@ -297,7 +325,7 @@ export async function markAllNotificationsAsRead(): Promise<void> {
     .update({ is_read: true })
     .eq("is_read", false)
     .or(
-      `recipient_user_id.eq.${profile.id},and(recipient_user_id.is.null,recipient_role.eq.${profile.role})`
+      `recipient_user_id.eq.${profile.id},and(recipient_user_id.is.null,recipient_role.eq.${profile.role})`,
     );
 
   if (error) {
@@ -322,7 +350,7 @@ export async function getUnreadNotificationCount(): Promise<number> {
     .select("*", { count: "exact", head: true })
     .eq("is_read", false)
     .or(
-      `recipient_user_id.eq.${profile.id},and(recipient_user_id.is.null,recipient_role.eq.${profile.role})`
+      `recipient_user_id.eq.${profile.id},and(recipient_user_id.is.null,recipient_role.eq.${profile.role})`,
     );
 
   if (error) {

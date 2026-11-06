@@ -28,30 +28,49 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
 }
 
 
-const CANONICAL_SUPABASE_URL = "https://hwdrypkvszwrcraujctw.supabase.co";
-const CANONICAL_SUPABASE_KEY = "sb_publishable_N5Najdw3CfFpFv3gNy0sdA_HNGtdRrq";
-
 function createSupabaseClient() {
   // Use import.meta.env for client-side (Vite build-time replacement)
   // Fall back to process.env for SSR (server-side rendering)
   const processEnv = typeof process !== "undefined" && process?.env ? process.env : undefined;
-  let SUPABASE_URL = import.meta.env['VITE_SUPABASE_URL'] || processEnv?.['SUPABASE_URL'] || CANONICAL_SUPABASE_URL;
-  let SUPABASE_PUBLISHABLE_KEY = import.meta.env['VITE_SUPABASE_PUBLISHABLE_KEY'] || import.meta.env['VITE_SUPABASE_ANON_KEY'] || processEnv?.['SUPABASE_PUBLISHABLE_KEY'] || processEnv?.['SUPABASE_ANON_KEY'] || CANONICAL_SUPABASE_KEY;
+  const mode = import.meta.env.MODE;
 
-  // Guard against stale cache or environment pointing to decommissioned Lovable starter project
-  if (SUPABASE_URL.includes("fmnzoovazqpyaebqmqyo")) {
-    SUPABASE_URL = CANONICAL_SUPABASE_URL;
-    SUPABASE_PUBLISHABLE_KEY = CANONICAL_SUPABASE_KEY;
-  }
+  const SUPABASE_URL = import.meta.env['VITE_SUPABASE_URL'] || processEnv?.['SUPABASE_URL'];
+  const SUPABASE_PUBLISHABLE_KEY =
+    import.meta.env['VITE_SUPABASE_PUBLISHABLE_KEY'] ||
+    import.meta.env['VITE_SUPABASE_ANON_KEY'] ||
+    processEnv?.['SUPABASE_PUBLISHABLE_KEY'] ||
+    processEnv?.['SUPABASE_ANON_KEY'];
 
+  // Missing configuration fails closed
   if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
     const missing = [
       ...(!SUPABASE_URL ? ['SUPABASE_URL / VITE_SUPABASE_URL'] : []),
       ...(!SUPABASE_PUBLISHABLE_KEY ? ['SUPABASE_PUBLISHABLE_KEY / VITE_SUPABASE_ANON_KEY'] : []),
     ];
-    const message = `Missing Supabase environment variable(s): ${missing.join(', ')}. Please check your Supabase environment variables in .env.`;
+    const message = `Missing required Supabase environment variable(s): ${missing.join(', ')}. Please verify .env, .env.staging, or .env.production.`;
     console.error(`[Supabase] ${message}`);
     throw new Error(message);
+  }
+
+  // Cross-environment contamination guard: Staging cannot target production
+  if (mode === "staging" && SUPABASE_URL.includes("hwdrypkvszwrcraujctw")) {
+    throw new Error(
+      "[Supabase] Configuration error: Staging mode cannot connect to production Supabase project (hwdrypkvszwrcraujctw). Check .env.staging.",
+    );
+  }
+
+  // Cross-environment contamination guard: Production cannot target staging
+  if (mode === "production" && SUPABASE_URL.includes("ubqgvhcfmrvnmrbllcom")) {
+    throw new Error(
+      "[Supabase] Configuration error: Production mode cannot connect to staging Supabase project (ubqgvhcfmrvnmrbllcom). Check .env.production.",
+    );
+  }
+
+  // Guard against decommissioned starter project
+  if (SUPABASE_URL.includes("fmnzoovazqpyaebqmqyo")) {
+    throw new Error(
+      "[Supabase] Configuration error: Target URL points to decommissioned project (fmnzoovazqpyaebqmqyo). Please update environment configuration.",
+    );
   }
 
   return createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {

@@ -37,3 +37,8 @@ dist-ssr
 .env.*
 !.env.example
 .archify/
+
+# Scratch & ephemeral test profiles
+scratch/**/chrome_*
+scratch/phase-*/
+

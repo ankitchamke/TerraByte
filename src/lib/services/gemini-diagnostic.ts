@@ -97,6 +97,9 @@ Canonical Central Nagpur Depot Catalog Context:
 - Part AL120788: Lift Cylinder Seal Kit (JD AL120788) [Compatible: John Deere 5050D]
 - Part HY-GARD-15W30: Hydraulic Oil 15W-30 (JD Hy-Gard, litres) [Compatible: John Deere 5050D]
 - Part 26243171: Starter Motor Assembly (Lucas-TVS 12V 2.2kW) [Compatible: Mahindra 575 DI, Swaraj 744 FE]
+- Part TB-FLT-001: Oil Filter Cartridge [Compatible: John Deere 5050 D, Mahindra 575 DI]
+- Part TB-BLT-002: Alternator Drive Belt [Compatible: John Deere 5050 D]
+- Part TB-HYD-003: Hydraulic Hose Assembly [Compatible: Universal]
 
 Instructions:
 1. Examine the provided machinery photographs carefully. Identify visible anomalies, fluid leaks, mechanical fractures, wiring burn marks, or wear.
@@ -117,7 +120,7 @@ Instructions:
   ],
   "stagedParts": [
     {
-      "partNumber": "0433171" | "005556958R1" | "AL120788" | "HY-GARD-15W30" | "26243171",
+      "partNumber": "0433171" | "005556958R1" | "AL120788" | "HY-GARD-15W30" | "26243171" | "TB-FLT-001" | "TB-BLT-002" | "TB-HYD-003",
       "estimatedQuantity": 1,
       "confidence": "HIGH" | "MEDIUM" | "LOW",
       "reasoning": "Technical justification for staging this part"
@@ -148,8 +151,9 @@ export async function executeVisualDefectDiagnostic(
   } = params;
 
   // 1. Check Gemini API configuration (Optional free-tier key)
-  const apiKey = process.env["GEMINI_API_KEY"];
-  if (!apiKey || apiKey.trim().length === 0) {
+  const rawApiKey = process.env["GEMINI_API_KEY"];
+  const apiKey = rawApiKey ? rawApiKey.trim().replace(/^["']|["']$/g, "") : "";
+  if (!apiKey || apiKey.length === 0) {
     const errorCode: AllowlistedDiagnosticErrorCode = "CONFIG_ERROR";
     const errorMessage = getSanitizedErrorMessage(errorCode);
 

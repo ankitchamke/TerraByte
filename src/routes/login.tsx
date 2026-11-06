@@ -180,36 +180,63 @@ function Login() {
             {busy ? "Signing in…" : <>Sign in <ArrowRight className="h-5 w-5" /></>}
           </button>
 
-          <div className="mt-6 rounded-2xl border border-dashed border-border bg-muted/30 p-4">
-            <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">Quick Demo Autofill</p>
-            <p className="mt-1 text-xs text-muted-foreground">Autofills real credentials and signs in via Supabase Auth:</p>
-            <div className="mt-3 grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void fillAndSignIn("farmer.nagpur@terrabyte.demo", "TerraByte@2026")}
-                className="flex h-11 items-center justify-center rounded-xl border border-border bg-card px-2 text-xs font-semibold hover:bg-muted disabled:opacity-60"
-              >
-                Farmer
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void fillAndSignIn("tech.nagpur@terrabyte.demo", "TerraByte@2026")}
-                className="flex h-11 items-center justify-center rounded-xl border border-border bg-card px-2 text-xs font-semibold hover:bg-muted disabled:opacity-60"
-              >
-                Technician
-              </button>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => void fillAndSignIn("admin.nagpur@terrabyte.demo", "TerraByte@2026")}
-                className="flex h-11 items-center justify-center rounded-xl border border-border bg-card px-2 text-xs font-semibold hover:bg-muted disabled:opacity-60"
-              >
-                Service Centre
-              </button>
-            </div>
-          </div>
+          {(() => {
+            const isStaging =
+              (typeof window !== "undefined" &&
+                (import.meta.env["VITE_SUPABASE_URL"]?.includes("ubqgvhcfmrvnmrbllcom") ||
+                  (import.meta.env.MODE === "staging" &&
+                    !import.meta.env["VITE_SUPABASE_URL"]?.includes("hwdrypkvszwrcraujctw")))) ||
+              false;
+
+            const demoAccounts = isStaging
+              ? {
+                  farmer: { email: "farmer.staging@terrabyte.app", pass: "TerraByte2026!Staging" },
+                  tech: { email: "tech.staging@terrabyte.app", pass: "TerraByte2026!Staging" },
+                  admin: { email: "admin.staging@terrabyte.app", pass: "TerraByte2026!Staging" },
+                }
+              : {
+                  farmer: { email: "farmer.nagpur@terrabyte.demo", pass: "TerraByte@2026" },
+                  tech: { email: "tech.nagpur@terrabyte.demo", pass: "TerraByte@2026" },
+                  admin: { email: "admin.nagpur@terrabyte.demo", pass: "TerraByte@2026" },
+                };
+
+            return (
+              <div className="mt-6 rounded-2xl border border-dashed border-border bg-muted/30 p-4">
+                <p className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+                  Quick Demo Autofill {isStaging ? "(Staging)" : "(Demo)"}
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Autofills real credentials and signs in via Supabase Auth:
+                </p>
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void fillAndSignIn(demoAccounts.farmer.email, demoAccounts.farmer.pass)}
+                    className="flex h-11 items-center justify-center rounded-xl border border-border bg-card px-2 text-xs font-semibold hover:bg-muted disabled:opacity-60"
+                  >
+                    Farmer
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void fillAndSignIn(demoAccounts.tech.email, demoAccounts.tech.pass)}
+                    className="flex h-11 items-center justify-center rounded-xl border border-border bg-card px-2 text-xs font-semibold hover:bg-muted disabled:opacity-60"
+                  >
+                    Technician
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void fillAndSignIn(demoAccounts.admin.email, demoAccounts.admin.pass)}
+                    className="flex h-11 items-center justify-center rounded-xl border border-border bg-card px-2 text-xs font-semibold hover:bg-muted disabled:opacity-60"
+                  >
+                    Service Centre
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
         </form>
       )}
 

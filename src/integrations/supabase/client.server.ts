@@ -30,8 +30,9 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
 }
 
 function createSupabaseAdminClient() {
-  const SUPABASE_URL = process.env['SUPABASE_URL'];
+  const SUPABASE_URL = process.env['SUPABASE_URL'] || process.env['VITE_SUPABASE_URL'];
   const SUPABASE_SERVICE_ROLE_KEY = process.env['SUPABASE_SERVICE_ROLE_KEY'];
+  const mode = process.env['MODE'] || process.env['NODE_ENV'];
 
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     const missing = [
@@ -39,8 +40,29 @@ function createSupabaseAdminClient() {
       ...(!SUPABASE_SERVICE_ROLE_KEY ? ['SUPABASE_SERVICE_ROLE_KEY'] : []),
     ];
     const message = `Missing Supabase environment variable(s): ${missing.join(', ')}. Please check your Supabase environment variables in .env.`;
-    console.error(`[Supabase] ${message}`);
+    console.error(`[Supabase Admin] ${message}`);
     throw new Error(message);
+  }
+
+  // Cross-environment contamination guard: Staging cannot target production
+  if (mode === "staging" && SUPABASE_URL.includes("hwdrypkvszwrcraujctw")) {
+    throw new Error(
+      "[Supabase Admin] Configuration error: Staging mode cannot connect to production Supabase project (hwdrypkvszwrcraujctw).",
+    );
+  }
+
+  // Cross-environment contamination guard: Production cannot target staging
+  if (mode === "production" && SUPABASE_URL.includes("ubqgvhcfmrvnmrbllcom")) {
+    throw new Error(
+      "[Supabase Admin] Configuration error: Production mode cannot connect to staging Supabase project (ubqgvhcfmrvnmrbllcom).",
+    );
+  }
+
+  // Guard against decommissioned starter project
+  if (SUPABASE_URL.includes("fmnzoovazqpyaebqmqyo")) {
+    throw new Error(
+      "[Supabase Admin] Configuration error: Target URL points to decommissioned project (fmnzoovazqpyaebqmqyo).",
+    );
   }
 
   return createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {

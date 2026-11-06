@@ -16,6 +16,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AssessmentCard, QuoteTable } from "@/components/repair-parts";
+import { VisualDefectDiagnosticViewer } from "@/components/diagnostics/visual-defect-diagnostic-viewer";
 import { DirectionsButton } from "@/components/directions-button";
 import { formatGpsAccuracy } from "@/lib/location";
 import {
@@ -38,7 +39,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { actions, ago, fmtTime, inr, quoteTotals, STAFF_LABEL, useTB, type Quote, type Repair } from "@/lib/tb-store";
+import {
+  actions,
+  ago,
+  fmtTime,
+  inr,
+  quoteTotals,
+  STAFF_LABEL,
+  useTB,
+  type Quote,
+  type Repair,
+} from "@/lib/tb-store";
 import { useAuth } from "@/lib/auth";
 import type { Assessment } from "@/lib/assessment";
 import { meta } from "@/lib/seo";
@@ -50,10 +61,7 @@ import {
   updatePartRequestEta,
   type ServiceCentrePartRequestDetail,
 } from "@/lib/services/parts-desk";
-import {
-  getServiceHistoryForRepair,
-  type ServiceHistoryRow,
-} from "@/lib/services/service-history";
+import { getServiceHistoryForRepair, type ServiceHistoryRow } from "@/lib/services/service-history";
 import {
   approveCancellation,
   cancelRepairRequest,
@@ -122,7 +130,11 @@ function formatActivityDate(dateVal: string | number): string {
   try {
     const d = typeof dateVal === "number" ? new Date(dateVal) : new Date(dateVal);
     const dayMonth = d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
-    const time = d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true });
+    const time = d.toLocaleTimeString("en-IN", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
     return `${dayMonth}, ${time}`;
   } catch {
     return String(dateVal);
@@ -133,7 +145,8 @@ function getActivityAction(status: string, note?: string | null): string {
   const n = (note || "").toLowerCase();
   switch (status) {
     case "REQUESTED":
-      if (n.includes("technician assigned") || n.includes("dispatched")) return "Technician assigned";
+      if (n.includes("technician assigned") || n.includes("dispatched"))
+        return "Technician assigned";
       return "Breakdown reported";
     case "ACCEPTED":
       return "Technician accepted job";
@@ -172,9 +185,13 @@ function getActivityAction(status: string, note?: string | null): string {
 }
 
 function getActivityActor(
-  item: { created_by_role?: string; created_by?: { full_name?: string; role?: string } | null; by?: string },
+  item: {
+    created_by_role?: string;
+    created_by?: { full_name?: string; role?: string } | null;
+    by?: string;
+  },
   farmerName?: string,
-  techName?: string
+  techName?: string,
 ): { name: string; role: string } {
   const rawRole = (item.created_by_role || item.created_by?.role || item.by || "").toLowerCase();
   let role = "Staff";
@@ -376,7 +393,9 @@ function AdminRepair() {
   }
 
   // Handle fallback mock repair if Supabase returned null but mock store has it
-  const mockR = !dbRepair ? s.repairs.find((x) => x.id === id || (x as any).jobNumber === id) : null;
+  const mockR = !dbRepair
+    ? s.repairs.find((x) => x.id === id || (x as any).jobNumber === id)
+    : null;
 
   if (!dbRepair && !mockR) {
     return (
@@ -398,7 +417,9 @@ function AdminRepair() {
   const repairId = isReal ? r.id : mockR!.id;
   const jobNumber = isReal ? r.job_number || r.id : mockR!.id;
   const status = isReal ? r.status : mockR!.status;
-  const statusSince = isReal ? (r.status_since || r.created_at || new Date().toISOString()) : mockR!.statusSince;
+  const statusSince = isReal
+    ? r.status_since || r.created_at || new Date().toISOString()
+    : mockR!.statusSince;
   const createdAtMs = isReal ? new Date(r.created_at).getTime() : mockR!.createdAt;
   const isTesting = isReal ? Boolean(r.is_testing) : Boolean(mockR!.testing);
   const location = isReal ? r.location : mockR!.location;
@@ -434,7 +455,9 @@ function AdminRepair() {
   const latestQuote = quotes[quotes.length - 1];
   const activeQuote = pendingQuote || approvedQuote || latestQuote;
   const viewQuote: Quote | undefined = isReal
-    ? (activeQuote ? toQuoteView(activeQuote) : undefined)
+    ? activeQuote
+      ? toQuoteView(activeQuote)
+      : undefined
     : mockR?.quote;
 
   // Completion details extraction
@@ -447,19 +470,20 @@ function AdminRepair() {
         completed_at?: string;
       } | null)
     : mockR?.completion
-    ? {
-        notes: mockR.completion.notes,
-        photo: mockR.completion.photo || null,
-        photo_url: mockR.completion.photo || null,
-        tested: true,
-        completed_at: new Date(mockR.completion.at).toISOString(),
-      }
-    : null;
+      ? {
+          notes: mockR.completion.notes,
+          photo: mockR.completion.photo || null,
+          photo_url: mockR.completion.photo || null,
+          tested: true,
+          completed_at: new Date(mockR.completion.at).toISOString(),
+        }
+      : null;
 
   const completionNotes = completionDetails?.notes;
   const completionProofPhoto = completionDetails?.photo_url || completionDetails?.photo;
-  const completionTested = completionDetails?.tested ?? (status === "COMPLETED");
-  const completionAt = completionDetails?.completed_at || (status === "COMPLETED" ? statusSince : null);
+  const completionTested = completionDetails?.tested ?? status === "COMPLETED";
+  const completionAt =
+    completionDetails?.completed_at || (status === "COMPLETED" ? statusSince : null);
 
   const partsReplacedList: string[] =
     serviceRecord?.parts_replaced &&
@@ -467,13 +491,11 @@ function AdminRepair() {
     serviceRecord.parts_replaced.length > 0
       ? (serviceRecord.parts_replaced as string[])
       : viewQuote?.parts
-      ? viewQuote.parts.map((p) => (p.qty > 1 ? `${p.name} ×${p.qty}` : p.name))
-      : [];
+        ? viewQuote.parts.map((p) => (p.qty > 1 ? `${p.name} ×${p.qty}` : p.name))
+        : [];
 
   // Parts Hold
-  const partsHold = isReal
-    ? (r.parts_hold as Record<string, any> | null)
-    : (mockR?.parts as any);
+  const partsHold = isReal ? (r.parts_hold as Record<string, any> | null) : (mockR?.parts as any);
 
   // Field & External Sourcing Holds (blocker items with no matching depot requisition row)
   const rawHoldItems: any[] = !partsHold
@@ -498,7 +520,9 @@ function AdminRepair() {
       (pr) =>
         pr.id === it.id ||
         (it.partId && pr.part_id === it.partId) ||
-        (pr.part?.name && it.part && pr.part.name.trim().toLowerCase() === it.part.trim().toLowerCase()),
+        (pr.part?.name &&
+          it.part &&
+          pr.part.name.trim().toLowerCase() === it.part.trim().toLowerCase()),
     );
     return !isDepotReq;
   });
@@ -507,7 +531,8 @@ function AdminRepair() {
   const rawAssessment = (r.assessment as any) || {};
   const assessmentObj: Assessment = {
     system: rawAssessment.system || "General Mechanical",
-    possibleIssue: rawAssessment.possibleIssue || "Physical inspection required by technician on site",
+    possibleIssue:
+      rawAssessment.possibleIssue || "Physical inspection required by technician on site",
     severity: (["Low", "Moderate", "Moderate to High", "High"].includes(rawAssessment.severity)
       ? rawAssessment.severity
       : "Moderate") as Assessment["severity"],
@@ -543,7 +568,7 @@ function AdminRepair() {
 
   // Activity Log timeline entries
   const timelineEntries = isReal
-    ? (r.repair_timeline || [])
+    ? r.repair_timeline || []
     : (mockR?.timeline || []).map((tl) => ({
         created_at: new Date(tl.at).toISOString(),
         status: tl.status,
@@ -616,7 +641,12 @@ function AdminRepair() {
           note: "Sourcing hold ETA updated by Service Centre",
         });
       } else {
-        actions.updatePartsEta(jobNumber, sourcingNewEta.trim() || "ETA pending", "admin", sourcingEtaTarget.id);
+        actions.updatePartsEta(
+          jobNumber,
+          sourcingNewEta.trim() || "ETA pending",
+          "admin",
+          sourcingEtaTarget.id,
+        );
       }
       toast.success(`Arrival ETA updated for ${sourcingEtaTarget.part}.`);
       setSourcingEtaTarget(null);
@@ -678,7 +708,9 @@ function AdminRepair() {
     if (!r || reviewActionBusy) return;
     const trimmed = rejectExplanation.trim();
     if (!trimmed) {
-      setRejectError("An administrative explanation is required to decline a cancellation request.");
+      setRejectError(
+        "An administrative explanation is required to decline a cancellation request.",
+      );
       return;
     }
     setReviewActionBusy("reject");
@@ -715,10 +747,13 @@ function AdminRepair() {
             {equipmentMake} {equipmentModel}
           </h1>
           <p className="text-sm text-muted-foreground flex flex-wrap items-center gap-1.5 mt-0.5">
-            <span>{farmerName} · {location}</span>
+            <span>
+              {farmerName} · {location}
+            </span>
             {dispatchLocation && (
               <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                <MapPin className="h-3 w-3" /> Exact GPS saved ({formatGpsAccuracy(dispatchLocation.accuracy)})
+                <MapPin className="h-3 w-3" /> Exact GPS saved (
+                {formatGpsAccuracy(dispatchLocation.accuracy)})
               </span>
             )}
           </p>
@@ -740,7 +775,8 @@ function AdminRepair() {
 
           <div className="space-y-4 p-5">
             <p className="text-sm text-foreground">
-              The farmer has submitted a formal cancellation request for this repair ticket. Active physical repair work is temporarily paused pending your administrative decision.
+              The farmer has submitted a formal cancellation request for this repair ticket. Active
+              physical repair work is temporarily paused pending your administrative decision.
             </p>
 
             <div className="grid gap-4 rounded-xl border border-warning/30 bg-warning/5 p-4 sm:grid-cols-2 text-sm">
@@ -762,7 +798,8 @@ function AdminRepair() {
                 <Label>Previous Repair Status</Label>
                 <p className="font-medium text-foreground">
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-0.5 text-xs font-semibold">
-                    {STAFF_LABEL[(isReal && r.cancellation_previous_status) || "ACCEPTED"] || "In progress"}
+                    {STAFF_LABEL[(isReal && r.cancellation_previous_status) || "ACCEPTED"] ||
+                      "In progress"}
                   </span>
                 </p>
               </div>
@@ -809,7 +846,10 @@ function AdminRepair() {
                     setRejectError(null);
                     setRejectDialogOpen(true);
                   }}
-                  className={cn(btn.ghost, "h-11 px-5 text-sm font-semibold border-2 border-border hover:bg-muted disabled:opacity-50")}
+                  className={cn(
+                    btn.ghost,
+                    "h-11 px-5 text-sm font-semibold border-2 border-border hover:bg-muted disabled:opacity-50",
+                  )}
                 >
                   <XCircle className="h-4 w-4 text-destructive" />
                   Decline cancellation
@@ -873,7 +913,9 @@ function AdminRepair() {
 
           <div className="space-y-4 p-5">
             <p className="text-sm text-foreground">
-              Work on this repair ticket has been finalized, tested under operational load, and signed off by the technician. Machinery has been returned to operational status and recorded in permanent service history.
+              Work on this repair ticket has been finalized, tested under operational load, and
+              signed off by the technician. Machinery has been returned to operational status and
+              recorded in permanent service history.
             </p>
 
             {/* Proof Photo (if present) */}
@@ -903,14 +945,18 @@ function AdminRepair() {
                 <Label>Operational Testing</Label>
                 <p className="flex items-center gap-1.5 font-semibold text-success">
                   <CheckCircle2 className="h-4 w-4 shrink-0" />
-                  {completionTested ? "Tested under operational load (Passed)" : "Verified & operational"}
+                  {completionTested
+                    ? "Tested under operational load (Passed)"
+                    : "Verified & operational"}
                 </p>
               </div>
 
               <div>
                 <Label>Completion Timestamp</Label>
                 <p className="font-semibold text-foreground">
-                  {completionAt ? formatActivityDate(completionAt) : ago(new Date(statusSince).getTime()) + " ago"}
+                  {completionAt
+                    ? formatActivityDate(completionAt)
+                    : ago(new Date(statusSince).getTime()) + " ago"}
                 </p>
               </div>
 
@@ -937,7 +983,9 @@ function AdminRepair() {
                 <p className="font-semibold text-foreground">
                   Labour: {inr(serviceRecord?.labour_cost ?? viewQuote?.labour ?? 0)} · Total:{" "}
                   <span className="font-display text-base font-bold text-foreground">
-                    {inr(serviceRecord?.total_cost ?? (viewQuote ? quoteTotals(viewQuote).total : 0))}
+                    {inr(
+                      serviceRecord?.total_cost ?? (viewQuote ? quoteTotals(viewQuote).total : 0),
+                    )}
                   </span>
                 </p>
               </div>
@@ -945,9 +993,7 @@ function AdminRepair() {
               {partsReplacedList.length > 0 && (
                 <div className="sm:col-span-2 pt-2 border-t border-success/20">
                   <Label>Parts Replaced</Label>
-                  <p className="text-foreground font-medium">
-                    {partsReplacedList.join(", ")}
-                  </p>
+                  <p className="text-foreground font-medium">{partsReplacedList.join(", ")}</p>
                 </div>
               )}
 
@@ -969,17 +1015,21 @@ function AdminRepair() {
         </section>
       )}
 
-      {isReal && r.cancellation_admin_response && status !== "CANCELLED" && status !== "CANCELLATION_REQUESTED" && (
-        <div className="rounded-xl border border-info/30 bg-info/10 p-4 text-sm space-y-1">
-          <p className="font-semibold text-info flex items-center gap-1.5">
-            <Clock className="h-4 w-4" /> Previous Cancellation Request Declined
-          </p>
-          <p className="text-foreground text-xs">
-            The previous cancellation request was declined by Service Centre with explanation:{" "}
-            <span className="italic font-medium">"{r.cancellation_admin_response}"</span>. Repair work is actively continuing.
-          </p>
-        </div>
-      )}
+      {isReal &&
+        r.cancellation_admin_response &&
+        status !== "CANCELLED" &&
+        status !== "CANCELLATION_REQUESTED" && (
+          <div className="rounded-xl border border-info/30 bg-info/10 p-4 text-sm space-y-1">
+            <p className="font-semibold text-info flex items-center gap-1.5">
+              <Clock className="h-4 w-4" /> Previous Cancellation Request Declined
+            </p>
+            <p className="text-foreground text-xs">
+              The previous cancellation request was declined by Service Centre with explanation:{" "}
+              <span className="italic font-medium">"{r.cancellation_admin_response}"</span>. Repair
+              work is actively continuing.
+            </p>
+          </div>
+        )}
 
       {status === "QUOTE_REVISED" ? (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm space-y-1.5">
@@ -988,11 +1038,16 @@ function AdminRepair() {
             <span>Quote revision requested by farmer · Technician response expected</span>
           </div>
           <p className="text-xs text-foreground">
-            The farmer requested changes to the repair quote. The assigned technician ({technicianName || "Technician"}) is expected to submit a revised quote.
-            <span className="text-muted-foreground"> · In revision for {ago(new Date(statusSince).getTime())}</span>
+            The farmer requested changes to the repair quote. The assigned technician (
+            {technicianName || "Technician"}) is expected to submit a revised quote.
+            <span className="text-muted-foreground">
+              {" "}
+              · In revision for {ago(new Date(statusSince).getTime())}
+            </span>
             {od && (
               <span className="font-semibold text-amber-700 dark:text-amber-300">
-                {" "}(Overdue — follow up with technician)
+                {" "}
+                (Overdue — follow up with technician)
               </span>
             )}
           </p>
@@ -1004,8 +1059,9 @@ function AdminRepair() {
         </div>
       ) : status !== "COMPLETED" && status !== "CANCELLED" && od ? (
         <p className="flex items-center gap-2 rounded-xl border-2 border-destructive bg-destructive/5 p-3 font-semibold text-destructive">
-          <AlertOctagon className="h-5 w-5 shrink-0" /> Exception: in "{status.toLowerCase().replace(/_/g, " ")}" for{" "}
-          {ago(new Date(statusSince).getTime())} — intervene.
+          <AlertOctagon className="h-5 w-5 shrink-0" /> Exception: in "
+          {status.toLowerCase().replace(/_/g, " ")}" for {ago(new Date(statusSince).getTime())} —
+          intervene.
         </p>
       ) : null}
 
@@ -1021,7 +1077,9 @@ function AdminRepair() {
                 Current: <b>{technicianName ?? "Unassigned"}</b>
                 {isReal && r.declined_by && r.declined_by.length > 0 && (
                   <span className="text-muted-foreground">
-                    {" "}· declined by {r.declined_by.length} {r.declined_by.length === 1 ? "technician" : "technicians"}
+                    {" "}
+                    · declined by {r.declined_by.length}{" "}
+                    {r.declined_by.length === 1 ? "technician" : "technicians"}
                   </span>
                 )}
               </p>
@@ -1038,17 +1096,23 @@ function AdminRepair() {
                         <div className="min-w-0 flex-1">
                           <p className="font-semibold">
                             {m.technician.profile?.full_name}{" "}
-                            <span className="font-mono text-xs text-muted-foreground">score {m.score}</span>
+                            <span className="font-mono text-xs text-muted-foreground">
+                              score {m.score}
+                            </span>
                           </p>
                           <p className="truncate text-xs text-muted-foreground">
                             {m.reasons.join(" · ") || "Verified technician"} ·{" "}
-                            {m.technician.profile?.village || "Nagpur"} · ~{m.technician.eta_minutes ?? 45} min
+                            {m.technician.profile?.village || "Nagpur"} · ~
+                            {m.technician.eta_minutes ?? 45} min
                           </p>
                         </div>
                         <button
                           disabled={assigning === m.technician.profile_id}
                           onClick={() =>
-                            void handleAssign(m.technician.profile_id, m.technician.profile?.full_name || "technician")
+                            void handleAssign(
+                              m.technician.profile_id,
+                              m.technician.profile?.full_name || "technician",
+                            )
                           }
                           className="h-10 shrink-0 rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
                         >
@@ -1089,7 +1153,8 @@ function AdminRepair() {
                           pr.part?.name?.trim().toLowerCase() === it.part.trim().toLowerCase(),
                       );
                       const isDepotReq = Boolean(matchingReq);
-                      const isOutOfStock = matchingReq && matchingReq.part && matchingReq.part.stock_quantity === 0;
+                      const isOutOfStock =
+                        matchingReq && matchingReq.part && matchingReq.part.stock_quantity === 0;
                       const isInsufficient =
                         matchingReq &&
                         matchingReq.part &&
@@ -1154,7 +1219,9 @@ function AdminRepair() {
                   </div>
                   <div>
                     <Label>Blocked for</Label>
-                    <p className="font-semibold">{ago(new Date(partsHold.since || statusSince).getTime())}</p>
+                    <p className="font-semibold">
+                      {ago(new Date(partsHold.since || statusSince).getTime())}
+                    </p>
                   </div>
                   <div className="col-span-2">
                     <Label>Reason</Label>
@@ -1237,22 +1304,35 @@ function AdminRepair() {
                             Out of Depot Stock
                           </span>
                         )}
-                        {req.part && req.part.stock_quantity > 0 && req.part.stock_quantity < req.quantity && (
-                          <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[10px] font-bold text-warning-foreground">
-                            Insufficient Stock ({req.part.stock_quantity} available)
-                          </span>
-                        )}
+                        {req.part &&
+                          req.part.stock_quantity > 0 &&
+                          req.part.stock_quantity < req.quantity && (
+                            <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[10px] font-bold text-warning-foreground">
+                              Insufficient Stock ({req.part.stock_quantity} available)
+                            </span>
+                          )}
                       </div>
                       <div className="flex items-center gap-1.5 text-[11px] mt-0.5">
                         <Clock className="h-3 w-3 text-primary shrink-0" />
                         <span className="text-muted-foreground">Expected Arrival:</span>
-                        <span className={cn("font-medium", req.estimated_arrival_at ? "text-primary font-semibold" : "text-muted-foreground italic")}>
-                          {req.estimated_arrival_at ? formatEtaDateTime(req.estimated_arrival_at) : "ETA pending"}
+                        <span
+                          className={cn(
+                            "font-medium",
+                            req.estimated_arrival_at
+                              ? "text-primary font-semibold"
+                              : "text-muted-foreground italic",
+                          )}
+                        >
+                          {req.estimated_arrival_at
+                            ? formatEtaDateTime(req.estimated_arrival_at)
+                            : "ETA pending"}
                         </span>
                       </div>
                       {req.eta_updated_at && (
                         <p className="text-[10px] text-muted-foreground">
-                          ETA set {req.eta_updater?.full_name ? `by ${req.eta_updater.full_name}` : ""} on {new Date(req.eta_updated_at).toLocaleDateString()}
+                          ETA set{" "}
+                          {req.eta_updater?.full_name ? `by ${req.eta_updater.full_name}` : ""} on{" "}
+                          {new Date(req.eta_updated_at).toLocaleDateString()}
                         </p>
                       )}
                       <p className="font-mono text-[11px] text-muted-foreground">
@@ -1260,15 +1340,18 @@ function AdminRepair() {
                         {req.part?.location ? ` · Shelf: ${req.part.location}` : ""}
                       </p>
                       <p className="text-[11px] text-muted-foreground">
-                        Requested by {req.requester?.full_name || "Technician"} · {fmtTime(new Date(req.created_at).getTime())}
+                        Requested by {req.requester?.full_name || "Technician"} ·{" "}
+                        {fmtTime(new Date(req.created_at).getTime())}
                         {req.handed_off_at && (
-                          <> · Handed off by {req.handed_off_by || "Admin"} ({fmtTime(new Date(req.handed_off_at).getTime())})</>
+                          <>
+                            {" "}
+                            · Handed off by {req.handed_off_by || "Admin"} (
+                            {fmtTime(new Date(req.handed_off_at).getTime())})
+                          </>
                         )}
                       </p>
                       {req.notes && (
-                        <p className="text-[11px] italic text-muted-foreground">
-                          "{req.notes}"
-                        </p>
+                        <p className="text-[11px] italic text-muted-foreground">"{req.notes}"</p>
                       )}
                     </div>
 
@@ -1330,7 +1413,8 @@ function AdminRepair() {
                   </h3>
                 </div>
                 <p className="text-[11px] text-muted-foreground mb-2.5">
-                  Parts sourced externally or held in the field. Coordinate arrival ETA directly below. Handoff is locked until received into depot inventory.
+                  Parts sourced externally or held in the field. Coordinate arrival ETA directly
+                  below. Handoff is locked until received into depot inventory.
                 </p>
                 <div className="space-y-2">
                   {sourcingHolds.map((sh: any, idx: number) => (
@@ -1350,14 +1434,19 @@ function AdminRepair() {
                         <div className="flex items-center gap-1.5 text-[11px] mt-0.5">
                           <Clock className="h-3 w-3 text-primary shrink-0" />
                           <span className="text-muted-foreground">Expected Arrival:</span>
-                          <span className={cn("font-medium", sh.eta ? "text-primary font-semibold" : "text-muted-foreground italic")}>
+                          <span
+                            className={cn(
+                              "font-medium",
+                              sh.eta
+                                ? "text-primary font-semibold"
+                                : "text-muted-foreground italic",
+                            )}
+                          >
                             {sh.eta ? formatEtaDateTime(sh.eta) : "ETA pending"}
                           </span>
                         </div>
                         {sh.reason && (
-                          <p className="text-[11px] italic text-muted-foreground">
-                            "{sh.reason}"
-                          </p>
+                          <p className="text-[11px] italic text-muted-foreground">"{sh.reason}"</p>
                         )}
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
@@ -1380,12 +1469,14 @@ function AdminRepair() {
           </Card>
 
           {/* Quote Version Comparison */}
-          {quoteVersions.length >= 2 && quoteVersions[quoteVersions.length - 2] && quoteVersions[quoteVersions.length - 1] && (
-            <QuoteComparison
-              v1={quoteVersions[quoteVersions.length - 2]}
-              v2={quoteVersions[quoteVersions.length - 1]}
-            />
-          )}
+          {quoteVersions.length >= 2 &&
+            quoteVersions[quoteVersions.length - 2] &&
+            quoteVersions[quoteVersions.length - 1] && (
+              <QuoteComparison
+                v1={quoteVersions[quoteVersions.length - 2]}
+                v2={quoteVersions[quoteVersions.length - 1]}
+              />
+            )}
 
           {/* Quote Card */}
           {viewQuote && (
@@ -1397,6 +1488,23 @@ function AdminRepair() {
 
           {/* Preliminary Assessment */}
           <AssessmentCard r={adaptedRepair} />
+
+          {/* Visual Defect Diagnostics (Gemini Multimodal AI & Interactive Defect Canvas) */}
+          {(Boolean((r.assessment as any)?.visualDiagnostics) ||
+            (r.photos && r.photos.length > 0)) && (
+            <VisualDefectDiagnosticViewer
+              repairId={r.id}
+              visualDiagnostics={(r.assessment as any)?.visualDiagnostics}
+              photos={r.photos || []}
+              equipment={
+                r.equipment
+                  ? { make: r.equipment.make, model: r.equipment.model, year: r.equipment.year }
+                  : undefined
+              }
+              userRole="admin"
+              onRefresh={loadData}
+            />
+          )}
 
           {/* Reported Breakdown Photos */}
           {isReal && (r.photos || []).length > 0 && (
@@ -1479,20 +1587,34 @@ function AdminRepair() {
                 className="text-muted-foreground hover:text-foreground"
                 aria-label="Toggle activity log"
               >
-                {activityOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                {activityOpen ? (
+                  <ChevronUp className="h-4 w-4" />
+                ) : (
+                  <ChevronDown className="h-4 w-4" />
+                )}
               </button>
             </div>
 
             {activityOpen && (
               <div className="pt-2">
                 {sortedTimeline.length === 0 ? (
-                  <p className="text-sm text-muted-foreground italic py-2">No recorded events yet.</p>
+                  <p className="text-sm text-muted-foreground italic py-2">
+                    No recorded events yet.
+                  </p>
                 ) : (
                   <>
-                    <div className={cn(sortedTimeline.length > 5 && "max-h-[380px] overflow-y-auto pr-1")}>
+                    <div
+                      className={cn(
+                        sortedTimeline.length > 5 && "max-h-[380px] overflow-y-auto pr-1",
+                      )}
+                    >
                       <ol className="relative space-y-4 border-l-2 border-border pl-4 ml-2">
                         {visibleTimeline.map((item, idx) => {
-                          const { name, role } = getActivityActor(item as any, farmerName, technicianName || undefined);
+                          const { name, role } = getActivityActor(
+                            item as any,
+                            farmerName,
+                            technicianName || undefined,
+                          );
                           const action = getActivityAction(item.status, item.note);
                           const isDestructive =
                             item.status === "TESTING_FAILED" || item.status === "CANCELLED";
@@ -1504,7 +1626,7 @@ function AdminRepair() {
                                   "absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full",
                                   isDestructive
                                     ? "bg-destructive ring-4 ring-destructive/20"
-                                    : "bg-primary ring-4 ring-primary/20"
+                                    : "bg-primary ring-4 ring-primary/20",
                                 )}
                               />
                               <div>
@@ -1514,13 +1636,16 @@ function AdminRepair() {
                                 <p
                                   className={cn(
                                     "text-sm font-semibold",
-                                    isDestructive ? "text-destructive font-bold" : "text-foreground"
+                                    isDestructive
+                                      ? "text-destructive font-bold"
+                                      : "text-foreground",
                                   )}
                                 >
                                   {action}
                                 </p>
                                 <p className="text-xs text-muted-foreground">
-                                  {name} · <span className="font-medium text-foreground/80">{role}</span>
+                                  {name} ·{" "}
+                                  <span className="font-medium text-foreground/80">{role}</span>
                                 </p>
                                 {item.note && (
                                   <p className="mt-1 text-xs text-muted-foreground/90 bg-muted/40 rounded-lg p-2 italic">
@@ -1546,7 +1671,8 @@ function AdminRepair() {
                           </>
                         ) : (
                           <>
-                            <ChevronDown className="h-3.5 w-3.5" /> Show all {sortedTimeline.length} events
+                            <ChevronDown className="h-3.5 w-3.5" /> Show all {sortedTimeline.length}{" "}
+                            events
                           </>
                         )}
                       </button>
@@ -1558,15 +1684,17 @@ function AdminRepair() {
           </Card>
 
           {/* Direct Admin Cancellation (Only for non-cancellation-requested active repairs) */}
-          {status !== "COMPLETED" && status !== "CANCELLED" && status !== "CANCELLATION_REQUESTED" && (
-            <button
-              disabled={cancelling}
-              onClick={() => void handleCancel()}
-              className={cn(btn.ghost, "w-full text-destructive hover:bg-destructive/10")}
-            >
-              {cancelling ? "Cancelling…" : "Cancel repair"}
-            </button>
-          )}
+          {status !== "COMPLETED" &&
+            status !== "CANCELLED" &&
+            status !== "CANCELLATION_REQUESTED" && (
+              <button
+                disabled={cancelling}
+                onClick={() => void handleCancel()}
+                className={cn(btn.ghost, "w-full text-destructive hover:bg-destructive/10")}
+              >
+                {cancelling ? "Cancelling…" : "Cancel repair"}
+              </button>
+            )}
         </div>
       </div>
 
@@ -1576,7 +1704,9 @@ function AdminRepair() {
           <DialogHeader>
             <DialogTitle>Approve Repair Cancellation</DialogTitle>
             <DialogDescription>
-              Are you sure you want to approve this cancellation request? This will mark the repair ticket as Cancelled, notify both the farmer and assigned technician, and restore equipment to Operational status (if no other active repairs exist).
+              Are you sure you want to approve this cancellation request? This will mark the repair
+              ticket as Cancelled, notify both the farmer and assigned technician, and restore
+              equipment to Operational status (if no other active repairs exist).
             </DialogDescription>
           </DialogHeader>
 
@@ -1630,7 +1760,7 @@ function AdminRepair() {
                 type="submit"
                 disabled={reviewActionBusy === "approve"}
                 className={cn(
-                  "inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-destructive px-5 font-semibold text-sm text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50 transition-colors"
+                  "inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-destructive px-5 font-semibold text-sm text-destructive-foreground hover:bg-destructive/90 disabled:opacity-50 transition-colors",
                 )}
               >
                 {reviewActionBusy === "approve" ? (
@@ -1653,9 +1783,11 @@ function AdminRepair() {
           <DialogHeader>
             <DialogTitle>Decline Cancellation Request</DialogTitle>
             <DialogDescription>
-              Decline this cancellation request and resume repair work. The ticket will revert to its previous status (
+              Decline this cancellation request and resume repair work. The ticket will revert to
+              its previous status (
               <strong>
-                {STAFF_LABEL[(isReal && r.cancellation_previous_status) || "ACCEPTED"] || "previous status"}
+                {STAFF_LABEL[(isReal && r.cancellation_previous_status) || "ACCEPTED"] ||
+                  "previous status"}
               </strong>
               ), and both the farmer and assigned technician will be notified with your explanation.
             </DialogDescription>
@@ -1716,12 +1848,17 @@ function AdminRepair() {
       </Dialog>
 
       {/* UPDATE PART ETA MODAL */}
-      <Dialog open={Boolean(partEtaTarget)} onOpenChange={(open) => !open && setPartEtaTarget(null)}>
+      <Dialog
+        open={Boolean(partEtaTarget)}
+        onOpenChange={(open) => !open && setPartEtaTarget(null)}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Coordinate Expected Arrival (ETA)</DialogTitle>
             <DialogDescription>
-              Set or update expected delivery date &amp; time for {partEtaTarget?.part?.name || "spare part"}. Updates the repair hold and farmer delay status in real time.
+              Set or update expected delivery date &amp; time for{" "}
+              {partEtaTarget?.part?.name || "spare part"}. Updates the repair hold and farmer delay
+              status in real time.
             </DialogDescription>
           </DialogHeader>
 
@@ -1768,12 +1905,17 @@ function AdminRepair() {
       </Dialog>
 
       {/* UPDATE SOURCING HOLD ETA MODAL */}
-      <Dialog open={Boolean(sourcingEtaTarget)} onOpenChange={(open) => !open && setSourcingEtaTarget(null)}>
+      <Dialog
+        open={Boolean(sourcingEtaTarget)}
+        onOpenChange={(open) => !open && setSourcingEtaTarget(null)}
+      >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Coordinate Sourcing Hold Expected Arrival</DialogTitle>
             <DialogDescription>
-              Set or update expected arrival date &amp; time for {sourcingEtaTarget?.part || "spare part"}. Updates the repair hold and farmer delay status in real time.
+              Set or update expected arrival date &amp; time for{" "}
+              {sourcingEtaTarget?.part || "spare part"}. Updates the repair hold and farmer delay
+              status in real time.
             </DialogDescription>
           </DialogHeader>
 
@@ -1782,7 +1924,8 @@ function AdminRepair() {
               <Label className="text-xs">Expected Arrival Date &amp; Time</Label>
               <DateTimePicker value={sourcingNewEta} onChange={setSourcingNewEta} />
               <p className="mt-1 text-xs text-muted-foreground">
-                Set when field or external supplier delivery is expected. Physical depot handoff is locked.
+                Set when field or external supplier delivery is expected. Physical depot handoff is
+                locked.
               </p>
             </div>
           </div>

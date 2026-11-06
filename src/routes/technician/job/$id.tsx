@@ -14,6 +14,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AssessmentCard, QuoteTable, Timeline } from "@/components/repair-parts";
+import { VisualDefectDiagnosticViewer } from "@/components/diagnostics/visual-defect-diagnostic-viewer";
 import { DirectionsButton } from "@/components/directions-button";
 import { RouteEstimateCard } from "@/components/route-estimate-card";
 import { formatGpsAccuracy } from "@/lib/location";
@@ -725,6 +726,19 @@ function Job() {
         ))}
 
       <AssessmentCard r={adaptedRepair} />
+
+      {/* Visual Defect Diagnostics (Gemini Multimodal AI & Interactive Defect Canvas) */}
+      {(Boolean((r.assessment as any)?.visualDiagnostics) || breakdownPhotos.length > 0) && (
+        <VisualDefectDiagnosticViewer
+          repairId={r.id}
+          visualDiagnostics={(r.assessment as any)?.visualDiagnostics}
+          photos={breakdownPhotos}
+          equipment={e ? { make: e.make, model: e.model, year: e.year } : undefined}
+          userRole="technician"
+          isAssignedTechnician={r.technician_id === profile?.id}
+          onRefresh={loadData}
+        />
+      )}
 
       {/* Read-only quotation context when on hold */}
       {r.status === "CANCELLATION_REQUESTED" && adaptedRepair.quote && (

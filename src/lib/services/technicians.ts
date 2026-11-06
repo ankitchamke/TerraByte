@@ -60,9 +60,21 @@ async function getAuthenticatedProfile(): Promise<{ id: string; role: string }> 
   }
 
   const { data: sessionData, error: profileError } = await supabase.rpc("get_session_profile");
-  const profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
+  let profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
 
-  if (profileError || !profile) {
+  if (!profile) {
+    const { data: fallbackRow } = await supabase
+      .from("profiles")
+      .select("id, role")
+      .or(`auth_user_id.eq.${user.id},id.eq.${user.id}`)
+      .maybeSingle();
+
+    if (fallbackRow) {
+      profile = fallbackRow as unknown as typeof profile;
+    }
+  }
+
+  if (!profile) {
     throw new Error("User profile not found. Please ensure your profile is initialized.");
   }
 

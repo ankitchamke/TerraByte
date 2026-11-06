@@ -247,50 +247,73 @@ function HomePage() {
                       {demoErr}
                     </p>
                   )}
-                  <div className="mt-2.5 grid grid-cols-3 gap-1.5 sm:gap-2">
-                    <button
-                      type="button"
-                      disabled={demoBusy}
-                      onClick={() =>
-                        void handleDemoSignIn(
-                          "farmer.nagpur@terrabyte.demo",
-                          "TerraByte@2026",
-                          "/farmer"
-                        )
-                      }
-                      className="flex h-10 sm:h-11 items-center justify-center gap-1.5 rounded-xl border-2 border-border bg-card px-2 text-[11px] sm:text-xs font-semibold text-foreground hover:border-primary hover:bg-primary/5 hover:text-primary transition-all duration-200 disabled:opacity-60 active:scale-[0.98]"
-                    >
-                      <Tractor className="h-3.5 w-3.5 text-primary shrink-0" /> Farmer
-                    </button>
-                    <button
-                      type="button"
-                      disabled={demoBusy}
-                      onClick={() =>
-                        void handleDemoSignIn(
-                          "tech.nagpur@terrabyte.demo",
-                          "TerraByte@2026",
-                          "/technician"
-                        )
-                      }
-                      className="flex h-10 sm:h-11 items-center justify-center gap-1.5 rounded-xl border-2 border-border bg-card px-2 text-[11px] sm:text-xs font-semibold text-foreground hover:border-primary hover:bg-primary/5 hover:text-primary transition-all duration-200 disabled:opacity-60 active:scale-[0.98]"
-                    >
-                      <Wrench className="h-3.5 w-3.5 text-accent-foreground shrink-0" /> Technician
-                    </button>
-                    <button
-                      type="button"
-                      disabled={demoBusy}
-                      onClick={() =>
-                        void handleDemoSignIn(
-                          "admin.nagpur@terrabyte.demo",
-                          "TerraByte@2026",
-                          "/admin"
-                        )
-                      }
-                      className="flex h-10 sm:h-11 items-center justify-center gap-1.5 rounded-xl border-2 border-border bg-card px-2 text-[11px] sm:text-xs font-semibold text-foreground hover:border-primary hover:bg-primary/5 hover:text-primary transition-all duration-200 disabled:opacity-60 active:scale-[0.98]"
-                    >
-                      <Radio className="h-3.5 w-3.5 text-info shrink-0" /> Service Centre
-                    </button>
-                  </div>
+                  {(() => {
+                    const isStaging =
+                      (typeof window !== "undefined" &&
+                        (import.meta.env["VITE_SUPABASE_URL"]?.includes("ubqgvhcfmrvnmrbllcom") ||
+                          (import.meta.env.MODE === "staging" &&
+                            !import.meta.env["VITE_SUPABASE_URL"]?.includes("hwdrypkvszwrcraujctw")))) ||
+                      false;
+
+                    const demoAccounts = isStaging
+                      ? {
+                          farmer: { email: "farmer.staging@terrabyte.app", pass: "TerraByte2026!Staging" },
+                          tech: { email: "tech.staging@terrabyte.app", pass: "TerraByte2026!Staging" },
+                          admin: { email: "admin.staging@terrabyte.app", pass: "TerraByte2026!Staging" },
+                        }
+                      : {
+                          farmer: { email: "farmer.nagpur@terrabyte.demo", pass: "TerraByte@2026" },
+                          tech: { email: "tech.nagpur@terrabyte.demo", pass: "TerraByte@2026" },
+                          admin: { email: "admin.nagpur@terrabyte.demo", pass: "TerraByte@2026" },
+                        };
+
+                    return (
+                      <div className="mt-2.5 grid grid-cols-3 gap-1.5 sm:gap-2">
+                        <button
+                          type="button"
+                          disabled={demoBusy}
+                          onClick={() =>
+                            void handleDemoSignIn(
+                              demoAccounts.farmer.email,
+                              demoAccounts.farmer.pass,
+                              "/farmer"
+                            )
+                          }
+                          className="flex h-10 sm:h-11 items-center justify-center gap-1.5 rounded-xl border-2 border-border bg-card px-2 text-[11px] sm:text-xs font-semibold text-foreground hover:border-primary hover:bg-primary/5 hover:text-primary transition-all duration-200 disabled:opacity-60 active:scale-[0.98]"
+                        >
+                          <Tractor className="h-3.5 w-3.5 text-primary shrink-0" /> Farmer
+                        </button>
+                        <button
+                          type="button"
+                          disabled={demoBusy}
+                          onClick={() =>
+                            void handleDemoSignIn(
+                              demoAccounts.tech.email,
+                              demoAccounts.tech.pass,
+                              "/technician"
+                            )
+                          }
+                          className="flex h-10 sm:h-11 items-center justify-center gap-1.5 rounded-xl border-2 border-border bg-card px-2 text-[11px] sm:text-xs font-semibold text-foreground hover:border-primary hover:bg-primary/5 hover:text-primary transition-all duration-200 disabled:opacity-60 active:scale-[0.98]"
+                        >
+                          <Wrench className="h-3.5 w-3.5 text-accent-foreground shrink-0" /> Technician
+                        </button>
+                        <button
+                          type="button"
+                          disabled={demoBusy}
+                          onClick={() =>
+                            void handleDemoSignIn(
+                              demoAccounts.admin.email,
+                              demoAccounts.admin.pass,
+                              "/admin"
+                            )
+                          }
+                          className="flex h-10 sm:h-11 items-center justify-center gap-1.5 rounded-xl border-2 border-border bg-card px-2 text-[11px] sm:text-xs font-semibold text-foreground hover:border-primary hover:bg-primary/5 hover:text-primary transition-all duration-200 disabled:opacity-60 active:scale-[0.98]"
+                        >
+                          <Radio className="h-3.5 w-3.5 text-info shrink-0" /> Service Centre
+                        </button>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 

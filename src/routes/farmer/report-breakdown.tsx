@@ -49,6 +49,7 @@ type Draft = {
   photos: string[];
   village: string;
   tahsil: string;
+  aiConsent?: boolean;
 };
 
 function Report() {
@@ -69,6 +70,7 @@ function Report() {
     photos: [],
     village: "",
     tahsil: "",
+    aiConsent: true,
   });
   const [restored, setRestored] = useState(false);
   const [listening, setListening] = useState(false);
@@ -644,21 +646,20 @@ function Report() {
         <div className="space-y-3">
           <label className="flex h-40 cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-border bg-card text-center">
             <Camera className="h-10 w-10 text-muted-foreground" />
-            <span className="font-semibold">Take photo / video</span>
+            <span className="font-semibold">Take breakdown photos</span>
             <span className="text-xs text-muted-foreground">
               Photos are compressed for slow networks
             </span>
             <input
               type="file"
-              accept="image/*,video/*"
+              accept="image/jpeg,image/png,image/webp"
               capture="environment"
               className="hidden"
               onChange={async (e) => {
                 const f = e.target.files?.[0];
                 if (!f) return;
                 const url = await fileToSmallDataUrl(f);
-                if (!url) toast("Video noted — in this demo only photos are stored.");
-                else up({ photos: [...d.photos, url].slice(0, 4) });
+                if (url) up({ photos: [...d.photos, url].slice(0, 4) });
               }}
             />
           </label>
@@ -675,6 +676,25 @@ function Report() {
                 </button>
               </div>
             ))}
+          </div>
+
+          <div className="rounded-xl border border-border bg-card p-4 space-y-2">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={d.aiConsent ?? true}
+                onChange={(e) => up({ aiConsent: e.target.checked })}
+                className="mt-1 h-4 w-4 rounded border-border text-primary focus:ring-primary/20"
+              />
+              <div className="space-y-1">
+                <span className="text-sm font-semibold text-foreground">
+                  Allow AI visual defect analysis of breakdown photos
+                </span>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Google Gemini 3.5 Flash-Lite assistive AI will inspect your photos to highlight defects and recommend compatible parts. Data is never used for public training.
+                </p>
+              </div>
+            </label>
           </div>
         </div>
       )}

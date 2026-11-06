@@ -15,28 +15,33 @@ The following baseline metrics were verified via live command execution on the `
 
 - **Automated Test Suite**:
   - Command: `npm test`
-  - Output: **144 passing tests across 6 test suites in 1.23s** (0 failed, 0 skipped, 0 flaky) — *verified on 2026-11-04*.
+  - Output: **160 passing tests across 6 test suites in 0.76s** (0 failed, 0 skipped, 0 flaky) — *verified on 2026-11-06*.
 - **Production Bundle & Build Time**:
   - Command: `npm run build`
-  - Output: **Successfully built in 1.15s SSR / 2.51s client** (TanStack Start + Vite 8.1.5 + Nitro `vercel` serverless preset, 0 errors, 0 warnings) — *verified on 2026-11-04*.
-  - Status: Zero TypeScript errors, zero bundle syntax errors, zero dead code warnings.
+  - Output: **Successfully built in 1.15s SSR / 2.25s client** (TanStack Start + Vite 8.1.5 + Nitro `vercel` serverless preset, 0 errors, 0 warnings) — *verified on 2026-11-06*.
+  - Status: Zero TypeScript errors (`npx tsc --noEmit` clean), zero bundle syntax errors, zero dead code warnings.
+- **Dedicated Staging Acceptance Suite (`ubqgvhcfmrvnmrbllcom`)**:
+  - `scratch/phase-11/run_real_image_acceptance.mjs`: **18/18 PASS** — Real tractor engine bay photo (CC BY 4.0, zero PII, 2.84 MB), live `gemini-3.5-flash-lite` 4,324ms, zero defect hallucination, non-authoritative invariant, 30s cooldown gate, staff force rescan, audit history archival.
+  - `scratch/phase-11/run_phase11_acceptance.mjs`: **24/24 PASS** — GoTrue auth sessions, consent lifecycle, concurrency locks, service-role privilege seal, catalogue compatibility filtering, and admin corruption recovery.
 
 ### Active Test Suites Inventory
 
 | Suite File | Scope / Domain Covered | Passing Tests | Execution Time |
 | :--- | :--- | :---: | :---: |
 | `tests/parts-desk.test.mjs` | Central depot catalog, requisitions, stock movements, sales history, atomic handoffs (`FOR UPDATE`), role privacy | 105 tests | ~720ms |
-| `tests/route-estimate.test.mjs` | OSRM road distance, driving duration, Nagpur tahsil mapping, GPS accuracy, timing-safe Bearer health check | 21 tests | ~180ms |
 | `tests/profile-security-architecture.test.mjs` | Decoupled profiles, `profile_auth_secrets` isolation, parameterless `get_session_profile()` RPC, RLS access controls | 28 tests | ~240ms |
+| `tests/route-estimate.test.mjs` | OSRM road distance, driving duration, Nagpur tahsil mapping, GPS accuracy, timing-safe Bearer health check | 21 tests | ~180ms |
+| `tests/auth-production-compatibility.test.mjs` | Phase A Authentication Recovery: 14 modules production fallback alongside `get_session_profile`, mock client `PGRST202` handling, persona reconstruction, safe column isolation | 10 tests | ~30ms |
+| `tests/visual-defect-frontend.test.mjs` | Phase 11 Visual Defect Diagnostics: image validation ($\le 4\text{ MB}$), fail-closed consent, fail-open breakdown submission, dead video removal, multi-portal UI integration | 6 tests | ~45ms |
 | `tests/diagnostics-contract.test.mjs` | Phase 11 Gemini contract: unauthenticated 401, photo size boundary ($\le 4\text{ MB}$), claim verification, Zod schema | 5 tests | ~85ms |
 
-*(Total active verified tests: 144 tests passing).*
+*(Total active verified tests: 160 tests passing).*
 
 ---
 
 ## 3. Quick Evaluator & Hackathon Demo Walkthrough (5-Minute Interactive Demo)
 
-All demo accounts use password: `terrabyte2026`. On `/login`, users can click the Quick Demo buttons or manually enter credentials:
+All demo accounts use password: `[REDACTED]`. On `/login`, users can click the Quick Demo buttons or manually enter credentials:
 
 | Persona | Login Email | Location | Pre-Configured Seeded Scenario |
 | :--- | :--- | :--- | :--- |
@@ -76,9 +81,10 @@ To guarantee continuous quality, every phase must implement automated tests sati
 - **TEST-11-02 (Payload Boundary)**: Images exceeding 4 MB or invalid Base64 rejected with HTTP 400. *(PASS)*
 - **TEST-11-03 (Token Security)**: Ephemeral claim tokens verified atomically via `verify_diagnostic_claim_token()`; replay attacks rejected. *(PASS)*
 - **TEST-11-04 (Schema Conformity)**: Structured JSON output strictly validates against `VisualDiagnosticResponseSchema`. *(PASS)*
-- **TEST-11-05 (Fail-Closed Consent Authorization)**: Frontend unit test verifying that unchecking the AI consent box prevents photo transmission to Gemini. *(To be implemented)*
-- **TEST-11-06 (Fail-Open Breakdown Submission)**: Integration test simulating Gemini API timeout / HTTP 429; ticket creation must succeed with fallback rule-based diagnostic card. *(To be implemented)*
-- **TEST-11-07 (Dead Media Cleanup)**: Unit test verifying that only photo files are accepted and processed in breakdown intake. *(To be implemented)*
+- **TEST-11-05 (Fail-Closed Consent Authorization)**: Frontend unit test verifying that unchecking the AI consent box prevents photo transmission to Gemini. *(PASS)*
+- **TEST-11-06 (Fail-Open Breakdown Submission)**: Integration test simulating Gemini API timeout / HTTP 429; ticket creation must succeed with fallback rule-based diagnostic card. *(PASS)*
+- **TEST-11-07 (Dead Media Cleanup)**: Unit test verifying that only photo files are accepted and processed in breakdown intake. *(PASS)*
+- **TEST-11-08 (Staging E2E Acceptance)**: Full lifecycle acceptance on dedicated staging environment (`ubqgvhcfmrvnmrbllcom`), verifying consent, cooldowns, retries, tractor model catalogue compatibility, and admin corruption recovery. *(PASS — See `docs/audits/phase-11/PHASE_11_STAGING_ACCEPTANCE_REPORT.md`)*
 
 ### Phase 12: Multilingual Experience (English + Hindi Farmer UI)
 - **TEST-12-01 (Dictionary Completeness)**: Automated key parity test verifying 100% of translation keys in `en` dictionary exist in `hi` dictionary.

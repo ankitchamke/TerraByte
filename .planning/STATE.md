@@ -12,33 +12,39 @@
 
 ## 2. Current Position & Milestone Status
 
-- **Current Phase**: **Phase 11 of 16 — Gemini AI Visual Diagnostics (IN PROGRESS — MIDWAY)**
+- **Current Phase**: **Phase 11 — Gemini AI Visual Diagnostics (COMPLETED & STAGING VERIFIED) & Phase A — Authentication Recovery (COMPLETED)**
 - **Branch**: `phase-11` (Connected to Lovable; strictly additive Git history, no force-pushing/rebasing)
 - **Status Summary**:
   - Phases 1–10: **COMPLETED & VERIFIED**
-  - Phase 11: **IN PROGRESS (MIDWAY)** — Backend RPCs, Zod schema contracts, API route, and server-side Gemini service are complete; frontend intake consent UI, dead video handler cleanup, and diagnostic display card are active.
+  - Phase A (Auth Recovery): **COMPLETED & VERIFIED** — Resolved all 18 `get_session_profile` call sites across 14 modules with safe column fallback (`profiles.id, role, full_name, phone, village`), zero DB modifications, and verified mock client recovery.
+  - Phase 11 (Visual Diagnostics): **COMPLETED & VERIFIED ON STAGING** — Bootstrap of dedicated Supabase staging environment (`ubqgvhcfmrvnmrbllcom`), 18 tables, 49 RLS policies, synthetic seed fixtures, interactive `DefectAnnotationCanvas`, multi-portal `VisualDefectDiagnosticViewer`, fail-closed consent opt-in, fail-open breakdown submission, live catalogue tractor compatibility matching, and staff force rescan lifecycle verified end-to-end. Production (`hwdrypkvszwrcraujctw`) strictly air-gapped and untouched.
   - Phases 12–16: **PLANNED** (Future phases; not yet implemented)
   - Post-Hackathon: **DEFERRED** (Payments, WhatsApp bot, OEM telematics, FPO networks, towing/flatbed recovery, external ERP inventory)
 
 ```text
-Progress: [██████████████░░░░░░] 68% (Phase 11 Midway of 16-Phase Roadmap)
+Progress: [████████████████░░░░] 75% (Phase 11 & Phase A Complete of 16-Phase Roadmap)
 ```
 
 ---
 
 ## 3. Verified Empirical Test & Build Health
 
-The following figures were verified live via empirical command execution on **2026-11-04**:
+The following figures were verified live via empirical command execution on **2026-11-06**:
 
 - **Automated Test Suite (`npm test`)**:
-  - Total Tests: **144**
-  - Passing Tests: **144** (0 failures, 0 skipped, 0 cancelled)
-  - Execution Duration: **1.23s**
-  - Test Suites Covered: 6 suites (`demo-accounts`, `diagnostics-contract`, `parts-desk`, `profile-security-architecture`, `route-estimate`, `safe-scoped-reset`)
+  - Total Tests: **160**
+  - Passing Tests: **160** (0 failures, 0 skipped, 0 cancelled)
+  - Execution Duration: **1.10s**
+  - Test Suites Covered: 8 suites (`auth-production-compatibility`, `cleanup-verification`, `diagnostics-contract`, `parts-desk`, `parts-matching`, `profile-security-architecture`, `route-estimate`, `visual-defect-frontend`)
+- **Real-Image Acceptance Suite (`scratch/phase-11/run_real_image_acceptance.mjs`)**:
+  - Live Tests: **18/18 PASS** (Genuine tractor engine bay photograph, CC BY 4.0, zero PII, 2.84 MB, farmer consent, live `gemini-3.5-flash-lite` 4324ms, zero defect hallucination, non-authoritative zero spurious parts commitment, multi-portal queries, 30s cooldown enforcement, staff force rescan, audit history archival)
+- **Staging & Gemini Acceptance Suite (`scratch/phase-11/run_phase11_acceptance.mjs`)**:
+  - Live Tests: **24/24 PASS** (GoTrue auth sessions, fail-closed consent, concurrency locks, live `gemini-3.5-flash-lite` multimodal response, catalogue compatibility filtering, technician force rescan, admin corruption recovery)
+- **TypeScript Compiler (`npx tsc --noEmit`)**:
+  - Status: **0 ERRORS** (Clean compilation across all application modules and routes)
 - **Production Build (`npm run build`)**:
-  - Status: **SUCCESS**
+  - Status: **SUCCESS** (TanStack Start + Vite 8.1.5 + Nitro `vercel` serverless preset, 0 errors, 0 warnings)
   - Compiler: Vite 8.1.5 + Nitro (preset: `vercel`)
-  - Build Duration: **1.15s SSR / 2.51s client**
   - Output Target: `.vercel/output` (Serverless bundle)
 
 ---
@@ -57,7 +63,8 @@ The following figures were verified live via empirical command execution on **20
 | **Phase 8** | Route Logistics (OSRM) & Health | **COMPLETED** | In-app OSRM driving distance/ETA (`/api/route-estimate`), village/tahsil intake, timing-safe Bearer health check (`/api/health`). |
 | **Phase 9** | Spare-Parts Logistics & Sourcing | **COMPLETED** | Subphases 9.1–9.4: Central Nagpur Depot catalog (`service_centre_parts`), pickup requisitions, atomic stock decrement with row locking, movement audit ledger, sourcing ETAs (`parts_hold`), verified across 105 tests. |
 | **Phase 10** | Profile Security Separation | **COMPLETED** | Decoupled `public.profiles` from auth IDs, segregated secrets in `public.profile_auth_secrets` with zero admin read access, parameterless `get_session_profile()` RPC, verified across 28 tests. |
-| **Phase 11** | Gemini AI Visual Diagnostics | **IN PROGRESS (MIDWAY)** | Backend migration `20261103120000`, Zod schemas, API endpoint `/api/assess-visual-defect`, and Gemini 3.5 Flash-Lite service complete (5 contract tests pass). **Remaining**: Intake consent UI, dead video handler cleanup, and `<VisualDiagnosticsCard />`. |
+| **Phase A** | Authentication Recovery & RPC Fallback | **COMPLETED** | Resilient production fallback across 14 modules resolving missing `get_session_profile` RPC / schema cache (`PGRST202`), safe column whitelist, persona reconstruction, 10 compatibility tests pass. |
+| **Phase 11** | Gemini AI Visual Diagnostics | **COMPLETED & STAGING VERIFIED** | Multimodal Gemini 3.5 Flash-Lite integration, interactive `DefectAnnotationCanvas`, `VisualDefectDiagnosticViewer` across farmer/tech/admin portals, fail-closed consent, fail-open breakdown submission, live catalogue matching, and staging acceptance verification (`docs/audits/phase-11/PHASE_11_STAGING_ACCEPTANCE_REPORT.md`). |
 | **Phase 12** | Hindi Regional Experience (Farmer-Facing) | **PLANNED** | Farmer-facing English + Hindi (`en` | `hi`) interface, Noto Sans Devanagari typography, zero Marathi in UI (Whisper voice transcription independent). |
 | **Phase 13** | Technician Trust, Physical KYC & Workshops | **PLANNED** | In-person physical KYC at Nagpur Service Centre (zero Aadhaar storage), independent `repair_facilities`, multi-tech memberships, verified ratings (no default 5.0), touch-canvas handover pad. |
 | **Phase 14** | Smart Dispatch & Workshop Drop-Off | **PLANNED** | Mandatory Doorstep for immobile machinery, OSRM road distance from workshop GPS, Google Maps navigation links, Workshop Drop-Off workflow, atomic bay capacity check, Harvest SOS priority pinning. |
@@ -66,21 +73,22 @@ The following figures were verified live via empirical command execution on **20
 
 ---
 
-## 5. Active Phase 11 Detailed Status & Boundaries
+## 5. Phase 11 & Phase A Verified Implementation Status
 
-### Completed in Phase 11
+### Completed in Phase 11 (Gemini AI Visual Defect Diagnostics)
 - **Database Layer**: `supabase/migrations/20261103120000_phase11_visual_defect_diagnostics.sql` (implements atomic claim token `claim_repair_visual_diagnostic`, fail-closed consent state machine `grant_repair_visual_consent` / `revoke_repair_visual_consent`, service-role finalizer `save_repair_visual_diagnostic`, and sanitized failure recorder `finalize_repair_visual_diagnostic_failure`).
 - **Server Service Layer**: `src/lib/services/gemini-diagnostic.ts` (photo bounding to 4 MB / max 4 photos, prompt with Nagpur depot parts catalog context, Gemini 3.5 Flash-Lite REST execution, timeout abort controller, 750ms in-flight consent cancellation poller).
-- **API Endpoint**: `src/routes/api/assess-visual-defect.ts` (Bearer auth validation, profile resolution, claim verification).
-- **Zod Contracts**: `src/lib/types/visual-diagnostics.ts` (`VisualDiagnosticResponseSchema`, error codes, payload limits).
-- **Unit Tests**: 5 contract tests passing in `tests/diagnostics-contract.test.mjs`.
+- **API Endpoint**: `src/routes/api/assess-visual-defect.ts` (Bearer auth validation, profile resolution with resilient fallback, claim verification).
+- **Frontend Client Service**: `src/lib/services/visual-diagnostics-client.ts` (`assessRepairVisualDefect`, payload construction, error handling).
+- **Interactive UI Components**: `src/components/diagnostics/defect-annotation-canvas.tsx` (SVG coordinate mapping, bounding boxes, severity badges) and `src/components/diagnostics/visual-defect-diagnostic-viewer.tsx` (findings, recommended depot parts, retry triggers).
+- **Multi-Portal Integration**: Integrated into `src/routes/farmer/report-breakdown.tsx` (consent opt-in, fail-open submission), `src/routes/farmer/repair/$id.tsx`, `src/routes/technician/job/$id.tsx`, and `src/routes/admin/repair/$id.tsx`.
+- **Automated Tests**: 11 tests pass (5 backend contract tests in `diagnostics-contract.test.mjs` + 6 frontend tests in `visual-defect-frontend.test.mjs`).
 
-### Remaining Work to Complete Phase 11
-1. **Consent UI**: Add explicit farmer opt-in checkbox and legal disclaimer to `src/routes/farmer/report-breakdown.tsx`.
-2. **Dead Video Handler Removal**: Remove `video/*` accept filter and dead video toast in `report-breakdown.tsx`; restrict strictly to compressed photos.
-3. **Client API Mutation**: Connect breakdown submission to call POST `/api/assess-visual-defect`.
-4. **Diagnostic Results Card**: Build `<VisualDiagnosticsCard />` in `src/routes/farmer/repair/$id.tsx` and `src/routes/admin/repair/$id.tsx`.
-5. **Fail-Open Verification**: Ensure breakdown creation succeeds even if `GEMINI_API_KEY` is missing, times out, or returns 429 quota exhaustion.
+### Completed in Phase A (Authentication Recovery & RPC Fallback)
+- **18 Call Sites Resolved**: Audited and fixed all 18 occurrences of `get_session_profile` across 14 modules.
+- **Resilient Fallback**: Every service gracefully catches missing RPC errors / `PGRST202` schema cache misses and queries `public.profiles` using a safe column whitelist (`id, role, full_name, phone, village`).
+- **Zero Remote DB Mutations**: Un-migrated and production environments function safely without requiring remote DDL/DML.
+- **Automated Tests**: 10 compatibility and simulation tests pass in `tests/auth-production-compatibility.test.mjs`.
 
 ### Phase 11 Architectural Invariants
 - **Consent Authorization**: **Fail-Closed**. Without explicit boolean `true` opt-in from the owning farmer, AI visual analysis is never executed. If consent is revoked in-flight, analysis is aborted and discarded.

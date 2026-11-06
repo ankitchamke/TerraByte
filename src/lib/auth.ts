@@ -25,7 +25,15 @@ export interface AuthState {
   isPasswordRecovery: boolean;
 }
 
-let state: AuthState = { ready: false, userId: null, email: null, emailConfirmed: false, profile: null, profileError: null, isPasswordRecovery: false };
+let state: AuthState = {
+  ready: false,
+  userId: null,
+  email: null,
+  emailConfirmed: false,
+  profile: null,
+  profileError: null,
+  isPasswordRecovery: false,
+};
 const listeners = new Set<() => void>();
 const set = (p: Partial<AuthState>) => {
   state = { ...state, ...p };
@@ -34,7 +42,11 @@ const set = (p: Partial<AuthState>) => {
 
 let inflightProfilePromise: Promise<void> | null = null;
 
-async function loadProfile(userId: string, email: string | null, emailConfirmed: boolean = false): Promise<void> {
+async function loadProfile(
+  userId: string,
+  email: string | null,
+  emailConfirmed: boolean = false,
+): Promise<void> {
   // If identical profile load is already in-flight, reuse it
   if (inflightProfilePromise && state.userId === userId) {
     return inflightProfilePromise;
@@ -45,26 +57,70 @@ async function loadProfile(userId: string, email: string | null, emailConfirmed:
       // Call secure parameterless session hydration RPC
       const { data, error } = await supabase.rpc("get_session_profile");
 
-      if (error) {
-        set({ ready: true, userId, email, emailConfirmed, profile: null, profileError: error.message });
-        return;
+      let profileRow = data && data.length > 0 ? data[0] : null;
+
+      // Graceful production fallback when get_session_profile RPC is absent from database schema cache (PGRST202)
+      if (!profileRow) {
+        const isRpcMissing =
+          !error ||
+          error.code === "PGRST202" ||
+          error.message?.includes("get_session_profile") ||
+          error.message?.includes("schema cache");
+
+        if (isRpcMissing) {
+          const orFilter = email
+            ? `auth_user_id.eq.${userId},id.eq.${userId},email.eq.${email}`
+            : `auth_user_id.eq.${userId},id.eq.${userId}`;
+
+          const { data: fallbackData, error: fallbackError } = await supabase
+            .from("profiles")
+            .select("id, role, full_name, phone, village")
+            .or(orFilter)
+            .maybeSingle();
+
+          if (!fallbackError && fallbackData) {
+            let isVerified = true;
+            if (fallbackData.role === "technician") {
+              const { data: techRow } = await supabase
+                .from("technician_profiles")
+                .select("is_verified")
+                .or(`profile_id.eq.${fallbackData.id},id.eq.${fallbackData.id}`)
+                .maybeSingle();
+              isVerified = Boolean(techRow?.is_verified ?? false);
+            }
+
+            profileRow = {
+              id: fallbackData.id,
+              role: fallbackData.role,
+              full_name: fallbackData.full_name,
+              phone: fallbackData.phone,
+              village: fallbackData.village,
+              is_verified: isVerified,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            };
+          }
+        }
       }
 
-      const profileRow = data && data.length > 0 ? data[0] : null;
-
       if (!profileRow) {
+        const errMessage =
+          error && error.code !== "PGRST202" && !error.message?.includes("get_session_profile")
+            ? error.message
+            : "We couldn't find an account profile for this login. Please contact the service centre to finish setting up your account.";
         set({
           ready: true,
           userId,
           email,
           emailConfirmed,
           profile: null,
-          profileError: "We couldn't find an account profile for this login. Please contact the service centre to finish setting up your account.",
+          profileError: errMessage,
         });
         return;
       }
 
-      const role: AppRole = profileRow.role === "admin" ? "service_centre" : (profileRow.role as AppRole);
+      const role: AppRole =
+        profileRow.role === "admin" ? "service_centre" : (profileRow.role as AppRole);
 
       const profile: Profile = {
         id: profileRow.id,
@@ -75,7 +131,7 @@ async function loadProfile(userId: string, email: string | null, emailConfirmed:
         is_verified: Boolean(profileRow.is_verified),
       };
 
-  set({ ready: true, userId, email, emailConfirmed, profile, profileError: null });
+      set({ ready: true, userId, email, emailConfirmed, profile, profileError: null });
     } finally {
       inflightProfilePromise = null;
     }
@@ -91,16 +147,30 @@ export function startAuth() {
     const u = session?.user;
     if (!u) {
       actions.logout();
-      set({ ready: true, userId: null, email: null, emailConfirmed: false, profile: null, profileError: null, isPasswordRecovery: false });
+      set({
+        ready: true,
+        userId: null,
+        email: null,
+        emailConfirmed: false,
+        profile: null,
+        profileError: null,
+        isPasswordRecovery: false,
+      });
       return;
     }
     const isRecovery = event === "PASSWORD_RECOVERY";
-    const emailConfirmed = !!(u.email_confirmed_at || (u as unknown as { confirmed_at?: string }).confirmed_at);
+    const emailConfirmed = !!(
+      u.email_confirmed_at || (u as unknown as { confirmed_at?: string }).confirmed_at
+    );
     set({
       userId: u.id,
       email: u.email ?? null,
       emailConfirmed,
-      isPasswordRecovery: isRecovery ? true : (event === "SIGNED_IN" || event === "USER_UPDATED" ? false : state.isPasswordRecovery),
+      isPasswordRecovery: isRecovery
+        ? true
+        : event === "SIGNED_IN" || event === "USER_UPDATED"
+          ? false
+          : state.isPasswordRecovery,
     });
     void loadProfile(u.id, u.email ?? null, emailConfirmed);
   });
@@ -108,9 +178,19 @@ export function startAuth() {
     const u = data.session?.user;
     if (!u) {
       actions.logout();
-      set({ ready: true, userId: null, email: null, emailConfirmed: false, profile: null, profileError: null, isPasswordRecovery: false });
+      set({
+        ready: true,
+        userId: null,
+        email: null,
+        emailConfirmed: false,
+        profile: null,
+        profileError: null,
+        isPasswordRecovery: false,
+      });
     } else {
-      const emailConfirmed = !!(u.email_confirmed_at || (u as unknown as { confirmed_at?: string }).confirmed_at);
+      const emailConfirmed = !!(
+        u.email_confirmed_at || (u as unknown as { confirmed_at?: string }).confirmed_at
+      );
       set({ userId: u.id, email: u.email ?? null, emailConfirmed });
       void loadProfile(u.id, u.email ?? null, emailConfirmed);
     }
@@ -129,7 +209,8 @@ export function refreshProfile() {
 export async function resendVerificationEmail(email: string) {
   const clean = email.trim();
   if (!clean) throw new Error("Please enter a valid email address.");
-  const redirectUrl = typeof window !== "undefined" ? `${window.location.origin}/auth/confirm` : undefined;
+  const redirectUrl =
+    typeof window !== "undefined" ? `${window.location.origin}/auth/confirm` : undefined;
   if (redirectUrl) {
     return supabase.auth.resend({
       type: "signup",

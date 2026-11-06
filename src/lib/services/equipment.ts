@@ -15,7 +15,8 @@ export interface CreateEquipmentInput {
   photo_url?: string | null;
 }
 
-let cachedProfile: { auth_user_id: string; id: string; role: string; expiresAt: number } | null = null;
+let cachedProfile: { auth_user_id: string; id: string; role: string; expiresAt: number } | null =
+  null;
 
 /**
  * Resolves the authenticated user's profile ID and role.
@@ -27,7 +28,12 @@ async function getAuthenticatedProfile(): Promise<{ id: string; role: string }> 
   } = await supabase.auth.getSession();
   const sessionUser = session?.user;
 
-  if (sessionUser && cachedProfile && cachedProfile.auth_user_id === sessionUser.id && Date.now() < cachedProfile.expiresAt) {
+  if (
+    sessionUser &&
+    cachedProfile &&
+    cachedProfile.auth_user_id === sessionUser.id &&
+    Date.now() < cachedProfile.expiresAt
+  ) {
     return { id: cachedProfile.id, role: cachedProfile.role };
   }
 
@@ -37,14 +43,30 @@ async function getAuthenticatedProfile(): Promise<{ id: string; role: string }> 
     throw new Error("Authentication required: Please sign in to manage equipment.");
   }
 
-  if (cachedProfile && cachedProfile.auth_user_id === user.id && Date.now() < cachedProfile.expiresAt) {
+  if (
+    cachedProfile &&
+    cachedProfile.auth_user_id === user.id &&
+    Date.now() < cachedProfile.expiresAt
+  ) {
     return { id: cachedProfile.id, role: cachedProfile.role };
   }
 
   const { data: sessionData, error: profileError } = await supabase.rpc("get_session_profile");
-  const profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
+  let profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
 
-  if (profileError || !profile) {
+  if (!profile) {
+    const { data: fallbackRow } = await supabase
+      .from("profiles")
+      .select("id, role")
+      .or(`auth_user_id.eq.${user.id},id.eq.${user.id}`)
+      .maybeSingle();
+
+    if (fallbackRow) {
+      profile = fallbackRow as unknown as typeof profile;
+    }
+  }
+
+  if (!profile) {
     throw new Error("User profile not found. Please ensure your profile is initialized.");
   }
 
@@ -142,11 +164,7 @@ export async function createEquipment(input: CreateEquipmentInput): Promise<Equi
 export async function getEquipmentById(id: string): Promise<EquipmentRow | null> {
   if (!id) throw new Error("Equipment ID is required.");
 
-  const { data, error } = await supabase
-    .from("equipment")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
+  const { data, error } = await supabase.from("equipment").select("*").eq("id", id).maybeSingle();
 
   if (error) {
     throw new Error(`Failed to load equipment details: ${error.message}`);

@@ -96,7 +96,7 @@ export interface QuoteVersionComparison {
 export function calculateQuoteTotals(
   items: Array<{ quantity: number; unit_price: number }>,
   labourAmount: number,
-  taxPercent: number
+  taxPercent: number,
 ): QuoteTotals {
   const partsTotal = items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
   const taxAmount = Math.round((partsTotal + labourAmount) * (taxPercent / 100) * 100) / 100;
@@ -119,9 +119,21 @@ async function getAuthenticatedProfile(): Promise<{ id: string; role: string }> 
   }
 
   const { data: sessionData, error: profileError } = await supabase.rpc("get_session_profile");
-  const profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
+  let profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
 
-  if (profileError || !profile) {
+  if (!profile) {
+    const { data: fallbackRow } = await supabase
+      .from("profiles")
+      .select("id, role")
+      .or(`auth_user_id.eq.${user.id},id.eq.${user.id}`)
+      .maybeSingle();
+
+    if (fallbackRow) {
+      profile = fallbackRow as unknown as typeof profile;
+    }
+  }
+
+  if (!profile) {
     throw new Error("User profile not found. Please ensure your profile is initialized.");
   }
 
@@ -136,7 +148,11 @@ function validateQuoteInputs(input: CreateQuoteInput) {
     throw new Error("Repair request ID is required.");
   }
 
-  if (typeof input.labour_amount !== "number" || isNaN(input.labour_amount) || input.labour_amount < 0) {
+  if (
+    typeof input.labour_amount !== "number" ||
+    isNaN(input.labour_amount) ||
+    input.labour_amount < 0
+  ) {
     throw new Error("Labour amount must be a non-negative number.");
   }
 
@@ -187,7 +203,9 @@ export async function getQuotesForRepair(repairRequestId: string): Promise<Quote
 
   await getAuthenticatedProfile();
 
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairRequestId);
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    repairRequestId,
+  );
   let resolvedId = repairRequestId;
 
   if (!isUuid) {
@@ -251,7 +269,9 @@ export async function getQuoteVersions(repairRequestId: string): Promise<QuoteVe
 
   await getAuthenticatedProfile();
 
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairRequestId.trim());
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    repairRequestId.trim(),
+  );
   let resolvedId = repairRequestId.trim();
 
   if (!isUuid) {
@@ -385,7 +405,7 @@ export async function getQuoteVersions(repairRequestId: string): Promise<QuoteVe
  */
 export function compareQuoteVersions(
   v1: QuoteVersionDetail,
-  v2: QuoteVersionDetail
+  v2: QuoteVersionDetail,
 ): QuoteVersionComparison {
   if (!v1 || !v2) {
     throw new Error("Both quote versions are required for comparison.");
@@ -402,7 +422,7 @@ export function compareQuoteVersions(
     const match2 = v2Items.find(
       (item2) =>
         !matchedV2Ids.has(item2.id) &&
-        item2.part_name.trim().toLowerCase() === item1.part_name.trim().toLowerCase()
+        item2.part_name.trim().toLowerCase() === item1.part_name.trim().toLowerCase(),
     );
 
     if (match2) {
@@ -479,8 +499,7 @@ export function compareQuoteVersions(
   const total2 = v2.totals.totalAmount || 0;
   const totalDiff = total2 - total1;
 
-  const percentageChange =
-    total1 > 0 ? Math.round(((total2 - total1) / total1) * 1000) / 10 : 0;
+  const percentageChange = total1 > 0 ? Math.round(((total2 - total1) / total1) * 1000) / 10 : 0;
 
   return {
     v1,
@@ -523,7 +542,11 @@ export async function getQuoteById(quoteId: string): Promise<QuoteDetail | null>
 
   const quote = data as unknown as QuoteRow & { quote_items: QuoteItemRow[]; technician: any };
   const items = quote.quote_items || [];
-  const totals = calculateQuoteTotals(items, Number(quote.labour_amount), Number(quote.tax_percent));
+  const totals = calculateQuoteTotals(
+    items,
+    Number(quote.labour_amount),
+    Number(quote.tax_percent),
+  );
 
   return {
     ...quote,
@@ -551,10 +574,20 @@ export async function createQuote(input: CreateQuoteInput): Promise<QuoteDetail>
   }
 
   // 1. Fetch repair request to verify assignment and eligibility
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(input.repair_request_id);
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    input.repair_request_id,
+  );
   const { data: repair, error: repairError } = isUuid
-    ? await supabase.from("repair_requests").select("*").eq("id", input.repair_request_id).maybeSingle()
-    : await supabase.from("repair_requests").select("*").eq("job_number", input.repair_request_id).maybeSingle();
+    ? await supabase
+        .from("repair_requests")
+        .select("*")
+        .eq("id", input.repair_request_id)
+        .maybeSingle()
+    : await supabase
+        .from("repair_requests")
+        .select("*")
+        .eq("job_number", input.repair_request_id)
+        .maybeSingle();
 
   if (repairError || !repair) {
     throw new Error("Repair request not found or inaccessible.");
@@ -567,7 +600,12 @@ export async function createQuote(input: CreateQuoteInput): Promise<QuoteDetail>
     throw new Error("Unauthorized: You are not assigned to this repair request.");
   }
 
-  const quotableStatuses: RepairStatus[] = ["ACCEPTED", "REQUESTED", "QUOTE_REVISED", "WAITING_FOR_PARTS"];
+  const quotableStatuses: RepairStatus[] = [
+    "ACCEPTED",
+    "REQUESTED",
+    "QUOTE_REVISED",
+    "WAITING_FOR_PARTS",
+  ];
   if (!quotableStatuses.includes(repair.status)) {
     throw new Error(`Cannot create quote: Repair ticket is in '${repair.status}' status.`);
   }
@@ -605,7 +643,10 @@ export async function createQuote(input: CreateQuoteInput): Promise<QuoteDetail>
       } catch {
         // If deletion fails under RLS, reject the orphan quote so it does not block subsequent submissions
         try {
-          await supabase.from("quotes").update({ status: "REJECTED" }).eq("id", existingPendingQuote.id);
+          await supabase
+            .from("quotes")
+            .update({ status: "REJECTED" })
+            .eq("id", existingPendingQuote.id);
         } catch {
           // Ignore
         }
@@ -740,7 +781,7 @@ export async function createQuote(input: CreateQuoteInput): Promise<QuoteDetail>
       ) {
         throw new Error(
           `Database migration required: The 'catalog_part_id' column on 'quote_items' is not found in the remote database schema cache. ` +
-          `The Phase 9.2 migration (supabase/migrations/20261029120000_phase9_2_stock_movement_sales.sql) must be applied to the remote database to record parts stock links. (${itemsError.message})`,
+            `The Phase 9.2 migration (supabase/migrations/20261029120000_phase9_2_stock_movement_sales.sql) must be applied to the remote database to record parts stock links. (${itemsError.message})`,
         );
       }
       throw new Error(`Failed to save quote items: ${itemsError?.message}`);
@@ -772,24 +813,24 @@ export async function createQuote(input: CreateQuoteInput): Promise<QuoteDetail>
       throw new Error(`Failed to advance repair status: ${repairUpdateError.message}`);
     }
     throw new Error(
-      "This repair request changed while creating the quote. The quote was not submitted. Please refresh."
+      "This repair request changed while creating the quote. The quote was not submitted. Please refresh.",
     );
   }
 
   // 5. Coordinated state: record timeline event
   const totals = calculateQuoteTotals(insertedItems, input.labour_amount, input.tax_percent);
-  const { error: timelineError } = await supabase
-    .from("repair_timeline")
-    .insert({
-      repair_request_id: repair.id,
-      status: newRepairStatus,
-      note: `Quote formulated & sent (v1: ₹${totals.totalAmount.toLocaleString("en-IN")})`,
-      created_by_role: profile.role,
-      created_by_id: profile.id,
-    });
+  const { error: timelineError } = await supabase.from("repair_timeline").insert({
+    repair_request_id: repair.id,
+    status: newRepairStatus,
+    note: `Quote formulated & sent (v1: ₹${totals.totalAmount.toLocaleString("en-IN")})`,
+    created_by_role: profile.role,
+    created_by_id: profile.id,
+  });
 
   if (timelineError) {
-    console.warn(`[TerraByte] Warning: Failed to record quote timeline entry: ${timelineError.message}`);
+    console.warn(
+      `[TerraByte] Warning: Failed to record quote timeline entry: ${timelineError.message}`,
+    );
   }
 
   // Notify farmer of new quote
@@ -942,7 +983,7 @@ export async function reviseQuote(input: ReviseQuoteInput): Promise<QuoteDetail>
 
   if (!updatedPrevQuote) {
     throw new Error(
-      "The previous quote has already been approved, rejected, or revised. Please refresh."
+      "The previous quote has already been approved, rejected, or revised. Please refresh.",
     );
   }
 
@@ -1011,7 +1052,7 @@ export async function reviseQuote(input: ReviseQuoteInput): Promise<QuoteDetail>
       ) {
         throw new Error(
           `Database migration required: The 'catalog_part_id' column on 'quote_items' is not found in the remote database schema cache. ` +
-          `The Phase 9.2 migration (supabase/migrations/20261029120000_phase9_2_stock_movement_sales.sql) must be applied to the remote database to record parts stock links. (${itemsError.message})`,
+            `The Phase 9.2 migration (supabase/migrations/20261029120000_phase9_2_stock_movement_sales.sql) must be applied to the remote database to record parts stock links. (${itemsError.message})`,
         );
       }
       throw new Error(`Failed to save revised quote items: ${itemsError?.message}`);
@@ -1046,7 +1087,7 @@ export async function reviseQuote(input: ReviseQuoteInput): Promise<QuoteDetail>
       throw new Error(`Failed to advance repair status: ${repairUpdateError.message}`);
     }
     throw new Error(
-      "This repair request changed while submitting the revised quote. Please refresh."
+      "This repair request changed while submitting the revised quote. Please refresh.",
     );
   }
 
@@ -1055,18 +1096,18 @@ export async function reviseQuote(input: ReviseQuoteInput): Promise<QuoteDetail>
   const techNoteSummary = input.technician_explanation?.trim()
     ? ` Note: "${input.technician_explanation.trim()}"`
     : "";
-  const { error: timelineError } = await supabase
-    .from("repair_timeline")
-    .insert({
-      repair_request_id: repair.id,
-      status: "QUOTE_PENDING",
-      note: `Revised quote sent (v${newVersion}: ₹${totals.totalAmount.toLocaleString("en-IN")}).${techNoteSummary}`,
-      created_by_role: profile.role,
-      created_by_id: profile.id,
-    });
+  const { error: timelineError } = await supabase.from("repair_timeline").insert({
+    repair_request_id: repair.id,
+    status: "QUOTE_PENDING",
+    note: `Revised quote sent (v${newVersion}: ₹${totals.totalAmount.toLocaleString("en-IN")}).${techNoteSummary}`,
+    created_by_role: profile.role,
+    created_by_id: profile.id,
+  });
 
   if (timelineError) {
-    console.warn(`[TerraByte] Warning: Failed to record revised quote timeline entry: ${timelineError.message}`);
+    console.warn(
+      `[TerraByte] Warning: Failed to record revised quote timeline entry: ${timelineError.message}`,
+    );
   }
 
   // Notify farmer of revised quote
@@ -1105,7 +1146,9 @@ export async function approveQuote(quoteId: string): Promise<QuoteDetail> {
   // 1. Fetch quote with repair request
   const { data: quote, error: quoteError } = await supabase
     .from("quotes")
-    .select("*, quote_items(*), repair_request:repair_request_id(id, job_number, farmer_id, status)")
+    .select(
+      "*, quote_items(*), repair_request:repair_request_id(id, job_number, farmer_id, status)",
+    )
     .eq("id", quoteId)
     .maybeSingle();
 
@@ -1113,7 +1156,12 @@ export async function approveQuote(quoteId: string): Promise<QuoteDetail> {
     throw new Error("Quote not found or inaccessible.");
   }
 
-  const repair = quote.repair_request as unknown as { id: string; job_number: string; farmer_id: string; status: RepairStatus };
+  const repair = quote.repair_request as unknown as {
+    id: string;
+    job_number: string;
+    farmer_id: string;
+    status: RepairStatus;
+  };
   if (!repair) {
     throw new Error("Associated repair ticket not found.");
   }
@@ -1133,7 +1181,9 @@ export async function approveQuote(quoteId: string): Promise<QuoteDetail> {
 
   const approvableStatuses: RepairStatus[] = ["QUOTE_PENDING", "WAITING_FOR_PARTS", "IN_PROGRESS"];
   if (!approvableStatuses.includes(repair.status)) {
-    throw new Error(`Cannot approve quote: Repair ticket is in '${repair.status}' status (must be QUOTE_PENDING, WAITING_FOR_PARTS, or IN_PROGRESS).`);
+    throw new Error(
+      `Cannot approve quote: Repair ticket is in '${repair.status}' status (must be QUOTE_PENDING, WAITING_FOR_PARTS, or IN_PROGRESS).`,
+    );
   }
 
   const now = new Date().toISOString();
@@ -1152,9 +1202,7 @@ export async function approveQuote(quoteId: string): Promise<QuoteDetail> {
   }
 
   if (!updatedQuote) {
-    throw new Error(
-      "This quote is no longer pending or was already processed. Please refresh."
-    );
+    throw new Error("This quote is no longer pending or was already processed. Please refresh.");
   }
 
   // 5. Advance repair status to IN_PROGRESS only if it was not WAITING_FOR_PARTS; if WAITING_FOR_PARTS, keep WAITING_FOR_PARTS
@@ -1178,30 +1226,31 @@ export async function approveQuote(quoteId: string): Promise<QuoteDetail> {
         throw new Error(`Failed to advance repair status to IN_PROGRESS: ${repairError2.message}`);
       }
       throw new Error(
-        "This repair request status changed while approving the quote. Please refresh."
+        "This repair request status changed while approving the quote. Please refresh.",
       );
     }
   }
 
   // 6. Record timeline audit entry
-  const timelineStatus = repair.status === "WAITING_FOR_PARTS" ? "WAITING_FOR_PARTS" : "IN_PROGRESS";
+  const timelineStatus =
+    repair.status === "WAITING_FOR_PARTS" ? "WAITING_FOR_PARTS" : "IN_PROGRESS";
   const timelineNote =
     repair.status === "WAITING_FOR_PARTS"
       ? `Quote revision v${quote.version} approved by farmer while waiting for parts.`
       : `Quote approved & repair authorized (v${quote.version})`;
 
-  const { error: timelineError } = await supabase
-    .from("repair_timeline")
-    .insert({
-      repair_request_id: repair.id,
-      status: timelineStatus,
-      note: timelineNote,
-      created_by_role: profile.role,
-      created_by_id: profile.id,
-    });
+  const { error: timelineError } = await supabase.from("repair_timeline").insert({
+    repair_request_id: repair.id,
+    status: timelineStatus,
+    note: timelineNote,
+    created_by_role: profile.role,
+    created_by_id: profile.id,
+  });
 
   if (timelineError) {
-    console.warn(`[TerraByte] Warning: Failed to record quote approval timeline entry: ${timelineError.message}`);
+    console.warn(
+      `[TerraByte] Warning: Failed to record quote approval timeline entry: ${timelineError.message}`,
+    );
   }
 
   // Notify technician that quote was approved and work can begin
@@ -1217,7 +1266,11 @@ export async function approveQuote(quoteId: string): Promise<QuoteDetail> {
   }
 
   const items = (updatedQuote as any).quote_items || [];
-  const totals = calculateQuoteTotals(items, Number(updatedQuote.labour_amount), Number(updatedQuote.tax_percent));
+  const totals = calculateQuoteTotals(
+    items,
+    Number(updatedQuote.labour_amount),
+    Number(updatedQuote.tax_percent),
+  );
 
   return {
     ...(updatedQuote as unknown as QuoteRow & { quote_items: QuoteItemRow[]; technician: any }),
@@ -1258,7 +1311,7 @@ export function parseClarificationNote(note?: string | null): ParsedClarificatio
 
   // Pattern: "Reason: ...\nExplanation: ...\nPhoto: ..."
   const match = trimmed.match(
-    /^Reason:\s*([^\n]+)(?:\n+(?:Explanation|Farmer message|Message):\s*([\s\S]*?))?(?:\n+Photo:\s*(\S+))?$/i
+    /^Reason:\s*([^\n]+)(?:\n+(?:Explanation|Farmer message|Message):\s*([\s\S]*?))?(?:\n+Photo:\s*(\S+))?$/i,
   );
   if (match) {
     return {
@@ -1294,7 +1347,7 @@ export function parseClarificationNote(note?: string | null): ParsedClarificatio
  */
 export async function rejectQuote(
   quoteId: string,
-  reasonOrInput?: string | RejectQuoteInput
+  reasonOrInput?: string | RejectQuoteInput,
 ): Promise<QuoteDetail> {
   if (!quoteId) throw new Error("Quote ID is required.");
 
@@ -1303,7 +1356,9 @@ export async function rejectQuote(
   // 1. Fetch quote with repair request
   const { data: quote, error: quoteError } = await supabase
     .from("quotes")
-    .select("*, quote_items(*), repair_request:repair_request_id(id, job_number, farmer_id, status)")
+    .select(
+      "*, quote_items(*), repair_request:repair_request_id(id, job_number, farmer_id, status)",
+    )
     .eq("id", quoteId)
     .maybeSingle();
 
@@ -1311,7 +1366,12 @@ export async function rejectQuote(
     throw new Error("Quote not found or inaccessible.");
   }
 
-  const repair = quote.repair_request as unknown as { id: string; job_number: string; farmer_id: string; status: RepairStatus };
+  const repair = quote.repair_request as unknown as {
+    id: string;
+    job_number: string;
+    farmer_id: string;
+    status: RepairStatus;
+  };
   if (!repair) {
     throw new Error("Associated repair ticket not found.");
   }
@@ -1331,7 +1391,9 @@ export async function rejectQuote(
 
   const rejectableStatuses: RepairStatus[] = ["QUOTE_PENDING", "WAITING_FOR_PARTS", "IN_PROGRESS"];
   if (!rejectableStatuses.includes(repair.status)) {
-    throw new Error(`Cannot reject quote: Repair ticket is in '${repair.status}' status (must be QUOTE_PENDING, WAITING_FOR_PARTS, or IN_PROGRESS).`);
+    throw new Error(
+      `Cannot reject quote: Repair ticket is in '${repair.status}' status (must be QUOTE_PENDING, WAITING_FOR_PARTS, or IN_PROGRESS).`,
+    );
   }
 
   let selectedReason = "";
@@ -1361,11 +1423,12 @@ export async function rejectQuote(
     clarificationToSave = "Quote declined by farmer";
   }
 
-  const notifSummary = (selectedReason && explanation)
-    ? `${selectedReason}: "${explanation.length > 60 ? explanation.slice(0, 57) + "..." : explanation}"`
-    : (selectedReason || explanation || "Quote declined by farmer");
+  const notifSummary =
+    selectedReason && explanation
+      ? `${selectedReason}: "${explanation.length > 60 ? explanation.slice(0, 57) + "..." : explanation}"`
+      : selectedReason || explanation || "Quote declined by farmer";
 
-  const newStatus: QuoteStatus = (selectedReason || explanation) ? "REVISED" : "REJECTED";
+  const newStatus: QuoteStatus = selectedReason || explanation ? "REVISED" : "REJECTED";
   const now = new Date().toISOString();
 
   // 4. Update quote status
@@ -1382,9 +1445,7 @@ export async function rejectQuote(
   }
 
   if (!updatedQuote) {
-    throw new Error(
-      "This quote is no longer pending or was already processed. Please refresh."
-    );
+    throw new Error("This quote is no longer pending or was already processed. Please refresh.");
   }
 
   // 5. Update repair request status to QUOTE_REVISED (or preserve WAITING_FOR_PARTS) and save clarification note
@@ -1410,23 +1471,23 @@ export async function rejectQuote(
       throw new Error(`Failed to set repair status to QUOTE_REVISED: ${repairError2.message}`);
     }
     throw new Error(
-      "This repair request status changed while processing the quote revision request. Please refresh."
+      "This repair request status changed while processing the quote revision request. Please refresh.",
     );
   }
 
   // 6. Record timeline audit entry
-  const { error: timelineError } = await supabase
-    .from("repair_timeline")
-    .insert({
-      repair_request_id: repair.id,
-      status: nextRepairStatus,
-      note: `Quote revision requested: "${notifSummary}"`,
-      created_by_role: profile.role,
-      created_by_id: profile.id,
-    });
+  const { error: timelineError } = await supabase.from("repair_timeline").insert({
+    repair_request_id: repair.id,
+    status: nextRepairStatus,
+    note: `Quote revision requested: "${notifSummary}"`,
+    created_by_role: profile.role,
+    created_by_id: profile.id,
+  });
 
   if (timelineError) {
-    console.warn(`[TerraByte] Warning: Failed to record quote rejection timeline entry: ${timelineError.message}`);
+    console.warn(
+      `[TerraByte] Warning: Failed to record quote rejection timeline entry: ${timelineError.message}`,
+    );
   }
 
   // Notify technician and admin
@@ -1456,7 +1517,11 @@ export async function rejectQuote(
   }
 
   const items = (updatedQuote as any).quote_items || [];
-  const totals = calculateQuoteTotals(items, Number(updatedQuote.labour_amount), Number(updatedQuote.tax_percent));
+  const totals = calculateQuoteTotals(
+    items,
+    Number(updatedQuote.labour_amount),
+    Number(updatedQuote.tax_percent),
+  );
 
   return {
     ...(updatedQuote as unknown as QuoteRow & { quote_items: QuoteItemRow[]; technician: any }),

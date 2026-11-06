@@ -39,13 +39,27 @@ async function getAuthenticatedProfile(): Promise<{ id: string; role: string }> 
   } = await supabase.auth.getUser();
 
   if (authError || !user) {
-    throw new Error("Authentication required: Please sign in to manage repair notes and diagnosis.");
+    throw new Error(
+      "Authentication required: Please sign in to manage repair notes and diagnosis.",
+    );
   }
 
   const { data: sessionData, error: profileError } = await supabase.rpc("get_session_profile");
-  const profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
+  let profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
 
-  if (profileError || !profile) {
+  if (!profile) {
+    const { data: fallbackRow } = await supabase
+      .from("profiles")
+      .select("id, role")
+      .or(`auth_user_id.eq.${user.id},id.eq.${user.id}`)
+      .maybeSingle();
+
+    if (fallbackRow) {
+      profile = fallbackRow as unknown as typeof profile;
+    }
+  }
+
+  if (!profile) {
     throw new Error("User profile not found. Please ensure your profile is initialized.");
   }
 
@@ -63,7 +77,9 @@ export async function getRepairNotes(repairRequestId: string): Promise<RepairNot
   await getAuthenticatedProfile();
 
   // Resolve UUID if job_number was passed
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairRequestId);
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    repairRequestId,
+  );
   let resolvedId = repairRequestId;
 
   if (!isUuid) {
@@ -81,7 +97,9 @@ export async function getRepairNotes(repairRequestId: string): Promise<RepairNot
 
   const { data, error } = await supabase
     .from("repair_notes")
-    .select("id, repair_request_id, author_id, note_text, created_at, author:author_id(id, full_name, role)")
+    .select(
+      "id, repair_request_id, author_id, note_text, created_at, author:author_id(id, full_name, role)",
+    )
     .eq("repair_request_id", resolvedId)
     .order("created_at", { ascending: true });
 
@@ -101,7 +119,10 @@ export async function getRepairNotes(repairRequestId: string): Promise<RepairNot
  * - Terminal states (COMPLETED, CANCELLED) reject new notes.
  * - Records an audit entry in repair_timeline with status "NOTE".
  */
-export async function addRepairNote(repairRequestId: string, noteText: string): Promise<RepairNoteWithAuthor> {
+export async function addRepairNote(
+  repairRequestId: string,
+  noteText: string,
+): Promise<RepairNoteWithAuthor> {
   if (!repairRequestId) throw new Error("Repair request ID is required.");
 
   const profile = await getAuthenticatedProfile();
@@ -116,10 +137,20 @@ export async function addRepairNote(repairRequestId: string, noteText: string): 
   }
 
   // 1. Fetch repair request to verify assignment and lifecycle status
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairRequestId);
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    repairRequestId,
+  );
   const { data: repair, error: repairError } = isUuid
-    ? await supabase.from("repair_requests").select("id, technician_id, status, job_number, farmer_id").eq("id", repairRequestId).maybeSingle()
-    : await supabase.from("repair_requests").select("id, technician_id, status, job_number, farmer_id").eq("job_number", repairRequestId).maybeSingle();
+    ? await supabase
+        .from("repair_requests")
+        .select("id, technician_id, status, job_number, farmer_id")
+        .eq("id", repairRequestId)
+        .maybeSingle()
+    : await supabase
+        .from("repair_requests")
+        .select("id, technician_id, status, job_number, farmer_id")
+        .eq("job_number", repairRequestId)
+        .maybeSingle();
 
   if (repairError || !repair) {
     throw new Error("Repair request not found or inaccessible.");
@@ -130,7 +161,9 @@ export async function addRepairNote(repairRequestId: string, noteText: string): 
   const isAdmin = profile.role === "admin";
 
   if (!isAssignedTech && !isAdmin) {
-    throw new Error("Unauthorized: Only the assigned technician or Service Centre can add repair notes.");
+    throw new Error(
+      "Unauthorized: Only the assigned technician or Service Centre can add repair notes.",
+    );
   }
 
   // 3. Lifecycle check: terminal states reject note addition
@@ -146,7 +179,9 @@ export async function addRepairNote(repairRequestId: string, noteText: string): 
       author_id: profile.id,
       note_text: trimmedText,
     })
-    .select("id, repair_request_id, author_id, note_text, created_at, author:author_id(id, full_name, role)")
+    .select(
+      "id, repair_request_id, author_id, note_text, created_at, author:author_id(id, full_name, role)",
+    )
     .single();
 
   if (insertError || !noteRow) {
@@ -154,18 +189,18 @@ export async function addRepairNote(repairRequestId: string, noteText: string): 
   }
 
   // 5. Coordinated state: record audit event in public.repair_timeline
-  const { error: timelineError } = await supabase
-    .from("repair_timeline")
-    .insert({
-      repair_request_id: repair.id,
-      status: "NOTE",
-      note: trimmedText,
-      created_by_role: profile.role,
-      created_by_id: profile.id,
-    });
+  const { error: timelineError } = await supabase.from("repair_timeline").insert({
+    repair_request_id: repair.id,
+    status: "NOTE",
+    note: trimmedText,
+    created_by_role: profile.role,
+    created_by_id: profile.id,
+  });
 
   if (timelineError) {
-    console.warn(`[TerraByte] Warning: Failed to record timeline entry for note: ${timelineError.message}`);
+    console.warn(
+      `[TerraByte] Warning: Failed to record timeline entry for note: ${timelineError.message}`,
+    );
   }
 
   // Important rule (Phase 4.3): Do NOT generate notifications for every internal technician note.
@@ -183,22 +218,30 @@ export async function addRepairNote(repairRequestId: string, noteText: string): 
  */
 export async function updateDiagnosis(
   repairRequestId: string,
-  diagnosisData: UpdateDiagnosisInput
+  diagnosisData: UpdateDiagnosisInput,
 ): Promise<RepairRequestRow> {
   if (!repairRequestId) throw new Error("Repair request ID is required.");
 
   const profile = await getAuthenticatedProfile();
 
-  const hasFields = Object.keys(diagnosisData).some((k) => (diagnosisData as Record<string, unknown>)[k] !== undefined);
+  const hasFields = Object.keys(diagnosisData).some(
+    (k) => (diagnosisData as Record<string, unknown>)[k] !== undefined,
+  );
   if (!hasFields) {
     throw new Error("At least one diagnostic field must be provided to update assessment.");
   }
 
   // 1. Fetch repair request
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairRequestId);
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    repairRequestId,
+  );
   const { data: repair, error: repairError } = isUuid
     ? await supabase.from("repair_requests").select("*").eq("id", repairRequestId).maybeSingle()
-    : await supabase.from("repair_requests").select("*").eq("job_number", repairRequestId).maybeSingle();
+    : await supabase
+        .from("repair_requests")
+        .select("*")
+        .eq("job_number", repairRequestId)
+        .maybeSingle();
 
   if (repairError || !repair) {
     throw new Error("Repair request not found or inaccessible.");
@@ -209,7 +252,9 @@ export async function updateDiagnosis(
   const isAdmin = profile.role === "admin";
 
   if (!isAssignedTech && !isAdmin) {
-    throw new Error("Unauthorized: Only the assigned technician or Service Centre can update diagnostic findings.");
+    throw new Error(
+      "Unauthorized: Only the assigned technician or Service Centre can update diagnostic findings.",
+    );
   }
 
   // 3. Lifecycle check: terminal states reject diagnosis update
@@ -226,12 +271,15 @@ export async function updateDiagnosis(
   };
 
   if (diagnosisData.system !== undefined) updatedAssessment["system"] = diagnosisData.system;
-  if (diagnosisData.possibleIssue !== undefined) updatedAssessment["possibleIssue"] = diagnosisData.possibleIssue;
+  if (diagnosisData.possibleIssue !== undefined)
+    updatedAssessment["possibleIssue"] = diagnosisData.possibleIssue;
   if (diagnosisData.severity !== undefined) updatedAssessment["severity"] = diagnosisData.severity;
   if (diagnosisData.advice !== undefined) updatedAssessment["advice"] = diagnosisData.advice;
-  if (diagnosisData.partsCategory !== undefined) updatedAssessment["partsCategory"] = diagnosisData.partsCategory;
+  if (diagnosisData.partsCategory !== undefined)
+    updatedAssessment["partsCategory"] = diagnosisData.partsCategory;
   if (diagnosisData.skill !== undefined) updatedAssessment["skill"] = diagnosisData.skill;
-  if (diagnosisData.technicianNotes !== undefined) updatedAssessment["technicianNotes"] = diagnosisData.technicianNotes;
+  if (diagnosisData.technicianNotes !== undefined)
+    updatedAssessment["technicianNotes"] = diagnosisData.technicianNotes;
   if (diagnosisData.findings !== undefined) updatedAssessment["findings"] = diagnosisData.findings;
 
   // 5. Persist updated assessment to repair_requests
@@ -250,19 +298,21 @@ export async function updateDiagnosis(
 
   // 6. Record diagnostic confirmation audit event in timeline
   const diagnosticSummary =
-    diagnosisData.possibleIssue || diagnosisData.system || "Technician confirmed diagnostic assessment";
-  const { error: timelineError } = await supabase
-    .from("repair_timeline")
-    .insert({
-      repair_request_id: repair.id,
-      status: "NOTE",
-      note: `Diagnostic assessment confirmed: ${diagnosticSummary}`,
-      created_by_role: profile.role,
-      created_by_id: profile.id,
-    });
+    diagnosisData.possibleIssue ||
+    diagnosisData.system ||
+    "Technician confirmed diagnostic assessment";
+  const { error: timelineError } = await supabase.from("repair_timeline").insert({
+    repair_request_id: repair.id,
+    status: "NOTE",
+    note: `Diagnostic assessment confirmed: ${diagnosticSummary}`,
+    created_by_role: profile.role,
+    created_by_id: profile.id,
+  });
 
   if (timelineError) {
-    console.warn(`[TerraByte] Warning: Failed to record diagnosis timeline entry: ${timelineError.message}`);
+    console.warn(
+      `[TerraByte] Warning: Failed to record diagnosis timeline entry: ${timelineError.message}`,
+    );
   }
 
   return updated;

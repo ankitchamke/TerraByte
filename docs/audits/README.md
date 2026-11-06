@@ -11,9 +11,11 @@ All documents are preserved in their original form to maintain a complete, tampe
 ```
 docs/audits/
 ├── README.md               # Central audit index & navigation (this file)
-├── phase-9/                # Steps 5B.12 through 5B.19 (Database audits, staging gate, RPC reconciliation)
+├── phase-a/                # Phase A Authentication Recovery execution and fallback audit
+├── phase-a1/               # Phase A.1 Live acceptance testing report and workflow verification
 ├── phase-11/               # Phase 11 visual defect diagnostics implementation & test evidence
-└── archive/                # Historical/superseded assessments (Step 5B.0 – 5B.11 baseline)
+├── phase-9/                # Steps 5B.12 through 5B.19 (Database audits, staging gate, RPC reconciliation)
+└── archive/                # Historical/superseded assessments and repository cleanup reports
 ```
 
 ---
@@ -128,20 +130,48 @@ Phase 9 focused on resolving migration drift, establishing PostgreSQL 17 compati
 
 ## 2. Phase 11: Visual Defect Diagnostics
 
-Phase 11 delivered visual defect inspection tools, canvas-based defect annotation, photo evidence capture, and diagnostic summary export.
+Phase 11 delivered multimodal visual defect diagnostics using Google Gemini 3.5 Flash-Lite, canvas-based defect annotation, photo evidence capture, multi-portal viewers (farmer, technician, admin), and fail-open breakdown submission.
 
 | Document | Purpose / Summary |
 | :--- | :--- |
-| [`STEP5B19_PHASE11_COMPLETION_STATUS.md`](phase-11/STEP5B19_PHASE11_COMPLETION_STATUS.md) | Forensic audit verifying Phase 11 implementation (`VisualDefectDiagnosticViewer`, annotations, defect canvas), migration `20261103120000_phase11_visual_defect_diagnostics.sql`, and 144/144 automated test verification. |
+| [`PHASE11_FRONTEND_IMPLEMENTATION_PLAN.md`](phase-11/PHASE11_FRONTEND_IMPLEMENTATION_PLAN.md) | Structured implementation plan for the visual defect diagnostics frontend, canvas, and viewer integration. |
+| [`PHASE11_FRONTEND_IMPLEMENTATION_REPORT.md`](phase-11/PHASE11_FRONTEND_IMPLEMENTATION_REPORT.md) | Implementation report detailing `VisualDefectDiagnosticViewer`, `DefectAnnotationCanvas`, and portal routes. |
+| [`PHASE11_TEST_RESULTS.md`](phase-11/PHASE11_TEST_RESULTS.md) | Test execution report covering photo validation, fail-closed consent, fail-open breakdown, and contracts (11 tests pass). |
+| [`PHASE11_ACCEPTANCE_CHECKLIST.md`](phase-11/PHASE11_ACCEPTANCE_CHECKLIST.md) | Final acceptance checklist verifying all Phase 11 functional, security, and free-tier constraints. |
+| [`STEP5B19_PHASE11_COMPLETION_STATUS.md`](phase-11/STEP5B19_PHASE11_COMPLETION_STATUS.md) | Forensic audit verifying Phase 11 backend implementation, migration `20261103120000_phase11_visual_defect_diagnostics.sql`, and 144 baseline tests. |
 
 ---
 
-## 3. Archive & Historical Audits
+## 3. Phase A: Authentication Recovery & RPC Fallback
+
+Phase A resolved the production authentication regression triggered by the parameterless `public.get_session_profile()` RPC absent from schema cache (`PGRST202`).
+
+| Document | Purpose / Summary |
+| :--- | :--- |
+| [`PHASE_A_AUTH_RECOVERY_EXECUTION_CHECKLIST.md`](phase-a/PHASE_A_AUTH_RECOVERY_EXECUTION_CHECKLIST.md) | 18-point audit and execution checklist resolving `get_session_profile` across 14 modules with safe column fallback and zero remote DB mutations. |
+
+---
+
+## 4. Phase A.1: Live Acceptance & Existing Workflow Testing
+
+Phase A.1 verified real authentication, session persistence, logout/login, registration endpoints, role-based workflows, and security isolation against the live Supabase production project (`hwdrypkvszwrcraujctw`).
+
+| Document | Purpose / Summary |
+| :--- | :--- |
+| [`PHASE_A1_LIVE_ACCEPTANCE_REPORT.md`](phase-a1/PHASE_A1_LIVE_ACCEPTANCE_REPORT.md) | Live acceptance report verifying 16 scenarios (16 PASS, 0 FAIL) against production Supabase in read-only mode. |
+| [`DEMO_AUTH_SECURITY_REVIEW.md`](phase-a1/DEMO_AUTH_SECURITY_REVIEW.md) | Comprehensive review of hardcoded demo credentials, client bundle exposure, RLS boundaries, and production hardening roadmap. |
+| [`DEMO_AUTH_ARCHITECTURE_DECISION.md`](phase-a1/DEMO_AUTH_ARCHITECTURE_DECISION.md) | Final architecture decision evaluating `/api/demo-login` open proxy risks, RLS cross-tenant boundaries, and physical staging isolation. |
+| [`PRODUCTION_SECURITY_REMEDIATION_PLAN.md`](phase-a1/PRODUCTION_SECURITY_REMEDIATION_PLAN.md) | Production security remediation plan & approval gates for demo credential broker, storage privacy, reset invariants, and session security. |
+
+---
+
+## 5. Archive & Historical Audits
 
 Superseded or historical reports covering earlier phases before the staging isolation and forward migration architecture were finalized.
 
 | Document | Purpose / Summary |
 | :--- | :--- |
+| [`REPOSITORY_CLEANUP_REPORT.md`](archive/REPOSITORY_CLEANUP_REPORT.md) | Historical verification report from initial root reorganization migrating 56 audit documents into `docs/audits/`. |
 | [`phase9_step5b_production_deployment_assessment.md`](archive/phase9_step5b_production_deployment_assessment.md) | Comprehensive historical assessment (238 KB) documenting Steps 5B.0 through 5B.11 prior to Step 5B.12 refactoring and staging isolation. |
 
 ---
@@ -150,5 +180,5 @@ Superseded or historical reports covering earlier phases before the staging isol
 
 Every document in this directory was verified against the following core principles:
 1. **Safety Boundaries:** Zero unauthorized production database execution against `hwdrypkvszwrcraujctw`.
-2. **Reproducibility:** All schema migrations and test suites (144/144 automated tests) are completely reproducible locally on disposable PostgreSQL 17 test containers.
+2. **Reproducibility:** All schema migrations and test suites (160/160 automated tests) are completely reproducible locally on disposable PostgreSQL 17 test containers.
 3. **Traceability:** Links between audit documents are fully reconciled, preserving the forensic chain of custody across every step.

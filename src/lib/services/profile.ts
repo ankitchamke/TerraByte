@@ -27,7 +27,15 @@ export async function updateProfile(input: UpdateProfileInput): Promise<void> {
 
   const { data: sessionData } = await supabase.rpc("get_session_profile");
   const sessionProfile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
-  const profileId = sessionProfile?.id || user.id;
+  let profileId = sessionProfile?.id;
+  if (!profileId) {
+    const { data: fallbackRow } = await supabase
+      .from("profiles")
+      .select("id")
+      .or(`auth_user_id.eq.${user.id},id.eq.${user.id}`)
+      .maybeSingle();
+    profileId = fallbackRow?.id || user.id;
+  }
 
   const trimmedName = input.fullName.trim();
   if (!trimmedName) {
@@ -115,9 +123,20 @@ export async function updateTechnicianWorkshop(
 
   // Resolve technician's profile ID
   const { data: sessionData, error: sessionError } = await supabase.rpc("get_session_profile");
-  const profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
+  let profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
 
-  if (sessionError || !profile) {
+  if (!profile) {
+    const { data: fallbackRow } = await supabase
+      .from("profiles")
+      .select("id, role")
+      .or(`auth_user_id.eq.${user.id},id.eq.${user.id}`)
+      .maybeSingle();
+    if (fallbackRow) {
+      profile = fallbackRow as unknown as typeof profile;
+    }
+  }
+
+  if (!profile) {
     throw new Error("Technician profile record could not be found.");
   }
 
@@ -150,7 +169,18 @@ export async function getTechnicianWorkshopDetails(): Promise<{
   if (!user) return null;
 
   const { data: sessionData } = await supabase.rpc("get_session_profile");
-  const profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
+  let profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
+
+  if (!profile) {
+    const { data: fallbackRow } = await supabase
+      .from("profiles")
+      .select("id")
+      .or(`auth_user_id.eq.${user.id},id.eq.${user.id}`)
+      .maybeSingle();
+    if (fallbackRow) {
+      profile = fallbackRow as unknown as typeof profile;
+    }
+  }
 
   if (!profile) return null;
 

@@ -28,7 +28,7 @@ node --test --watch tests/*.test.mjs # Watch mode
 
 ## 2. Quick Evaluator & Hackathon Judge Test Script (5-Minute Interactive Demo)
 
-All demo accounts use password: `terrabyte2026`. On `/login`, you can either click the Quick Demo buttons or type credentials manually:
+All demo accounts use password: `[REDACTED]`. On `/login`, you can either click the Quick Demo buttons or type credentials manually:
 
 | Persona | Login Email | Location | Pre-Configured Seeded Scenario |
 | :--- | :--- | :--- | :--- |

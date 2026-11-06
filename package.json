@@ -4,8 +4,11 @@
   "sideEffects": false,
   "type": "module",
   "scripts": {
-    "dev": "vite dev",
-    "build": "vite build",
+    "dev": "vite dev --mode staging",
+    "dev:staging": "vite dev --mode staging",
+    "build": "node scripts/vercel-build.mjs",
+    "build:staging": "vite build --mode staging",
+    "build:production": "vite build --mode production",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",

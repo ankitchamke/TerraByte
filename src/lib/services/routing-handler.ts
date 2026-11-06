@@ -83,9 +83,21 @@ export async function handleRouteEstimateRequest(
 
   // 2. Identify caller profile and role via get_session_profile RPC
   const { data: sessionData, error: profileError } = await userClient.rpc("get_session_profile");
-  const profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
+  let profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
 
-  if (profileError || !profile) {
+  if (!profile) {
+    const { data: fallbackRow } = await userClient
+      .from("profiles")
+      .select("id, role")
+      .or(`auth_user_id.eq.${user.id},id.eq.${user.id}`)
+      .maybeSingle();
+
+    if (fallbackRow) {
+      profile = fallbackRow as unknown as typeof profile;
+    }
+  }
+
+  if (!profile) {
     return new Response(
       JSON.stringify({ error: "Could not find profile for authenticated user." }),
       {

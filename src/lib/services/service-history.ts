@@ -23,9 +23,21 @@ async function getAuthenticatedProfile(): Promise<{ id: string; role: string }> 
   }
 
   const { data: sessionData, error: profileError } = await supabase.rpc("get_session_profile");
-  const profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
+  let profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
 
-  if (profileError || !profile) {
+  if (!profile) {
+    const { data: fallbackRow } = await supabase
+      .from("profiles")
+      .select("id, role")
+      .or(`auth_user_id.eq.${user.id},id.eq.${user.id}`)
+      .maybeSingle();
+
+    if (fallbackRow) {
+      profile = fallbackRow as unknown as typeof profile;
+    }
+  }
+
+  if (!profile) {
     throw new Error("User profile not found. Please ensure your profile is initialized.");
   }
 
@@ -55,7 +67,7 @@ async function verifyTechnicianIsVerified(profileId: string): Promise<boolean> {
  *   technician & workshop credentials, downtime hours, and invoice reference.
  */
 export async function createServiceHistoryFromRepair(
-  repairRequestId: string
+  repairRequestId: string,
 ): Promise<ServiceHistoryRow> {
   if (!repairRequestId) throw new Error("Repair request ID is required.");
 
@@ -68,15 +80,23 @@ export async function createServiceHistoryFromRepair(
   if (profile.role === "technician") {
     const isVerified = await verifyTechnicianIsVerified(profile.id);
     if (!isVerified) {
-      throw new Error("Unauthorized: Unverified technicians cannot generate verified service records.");
+      throw new Error(
+        "Unauthorized: Unverified technicians cannot generate verified service records.",
+      );
     }
   }
 
   // 1. Fetch repair request
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairRequestId);
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    repairRequestId,
+  );
   const { data: repair, error: repairError } = isUuid
     ? await supabase.from("repair_requests").select("*").eq("id", repairRequestId).maybeSingle()
-    : await supabase.from("repair_requests").select("*").eq("job_number", repairRequestId).maybeSingle();
+    : await supabase
+        .from("repair_requests")
+        .select("*")
+        .eq("job_number", repairRequestId)
+        .maybeSingle();
 
   if (repairError || !repair) {
     throw new Error("Repair request not found or inaccessible.");
@@ -89,7 +109,9 @@ export async function createServiceHistoryFromRepair(
 
   // Must be COMPLETED
   if (repair.status !== "COMPLETED") {
-    throw new Error(`Cannot create service history: Repair is in '${repair.status}' status (must be COMPLETED).`);
+    throw new Error(
+      `Cannot create service history: Repair is in '${repair.status}' status (must be COMPLETED).`,
+    );
   }
 
   // 2. Check for existing service history record (idempotency)
@@ -134,7 +156,7 @@ export async function createServiceHistoryFromRepair(
       unit_price: number;
     }>;
     partsReplaced = items.map((item) =>
-      item.quantity > 1 ? `${item.part_name} ×${item.quantity}` : item.part_name
+      item.quantity > 1 ? `${item.part_name} ×${item.quantity}` : item.part_name,
     );
     const totals = calculateQuoteTotals(items, labourCost, Number(approvedQuote.tax_percent) || 0);
     totalCost = totals.totalAmount;
@@ -178,17 +200,19 @@ export async function createServiceHistoryFromRepair(
       ? repair.symptoms.join(", ")
       : "Machinery breakdown restored");
 
-  const technicianNotes = (completionDetails ? completionDetails["notes"] : null) || repair.description || null;
+  const technicianNotes =
+    (completionDetails ? completionDetails["notes"] : null) || repair.description || null;
   const maintenanceAdvice = (assessment ? assessment["maintenanceAdvice"] : null) || null;
 
   const createdAtMs = new Date(repair.created_at).getTime();
   const downtimeHours = Math.max(
     0,
-    Math.round(((Date.now() - createdAtMs) / (1000 * 3600)) * 10) / 10
+    Math.round(((Date.now() - createdAtMs) / (1000 * 3600)) * 10) / 10,
   );
 
   const invoiceReference = `INV-${repair.job_number}`;
-  const serviceDate = (completionDetails ? completionDetails["completed_at"] : null) || new Date().toISOString();
+  const serviceDate =
+    (completionDetails ? completionDetails["completed_at"] : null) || new Date().toISOString();
 
   // 7. Insert service history record
   const { data: created, error: insertError } = await supabase
@@ -225,7 +249,7 @@ export async function createServiceHistoryFromRepair(
  * Ordered chronologically by service date (newest first).
  */
 export async function getServiceHistoryForEquipment(
-  equipmentId: string
+  equipmentId: string,
 ): Promise<ServiceHistoryRow[]> {
   if (!equipmentId) throw new Error("Equipment ID is required.");
   await getAuthenticatedProfile();
@@ -247,15 +271,21 @@ export async function getServiceHistoryForEquipment(
  * Fetches the service history record associated with a specific repair request, if generated.
  */
 export async function getServiceHistoryForRepair(
-  repairRequestId: string
+  repairRequestId: string,
 ): Promise<ServiceHistoryRow | null> {
   if (!repairRequestId) throw new Error("Repair request ID is required.");
   await getAuthenticatedProfile();
 
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairRequestId);
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    repairRequestId,
+  );
   const { data: repair } = isUuid
     ? await supabase.from("repair_requests").select("id").eq("id", repairRequestId).maybeSingle()
-    : await supabase.from("repair_requests").select("id").eq("job_number", repairRequestId).maybeSingle();
+    : await supabase
+        .from("repair_requests")
+        .select("id")
+        .eq("job_number", repairRequestId)
+        .maybeSingle();
 
   const targetRepairId = repair ? repair.id : repairRequestId;
 
@@ -276,7 +306,7 @@ export async function getServiceHistoryForRepair(
  * Fetches a single service history record by its primary key.
  */
 export async function getServiceHistoryById(
-  serviceHistoryId: string
+  serviceHistoryId: string,
 ): Promise<ServiceHistoryRow | null> {
   if (!serviceHistoryId) throw new Error("Service history ID is required.");
   await getAuthenticatedProfile();

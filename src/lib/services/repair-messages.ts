@@ -34,9 +34,21 @@ async function getAuthenticatedProfile(): Promise<{ id: string; role: string }> 
   }
 
   const { data: sessionData, error: profileError } = await supabase.rpc("get_session_profile");
-  const profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
+  let profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
 
-  if (profileError || !profile) {
+  if (!profile) {
+    const { data: fallbackRow } = await supabase
+      .from("profiles")
+      .select("id, role")
+      .or(`auth_user_id.eq.${user.id},id.eq.${user.id}`)
+      .maybeSingle();
+
+    if (fallbackRow) {
+      profile = fallbackRow as unknown as typeof profile;
+    }
+  }
+
+  if (!profile) {
     throw new Error("User profile not found. Please ensure your profile is initialized.");
   }
 
@@ -70,7 +82,7 @@ async function resolveRepairRequestId(idOrJobNumber: string): Promise<string> {
  * can access messages for the ticket.
  */
 export async function getRepairMessages(
-  repairRequestId: string
+  repairRequestId: string,
 ): Promise<RepairMessageWithParticipants[]> {
   if (!repairRequestId?.trim()) {
     throw new Error("Repair request ID is required.");
@@ -82,7 +94,7 @@ export async function getRepairMessages(
   const { data, error } = await supabase
     .from("repair_messages")
     .select(
-      "*, sender:sender_id(id, full_name, role, phone), recipient:recipient_id(id, full_name, role, phone)"
+      "*, sender:sender_id(id, full_name, role, phone), recipient:recipient_id(id, full_name, role, phone)",
     )
     .eq("repair_request_id", resolvedId)
     .order("created_at", { ascending: true });
@@ -105,7 +117,7 @@ export async function getRepairMessages(
  * Dispatches counterpart notification upon successful insertion.
  */
 export async function sendRepairMessage(
-  input: SendMessageInput
+  input: SendMessageInput,
 ): Promise<RepairMessageWithParticipants> {
   const profile = await getAuthenticatedProfile();
 
@@ -164,7 +176,9 @@ export async function sendRepairMessage(
         .maybeSingle();
 
       if (recipientProfile?.role !== "admin") {
-        throw new Error("Invalid recipient: Farmers may only message their assigned technician or the Service Centre.");
+        throw new Error(
+          "Invalid recipient: Farmers may only message their assigned technician or the Service Centre.",
+        );
       }
     }
   } else if (isTechnician) {
@@ -178,7 +192,9 @@ export async function sendRepairMessage(
         .maybeSingle();
 
       if (recipientProfile?.role !== "admin") {
-        throw new Error("Invalid recipient: Technicians may only message the ticket farmer or the Service Centre.");
+        throw new Error(
+          "Invalid recipient: Technicians may only message the ticket farmer or the Service Centre.",
+        );
       }
     }
   }
@@ -194,7 +210,7 @@ export async function sendRepairMessage(
       is_read: false,
     })
     .select(
-      "*, sender:sender_id(id, full_name, role, phone), recipient:recipient_id(id, full_name, role, phone)"
+      "*, sender:sender_id(id, full_name, role, phone), recipient:recipient_id(id, full_name, role, phone)",
     )
     .single();
 
@@ -235,11 +251,17 @@ export async function sendRepairMessage(
         recipient_role: targetRole,
         recipient_user_id: targetRecipientId,
         notification_text: `Service Centre message on ${repair.job_number}: "${textPreview}"`,
-        link_target: targetRole === "technician" ? `/technician/job/${repair.id}` : `/farmer/repair/${repair.id}`,
+        link_target:
+          targetRole === "technician"
+            ? `/technician/job/${repair.id}`
+            : `/farmer/repair/${repair.id}`,
       });
     }
   } catch (notifErr) {
-    console.warn("[TerraByte Messages] Warning: Failed to dispatch notification for repair message:", notifErr);
+    console.warn(
+      "[TerraByte Messages] Warning: Failed to dispatch notification for repair message:",
+      notifErr,
+    );
   }
 
   return insertedMessage as unknown as RepairMessageWithParticipants;
@@ -252,7 +274,7 @@ export async function sendRepairMessage(
  */
 export async function markMessagesAsRead(
   repairRequestId: string,
-  messageIds?: string[]
+  messageIds?: string[],
 ): Promise<number> {
   const profile = await getAuthenticatedProfile();
   const resolvedRepairId = await resolveRepairRequestId(repairRequestId);

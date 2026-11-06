@@ -12,7 +12,19 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AssessmentCard, QuoteTable, TechCard, Timeline } from "@/components/repair-parts";
-import { btn, CallButton, Card, ClickableImage, ContextualBack, formatEtaDateTime, input, Label, StatusPill, Stepper } from "@/components/tb";
+import { VisualDefectDiagnosticViewer } from "@/components/diagnostics/visual-defect-diagnostic-viewer";
+import {
+  btn,
+  CallButton,
+  Card,
+  ClickableImage,
+  ContextualBack,
+  formatEtaDateTime,
+  input,
+  Label,
+  StatusPill,
+  Stepper,
+} from "@/components/tb";
 import {
   Dialog,
   DialogContent,
@@ -51,7 +63,16 @@ import {
   type ScoredTechnicianMatch,
   type VerifiedTechnicianWithProfile,
 } from "@/lib/services/technicians";
-import { ago, fmtTime, inr, quoteTotals, useTB, actions, type Quote, type Technician } from "@/lib/tb-store";
+import {
+  ago,
+  fmtTime,
+  inr,
+  quoteTotals,
+  useTB,
+  actions,
+  type Quote,
+  type Technician,
+} from "@/lib/tb-store";
 import { meta } from "@/lib/seo";
 import { cn } from "@/lib/utils";
 import { useRepairTicketRealtime, isUuid } from "@/hooks/use-repair-realtime";
@@ -226,7 +247,14 @@ function RepairHub() {
       }
       setR(repairData);
 
-      const [quotesData, notesData, assignedTechData, eligibleTechsData, versionsData, dispatchLocData] = await Promise.all([
+      const [
+        quotesData,
+        notesData,
+        assignedTechData,
+        eligibleTechsData,
+        versionsData,
+        dispatchLocData,
+      ] = await Promise.all([
         getQuotesForRepair(repairData.id).catch(() => []),
         getRepairNotes(repairData.id).catch(() => []),
         repairData.technician_id
@@ -329,9 +357,7 @@ function RepairHub() {
 
   const demoRepair = tb.repairs.find(
     (x) =>
-      x.id === id ||
-      (x as any).jobNumber === id ||
-      (r && (x.id === r.job_number || x.id === r.id))
+      x.id === id || (x as any).jobNumber === id || (r && (x.id === r.job_number || x.id === r.id)),
   );
 
   const demoQuoteDetail: QuoteDetail | null = demoRepair?.quote
@@ -415,8 +441,8 @@ function RepairHub() {
 
   const isAwaitingDecision = Boolean(
     pendingQuote ||
-      r.status === "QUOTE_PENDING" ||
-      (r.status === "WAITING_FOR_PARTS" && Boolean(pendingQuote))
+    r.status === "QUOTE_PENDING" ||
+    (r.status === "WAITING_FOR_PARTS" && Boolean(pendingQuote)),
   );
 
   const handleApproveQuote = async () => {
@@ -446,7 +472,7 @@ function RepairHub() {
       if (pendingQuote.id.startsWith("demo-") || !isUuid(pendingQuote.id)) {
         actions.declineQuote(
           r.job_number || r.id,
-          revisionReason === "Other" ? otherExplanation.trim() : revisionReason
+          revisionReason === "Other" ? otherExplanation.trim() : revisionReason,
         );
       } else {
         await rejectQuote(pendingQuote.id, {
@@ -488,7 +514,7 @@ function RepairHub() {
   const isGovernedCancellable =
     (r.status === "REQUESTED" && Boolean(r.technician_id)) ||
     ["ACCEPTED", "QUOTE_PENDING", "QUOTE_REVISED", "IN_PROGRESS", "WAITING_FOR_PARTS"].includes(
-      r.status
+      r.status,
     );
   const canCancelOrRequest = isUnassignedRequested || isGovernedCancellable;
 
@@ -562,7 +588,8 @@ function RepairHub() {
           ) : null}
           {dispatchLocation && (
             <span className="inline-flex items-center gap-1 rounded-md bg-success/15 px-2 py-0.5 text-xs font-semibold text-success">
-              <MapPin className="h-3 w-3" /> Exact GPS saved ({formatGpsAccuracy(dispatchLocation.accuracy)})
+              <MapPin className="h-3 w-3" /> Exact GPS saved (
+              {formatGpsAccuracy(dispatchLocation.accuracy)})
             </span>
           )}
         </div>
@@ -570,7 +597,10 @@ function RepairHub() {
           {e?.make || "Equipment"} {e?.model || ""}
         </h1>
         <div className="mt-2">
-          <StatusPill r={{ status: r.status, testing: r.is_testing, technicianId: r.technician_id }} audience="farmer" />
+          <StatusPill
+            r={{ status: r.status, testing: r.is_testing, technicianId: r.technician_id }}
+            audience="farmer"
+          />
         </div>
       </div>
 
@@ -581,7 +611,9 @@ function RepairHub() {
           </div>
           <div className="space-y-4 p-5">
             <p className="text-sm text-foreground">
-              You have requested to cancel this repair. The Service Centre has been notified and is currently reviewing your request. Work on your machine is temporarily <strong>on hold</strong>.
+              You have requested to cancel this repair. The Service Centre has been notified and is
+              currently reviewing your request. Work on your machine is temporarily{" "}
+              <strong>on hold</strong>.
             </p>
             <div className="grid gap-3 sm:grid-cols-2 rounded-xl bg-muted/50 p-4 text-sm">
               <div>
@@ -604,7 +636,8 @@ function RepairHub() {
               )}
             </div>
             <p className="text-xs text-muted-foreground">
-              Our Service Centre team will review the request against any parts ordered or labor performed and finalize your ticket.
+              Our Service Centre team will review the request against any parts ordered or labor
+              performed and finalize your ticket.
             </p>
           </div>
         </section>
@@ -617,7 +650,8 @@ function RepairHub() {
           </div>
           <div className="space-y-4 p-5">
             <p className="text-sm text-foreground">
-              This repair request has been cancelled. Your equipment status has been restored to Operational.
+              This repair request has been cancelled. Your equipment status has been restored to
+              Operational.
             </p>
             <div className="grid gap-3 sm:grid-cols-2 rounded-xl bg-muted/50 p-4 text-sm">
               <div>
@@ -662,11 +696,16 @@ function RepairHub() {
           </div>
           <div className="grid gap-4 p-5 sm:grid-cols-2">
             <div>
-              <Label>Required part{partsHold?.items && partsHold.items.length > 1 ? "s" : ""}</Label>
+              <Label>
+                Required part{partsHold?.items && partsHold.items.length > 1 ? "s" : ""}
+              </Label>
               {partsHold?.items && partsHold.items.length > 0 ? (
                 <ul className="mt-1 space-y-1.5 text-sm font-semibold">
                   {partsHold.items.map((item: any, idx: number) => (
-                    <li key={idx} className="flex items-center justify-between rounded-lg bg-muted/40 px-2.5 py-1.5">
+                    <li
+                      key={idx}
+                      className="flex items-center justify-between rounded-lg bg-muted/40 px-2.5 py-1.5"
+                    >
                       <div className="flex items-center gap-2">
                         <span>
                           {item.part || item.name} {item.quantity ? `(Qty: ${item.quantity})` : ""}
@@ -676,7 +715,7 @@ function RepairHub() {
                             "rounded-full px-2 py-0.5 text-[10px] font-bold",
                             item.status === "HANDED_OFF"
                               ? "bg-success/20 text-success"
-                              : "bg-warning/20 text-warning-foreground"
+                              : "bg-warning/20 text-warning-foreground",
                           )}
                         >
                           {item.status === "HANDED_OFF" ? "Received at Depot" : "Awaiting Arrival"}
@@ -722,7 +761,20 @@ function RepairHub() {
       )}
 
       {r.status === "REQUESTED" && !r.technician_id && (
-        <AssessmentCard r={{ assessment: assessmentObj } as any} />
+        <>
+          <AssessmentCard r={{ assessment: assessmentObj } as any} />
+          {(Boolean((r.assessment as any)?.visualDiagnostics) ||
+            (r.photos && r.photos.length > 0)) && (
+            <VisualDefectDiagnosticViewer
+              repairId={r.id}
+              visualDiagnostics={(r.assessment as any)?.visualDiagnostics}
+              photos={r.photos || []}
+              equipment={e ? { make: e.make, model: e.model, year: e.year } : undefined}
+              userRole="farmer"
+              onRefresh={loadData}
+            />
+          )}
+        </>
       )}
       {r.status === "REQUESTED" && !r.technician_id && (
         <div className="space-y-3">
@@ -730,24 +782,29 @@ function RepairHub() {
             <h2 className="text-xl font-bold">Best-matched technicians</h2>
             <p className="text-sm text-muted-foreground">
               Ranked by {e?.make ?? "machine"} experience,{" "}
-              {(assessmentObj.skill || "system").toLowerCase()} expertise, availability, then distance.
+              {(assessmentObj.skill || "system").toLowerCase()} expertise, availability, then
+              distance.
             </p>
           </div>
           {r.declined_by && r.declined_by.length > 0 && (
             <p className="rounded-xl bg-warning/15 p-3 text-sm">
-              A technician couldn't take this job. Please choose another — the service centre has also
-              been alerted.
+              A technician couldn't take this job. Please choose another — the service centre has
+              also been alerted.
             </p>
           )}
           {eligibleTechs.map((m, i) => (
-            <TechCard key={m.technician.id} t={formatTechCardData(m.technician)} reasons={m.reasons}>
+            <TechCard
+              key={m.technician.id}
+              t={formatTechCardData(m.technician)}
+              reasons={m.reasons}
+            >
               <div className="mt-4 flex gap-2">
                 <button
                   disabled={assigningTechId === m.technician.profile_id}
                   onClick={() =>
                     handleRequestTechnician(
                       m.technician.profile_id,
-                      m.technician.profile?.full_name ?? "Technician"
+                      m.technician.profile?.full_name ?? "Technician",
                     )
                   }
                   className={cn(i === 0 ? btn.primary : btn.ghost, "flex-1 disabled:opacity-50")}
@@ -764,8 +821,8 @@ function RepairHub() {
           ))}
           {eligibleTechs.length === 0 && (
             <Card className="text-sm text-muted-foreground">
-              No technicians matched currently. The Service Centre has been alerted to assign an available
-              technician.
+              No technicians matched currently. The Service Centre has been alerted to assign an
+              available technician.
             </Card>
           )}
         </div>
@@ -778,7 +835,9 @@ function RepairHub() {
             <p className="font-semibold">
               Waiting for {assignedTechData?.name || "Technician"} to accept
             </p>
-            <p className="text-sm text-muted-foreground">Usually within 15 minutes. We'll notify you.</p>
+            <p className="text-sm text-muted-foreground">
+              Usually within 15 minutes. We'll notify you.
+            </p>
           </div>
         </Card>
       )}
@@ -799,14 +858,16 @@ function RepairHub() {
             <ShieldCheck className="h-5 w-5 shrink-0" /> No work or charges start until you approve
             this quote.
           </p>
-          {quoteVersions.length >= 2 && quoteVersions[quoteVersions.length - 2] && quoteVersions[quoteVersions.length - 1] && (
-            <div className="mb-4">
-              <QuoteComparison
-                v1={quoteVersions[quoteVersions.length - 2]}
-                v2={quoteVersions[quoteVersions.length - 1]}
-              />
-            </div>
-          )}
+          {quoteVersions.length >= 2 &&
+            quoteVersions[quoteVersions.length - 2] &&
+            quoteVersions[quoteVersions.length - 1] && (
+              <div className="mb-4">
+                <QuoteComparison
+                  v1={quoteVersions[quoteVersions.length - 2]}
+                  v2={quoteVersions[quoteVersions.length - 1]}
+                />
+              </div>
+            )}
           <QuoteTable q={viewQuote} />
           {!declining ? (
             <div className="mt-5 grid gap-2">
@@ -852,7 +913,7 @@ function RepairHub() {
                         "rounded-full border px-3 py-1.5 text-sm font-medium transition-colors",
                         revisionReason === x
                           ? "border-primary bg-primary/10 text-primary font-semibold"
-                          : "border-border text-foreground hover:bg-muted"
+                          : "border-border text-foreground hover:bg-muted",
                       )}
                     >
                       {x}
@@ -897,8 +958,7 @@ function RepairHub() {
                 <button
                   type="button"
                   disabled={
-                    (revisionReason === "Other" && !otherExplanation.trim()) ||
-                    actionInProgress
+                    (revisionReason === "Other" && !otherExplanation.trim()) || actionInProgress
                   }
                   onClick={handleDeclineQuote}
                   className={cn(btn.amber, "disabled:opacity-50")}
@@ -927,14 +987,16 @@ function RepairHub() {
             <ShieldCheck className="h-4 w-4 shrink-0 text-emerald-600" />
             Repair authorized under these terms. No unexpected charges without your approval.
           </p>
-          {quoteVersions.length >= 2 && quoteVersions[quoteVersions.length - 2] && quoteVersions[quoteVersions.length - 1] && (
-            <div className="mb-2">
-              <QuoteComparison
-                v1={quoteVersions[quoteVersions.length - 2]}
-                v2={quoteVersions[quoteVersions.length - 1]}
-              />
-            </div>
-          )}
+          {quoteVersions.length >= 2 &&
+            quoteVersions[quoteVersions.length - 2] &&
+            quoteVersions[quoteVersions.length - 1] && (
+              <div className="mb-2">
+                <QuoteComparison
+                  v1={quoteVersions[quoteVersions.length - 2]}
+                  v2={quoteVersions[quoteVersions.length - 1]}
+                />
+              </div>
+            )}
           <QuoteTable q={viewQuote} />
           {quoteVersions.length > 1 && (
             <details className="mt-3 text-xs text-muted-foreground">
@@ -959,39 +1021,45 @@ function RepairHub() {
           <div>
             <h2 className="text-2xl font-bold">The technician is revising your quote</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              You requested revisions on the previous quote. The technician is reviewing your feedback and preparing an updated quote. No repair work or charges will begin until you review and approve the revised quote.
+              You requested revisions on the previous quote. The technician is reviewing your
+              feedback and preparing an updated quote. No repair work or charges will begin until
+              you review and approve the revised quote.
             </p>
           </div>
 
-          {r.clarification_note && (() => {
-            const parsed = parseClarificationNote(r.clarification_note);
-            return (
-              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm space-y-2">
-                <p className="text-xs font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300">
-                  Your Revision Request
-                </p>
-                {parsed.reason && (
-                  <p><span className="font-semibold text-muted-foreground">Reason:</span> <span className="font-medium text-foreground">{parsed.reason}</span></p>
-                )}
-                {parsed.explanation && (
-                  <p className="rounded-lg bg-card/70 border border-amber-500/20 p-2.5 text-xs italic text-foreground leading-relaxed">
-                    "{parsed.explanation}"
+          {r.clarification_note &&
+            (() => {
+              const parsed = parseClarificationNote(r.clarification_note);
+              return (
+                <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm space-y-2">
+                  <p className="text-xs font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300">
+                    Your Revision Request
                   </p>
-                )}
-                {parsed.photo && (
-                  <div className="pt-1">
-                    <p className="text-xs font-semibold text-muted-foreground">Attached Photo:</p>
-                    <ClickableImage
-                      src={parsed.photo}
-                      alt="Attached photo"
-                      className="mt-1 h-20 w-20"
-                      thumbnailClassName="h-20 w-20 object-cover rounded-md"
-                    />
-                  </div>
-                )}
-              </div>
-            );
-          })()}
+                  {parsed.reason && (
+                    <p>
+                      <span className="font-semibold text-muted-foreground">Reason:</span>{" "}
+                      <span className="font-medium text-foreground">{parsed.reason}</span>
+                    </p>
+                  )}
+                  {parsed.explanation && (
+                    <p className="rounded-lg bg-card/70 border border-amber-500/20 p-2.5 text-xs italic text-foreground leading-relaxed">
+                      "{parsed.explanation}"
+                    </p>
+                  )}
+                  {parsed.photo && (
+                    <div className="pt-1">
+                      <p className="text-xs font-semibold text-muted-foreground">Attached Photo:</p>
+                      <ClickableImage
+                        src={parsed.photo}
+                        alt="Attached photo"
+                        className="mt-1 h-20 w-20"
+                        thumbnailClassName="h-20 w-20 object-cover rounded-md"
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
           {viewQuote && (
             <details className="rounded-xl border border-border bg-muted/30 p-3.5">
@@ -1006,7 +1074,6 @@ function RepairHub() {
         </section>
       )}
 
-
       {r.status === "IN_PROGRESS" && r.is_testing && (
         <Card className="border-primary/40 space-y-2">
           <div className="flex items-center gap-2 font-bold text-primary">
@@ -1014,7 +1081,8 @@ function RepairHub() {
             <span className="text-lg">Testing in progress</span>
           </div>
           <p className="text-sm text-muted-foreground">
-            The technician is testing your machine under operational load as the final verification before completing the repair and saving it to service history.
+            The technician is testing your machine under operational load as the final verification
+            before completing the repair and saving it to service history.
           </p>
         </Card>
       )}
@@ -1150,6 +1218,19 @@ function RepairHub() {
         <AssessmentCard r={{ assessment: assessmentObj } as any} compact />
       )}
 
+      {r.status !== "REQUESTED" &&
+        (Boolean((r.assessment as any)?.visualDiagnostics) ||
+          (r.photos && r.photos.length > 0)) && (
+          <VisualDefectDiagnosticViewer
+            repairId={r.id}
+            visualDiagnostics={(r.assessment as any)?.visualDiagnostics}
+            photos={r.photos || []}
+            equipment={e ? { make: e.make, model: e.model, year: e.year } : undefined}
+            userRole="farmer"
+            onRefresh={loadData}
+          />
+        )}
+
       {r.photos && r.photos.length > 0 && (
         <Card className="space-y-2">
           <Label>Reported breakdown photos ({r.photos.length})</Label>
@@ -1268,7 +1349,7 @@ function RepairHub() {
                   isUnassignedRequested
                     ? "inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-destructive px-5 font-semibold text-sm text-destructive-foreground hover:bg-destructive/90"
                     : cn(btn.amber, "h-11 text-sm"),
-                  "disabled:opacity-50"
+                  "disabled:opacity-50",
                 )}
               >
                 {submittingCancellation ? (

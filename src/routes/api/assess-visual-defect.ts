@@ -3,19 +3,53 @@ import { createClient } from "@supabase/supabase-js";
 import { executeVisualDefectDiagnostic } from "@/lib/services/gemini-diagnostic";
 import type { Database } from "@/integrations/supabase/types";
 
-const CANONICAL_SUPABASE_URL = "https://hwdrypkvszwrcraujctw.supabase.co";
-const CANONICAL_SUPABASE_KEY = "sb_publishable_N5Najdw3CfFpFv3gNy0sdA_HNGtdRrq";
-
 function getSupabaseConfig() {
   const processEnv = typeof process !== "undefined" && process?.env ? process.env : undefined;
+  const mode =
+    processEnv?.["NODE_ENV"] ||
+    (typeof import.meta !== "undefined" && import.meta.env ? import.meta.env.MODE : undefined);
+
   const url =
-    processEnv?.["SUPABASE_URL"] || processEnv?.["VITE_SUPABASE_URL"] || CANONICAL_SUPABASE_URL;
+    processEnv?.["SUPABASE_URL"] ||
+    processEnv?.["VITE_SUPABASE_URL"] ||
+    (typeof import.meta !== "undefined" && import.meta.env
+      ? import.meta.env["VITE_SUPABASE_URL"]
+      : undefined);
+
   const key =
     processEnv?.["SUPABASE_PUBLISHABLE_KEY"] ||
     processEnv?.["VITE_SUPABASE_PUBLISHABLE_KEY"] ||
     processEnv?.["SUPABASE_ANON_KEY"] ||
     processEnv?.["VITE_SUPABASE_ANON_KEY"] ||
-    CANONICAL_SUPABASE_KEY;
+    (typeof import.meta !== "undefined" && import.meta.env
+      ? import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"] ||
+        import.meta.env["VITE_SUPABASE_ANON_KEY"]
+      : undefined);
+
+  if (!url || !key) {
+    throw new Error(
+      "[Visual Defect API] Missing required Supabase environment variable(s): SUPABASE_URL and key must be set in environment.",
+    );
+  }
+
+  if (mode === "staging" && url.includes("hwdrypkvszwrcraujctw")) {
+    throw new Error(
+      "[Visual Defect API] Staging mode cannot connect to production Supabase project (hwdrypkvszwrcraujctw).",
+    );
+  }
+
+  if (mode === "production" && url.includes("ubqgvhcfmrvnmrbllcom")) {
+    throw new Error(
+      "[Visual Defect API] Production mode cannot connect to staging Supabase project (ubqgvhcfmrvnmrbllcom).",
+    );
+  }
+
+  if (url.includes("fmnzoovazqpyaebqmqyo")) {
+    throw new Error(
+      "[Visual Defect API] Target URL points to decommissioned project (fmnzoovazqpyaebqmqyo).",
+    );
+  }
+
   return { url, key };
 }
 
@@ -82,9 +116,21 @@ export async function handleVisualDefectRequest(request: Request): Promise<Respo
 
   // 2. Resolve caller profile and role via verified get_session_profile RPC
   const { data: sessionData, error: profileError } = await userClient.rpc("get_session_profile");
-  const profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
+  let profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
 
-  if (profileError || !profile) {
+  if (!profile) {
+    const { data: fallbackRow } = await userClient
+      .from("profiles")
+      .select("id, role")
+      .or(`auth_user_id.eq.${user.id},id.eq.${user.id}`)
+      .maybeSingle();
+
+    if (fallbackRow) {
+      profile = fallbackRow as unknown as typeof profile;
+    }
+  }
+
+  if (!profile) {
     return new Response(
       JSON.stringify({ error: "Could not find profile for authenticated user." }),
       {
@@ -102,26 +148,21 @@ export async function handleVisualDefectRequest(request: Request): Promise<Respo
       body = raw as Record<string, unknown>;
     }
   } catch {
-    return new Response(
-      JSON.stringify({ error: "Invalid JSON request body." }),
-      {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      },
-    );
+    return new Response(JSON.stringify({ error: "Invalid JSON request body." }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
-  const repairRequestId = typeof body?.["repairRequestId"] === "string" ? body["repairRequestId"].trim() : "";
+  const repairRequestId =
+    typeof body?.["repairRequestId"] === "string" ? body["repairRequestId"].trim() : "";
   const forceRescan = body?.["forceRescan"] === true;
 
   if (!repairRequestId) {
-    return new Response(
-      JSON.stringify({ error: "Missing required parameter: repairRequestId." }),
-      {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      },
-    );
+    return new Response(JSON.stringify({ error: "Missing required parameter: repairRequestId." }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   // 4. Execute atomic claim RPC using caller-scoped user client (enforces RLS and permissions)
@@ -199,13 +240,10 @@ export async function handleVisualDefectRequest(request: Request): Promise<Respo
     .single();
 
   if (fetchError || !repairTicket) {
-    return new Response(
-      JSON.stringify({ error: "Could not retrieve breakdown ticket details." }),
-      {
-        status: 404,
-        headers: { "Content-Type": "application/json" },
-      },
-    );
+    return new Response(JSON.stringify({ error: "Could not retrieve breakdown ticket details." }), {
+      status: 404,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   const { data: equipmentRecord, error: eqError } = await userClient

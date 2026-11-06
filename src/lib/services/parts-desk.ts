@@ -69,13 +69,23 @@ export interface InventoryMovementSummary {
 }
 
 export interface ServiceCentrePartRequestDetail extends ServiceCentrePartRequest {
-  eta_updater?: {
-    id: string;
-    full_name: string;
-  } | null | undefined;
+  eta_updater?:
+    | {
+        id: string;
+        full_name: string;
+      }
+    | null
+    | undefined;
   part?: Pick<
     ServiceCentrePart,
-    "id" | "part_number" | "name" | "spec" | "category" | "stock_quantity" | "unit_price" | "location"
+    | "id"
+    | "part_number"
+    | "name"
+    | "spec"
+    | "category"
+    | "stock_quantity"
+    | "unit_price"
+    | "location"
   > | null;
   repair?: {
     id: string;
@@ -168,7 +178,19 @@ async function getAuthenticatedProfile(): Promise<{
   }
 
   const { data: sessionData } = await supabase.rpc("get_session_profile");
-  const profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
+  let profile = sessionData && sessionData.length > 0 ? sessionData[0] : null;
+
+  if (!profile) {
+    const { data: fallbackRow } = await supabase
+      .from("profiles")
+      .select("id, role, full_name")
+      .or(`auth_user_id.eq.${user.id},id.eq.${user.id}`)
+      .maybeSingle();
+
+    if (fallbackRow) {
+      profile = fallbackRow as unknown as typeof profile;
+    }
+  }
 
   if (!profile) {
     return {
@@ -220,7 +242,9 @@ function enrichDemoRequest(req: DemoPartRequest): ServiceCentrePartRequestDetail
     : demoRepair?.id.startsWith("TB-")
       ? demoRepair.id
       : (demoRepair as any)?.jobNumber ||
-        (req.repair_request_id.length > 8 ? "TB-" + req.repair_request_id.slice(0, 4).toUpperCase() : "TB-8841");
+        (req.repair_request_id.length > 8
+          ? "TB-" + req.repair_request_id.slice(0, 4).toUpperCase()
+          : "TB-8841");
 
   return {
     id: req.id,
@@ -280,7 +304,10 @@ export async function getServiceCentreParts(): Promise<ServiceCentrePart[]> {
       return data;
     }
   } catch (err: unknown) {
-    console.warn("[TerraByte] Service Centre parts table query failed, using demo catalog fallback:", err);
+    console.warn(
+      "[TerraByte] Service Centre parts table query failed, using demo catalog fallback:",
+      err,
+    );
   }
 
   // Graceful fallback to verified canonical demo parts
@@ -354,12 +381,20 @@ export async function requestServiceCentrePart(
       repairId = repair.id;
       repairJobNumber = repair.job_number;
 
-      if (profile.role === "technician" && repair.technician_id && repair.technician_id !== profile.id) {
-        throw new Error("Unauthorized: You can only request spare parts for repairs assigned to you.");
+      if (
+        profile.role === "technician" &&
+        repair.technician_id &&
+        repair.technician_id !== profile.id
+      ) {
+        throw new Error(
+          "Unauthorized: You can only request spare parts for repairs assigned to you.",
+        );
       }
 
       if (repair.status === "COMPLETED" || repair.status === "CANCELLED") {
-        throw new Error(`Cannot request parts: Repair ticket is closed (status: ${repair.status}).`);
+        throw new Error(
+          `Cannot request parts: Repair ticket is closed (status: ${repair.status}).`,
+        );
       }
     }
   } catch (err: unknown) {
@@ -618,10 +653,7 @@ export async function requestServiceCentrePart(
               });
             }
             // Touch quote timestamp to signal CDC event on quotes table
-            await supabase
-              .from("quotes")
-              .update({ updated_at: nowIso })
-              .eq("id", latestQuote.id);
+            await supabase.from("quotes").update({ updated_at: nowIso }).eq("id", latestQuote.id);
           }
         }
       }
@@ -722,7 +754,8 @@ export async function getRepairPartRequests(
       (r) =>
         r.id === repairRequestId ||
         r.id.toLowerCase() === repairRequestId.toLowerCase() ||
-        (resolvedJobNumber && (r.id === resolvedJobNumber || (r as any).jobNumber === resolvedJobNumber)) ||
+        (resolvedJobNumber &&
+          (r.id === resolvedJobNumber || (r as any).jobNumber === resolvedJobNumber)) ||
         (resolvedUuid && (r.id === resolvedUuid || (r as any).jobNumber === resolvedUuid)),
     );
     if (demoRep) {
@@ -737,11 +770,13 @@ export async function getRepairPartRequests(
     const targetId = resolvedUuid || repairRequestId;
     const { data, error } = await supabase
       .from("service_centre_part_requests")
-      .select(`
+      .select(
+        `
         *,
         part:part_id(id, part_number, name, spec, category, stock_quantity, unit_price, location),
         requester:requested_by(id, full_name, phone)
-      `)
+      `,
+      )
       .eq("repair_request_id", targetId)
       .order("created_at", { ascending: false });
 
@@ -760,9 +795,7 @@ export async function getRepairPartRequests(
   );
 
   const allDemoReqs = getDemoPartRequests();
-  const matched = allDemoReqs.filter((r) =>
-    matchIds.has(r.repair_request_id.toLowerCase()),
-  );
+  const matched = allDemoReqs.filter((r) => matchIds.has(r.repair_request_id.toLowerCase()));
 
   return matched.map(enrichDemoRequest);
 }
@@ -778,12 +811,14 @@ export async function getAllPartRequests(
   try {
     let query = supabase
       .from("service_centre_part_requests")
-      .select(`
+      .select(
+        `
         *,
         part:part_id(id, part_number, name, spec, category, stock_quantity, unit_price, location),
         repair:repair_request_id(id, job_number, status, technician_id, farmer_id, location),
         requester:requested_by(id, full_name, phone)
-      `)
+      `,
+      )
       .order("created_at", { ascending: false });
 
     if (statusFilter && statusFilter !== "ALL") {
@@ -807,9 +842,7 @@ export async function getAllPartRequests(
 
   if (remoteList.length > 0) {
     const remoteIds = new Set(remoteList.map((r) => r.id.toLowerCase()));
-    const nonDuplicatedDemo = enrichedDemo.filter(
-      (d) => !remoteIds.has(d.id.toLowerCase()),
-    );
+    const nonDuplicatedDemo = enrichedDemo.filter((d) => !remoteIds.has(d.id.toLowerCase()));
     return [...remoteList, ...nonDuplicatedDemo];
   }
 
@@ -826,9 +859,7 @@ export async function confirmPartHandoff(requestId: string): Promise<ConfirmHand
   const profile = await getAuthenticatedProfile();
 
   if (profile.role !== "admin") {
-    throw new Error(
-      "Unauthorized: Only Service Centre administrators can confirm parts handoff.",
-    );
+    throw new Error("Unauthorized: Only Service Centre administrators can confirm parts handoff.");
   }
 
   const cleanId = requestId.trim();
@@ -1020,7 +1051,9 @@ export async function confirmPartHandoff(requestId: string): Promise<ConfirmHand
             part_request_id: remoteReq.id,
             unit_price: isSale ? unitPrice : null,
             total_value: isSale ? totalAmount : null,
-            notes: isSale ? "Commercial sale against approved quote" : "Depot handoff to technician",
+            notes: isSale
+              ? "Commercial sale against approved quote"
+              : "Depot handoff to technician",
           });
         } catch {
           // Audit recording failure non-fatal
@@ -1153,7 +1186,10 @@ export async function confirmPartHandoff(requestId: string): Promise<ConfirmHand
   }
 
   // 3. Fallback to Demo Store Handoff
-  const { request, part } = confirmDemoPartHandoff(cleanId, profile.full_name || "Nagpur Service Centre");
+  const { request, part } = confirmDemoPartHandoff(
+    cleanId,
+    profile.full_name || "Nagpur Service Centre",
+  );
 
   // Global socket broadcast to update open technician pages in separate sessions
   try {
@@ -1252,7 +1288,9 @@ export async function cancelPartRequest(requestId: string): Promise<void> {
 
     if (existing) {
       if (existing.status === "HANDED_OFF") {
-        throw new Error("Cannot cancel part request: Components have already been handed off by the Service Centre.");
+        throw new Error(
+          "Cannot cancel part request: Components have already been handed off by the Service Centre.",
+        );
       }
       if (existing.status === "CANCELLED") {
         throw new Error("Part request has already been cancelled.");
@@ -1364,7 +1402,11 @@ export async function updatePartRequestEta(
       const { data: rpcResult, error: rpcError } = await (
         supabase.rpc as unknown as (
           name: string,
-          params: { p_request_id: string; p_estimated_arrival_at: string | null; p_notes?: string | null },
+          params: {
+            p_request_id: string;
+            p_estimated_arrival_at: string | null;
+            p_notes?: string | null;
+          },
         ) => Promise<{ data: UpdatePartRequestEtaResult | null; error: Error | null }>
       )("update_service_centre_part_request_eta", {
         p_request_id: cleanId,
@@ -1386,7 +1428,11 @@ export async function updatePartRequestEta(
         if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
           try {
             const bc = new BroadcastChannel("terrabyte_demo_store_sync");
-            bc.postMessage({ type: "STORE_UPDATED", event: "part_eta_updated", requestId: cleanId });
+            bc.postMessage({
+              type: "STORE_UPDATED",
+              event: "part_eta_updated",
+              requestId: cleanId,
+            });
             bc.close();
           } catch {
             // Non-fatal
@@ -1426,8 +1472,15 @@ export async function updatePartRequestEta(
         }
 
         const rep = remoteReq.repair;
-        if (profile.role === "technician" && rep && rep.technician_id && rep.technician_id !== profile.id) {
-          throw new Error("Unauthorized: Only the assigned technician or Service Centre staff can update part ETA.");
+        if (
+          profile.role === "technician" &&
+          rep &&
+          rep.technician_id &&
+          rep.technician_id !== profile.id
+        ) {
+          throw new Error(
+            "Unauthorized: Only the assigned technician or Service Centre staff can update part ETA.",
+          );
         }
 
         const { error: updateErr } = await supabase
@@ -1560,7 +1613,11 @@ export async function updatePartRequestEta(
         if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
           try {
             const bc = new BroadcastChannel("terrabyte_demo_store_sync");
-            bc.postMessage({ type: "STORE_UPDATED", event: "part_eta_updated", requestId: cleanId });
+            bc.postMessage({
+              type: "STORE_UPDATED",
+              event: "part_eta_updated",
+              requestId: cleanId,
+            });
             bc.close();
           } catch {
             // Non-fatal
@@ -1649,11 +1706,13 @@ export async function getStockAuditLog(partId?: string): Promise<StockAuditLogDe
   try {
     let query = supabase
       .from("service_centre_stock_audit")
-      .select(`
+      .select(
+        `
         *,
         part:part_id(part_number, name),
         actor:changed_by(full_name)
-      `)
+      `,
+      )
       .order("created_at", { ascending: false })
       .limit(50);
 
@@ -1716,17 +1775,16 @@ export async function receiveStock(input: ReceiveStockInput): Promise<{
   }
 
   try {
-    const { data, error } = await (supabase.rpc as unknown as (
-      name: string,
-      params: { p_part_id: string; p_quantity: number; p_reason: string },
-    ) => Promise<{ data: { new_stock: number } | null; error: Error | null }>)(
-      "receive_service_centre_stock",
-      {
-        p_part_id: input.partId,
-        p_quantity: input.quantity,
-        p_reason: input.reason.trim() || "Supplier stock delivery received",
-      },
-    );
+    const { data, error } = await (
+      supabase.rpc as unknown as (
+        name: string,
+        params: { p_part_id: string; p_quantity: number; p_reason: string },
+      ) => Promise<{ data: { new_stock: number } | null; error: Error | null }>
+    )("receive_service_centre_stock", {
+      p_part_id: input.partId,
+      p_quantity: input.quantity,
+      p_reason: input.reason.trim() || "Supplier stock delivery received",
+    });
 
     if (!error && data) {
       return { success: true, new_stock: data.new_stock };
@@ -1738,7 +1796,9 @@ export async function receiveStock(input: ReceiveStockInput): Promise<{
   try {
     const { data: pendingReqs } = await supabase
       .from("service_centre_part_requests")
-      .select("id, repair_request_id, requested_by, repair:repair_request_id(job_number), part:part_id(name)")
+      .select(
+        "id, repair_request_id, requested_by, repair:repair_request_id(job_number), part:part_id(name)",
+      )
       .eq("part_id", input.partId)
       .eq("status", "PENDING");
 
@@ -1790,18 +1850,22 @@ export async function returnPart(input: ReturnPartInput): Promise<{
   }
 
   try {
-    const { data, error } = await (supabase.rpc as unknown as (
-      name: string,
-      params: { p_repair_request_id: string; p_part_id: string; p_quantity: number; p_reason: string },
-    ) => Promise<{ data: { new_stock: number } | null; error: Error | null }>)(
-      "return_service_centre_part",
-      {
-        p_repair_request_id: input.repairRequestId,
-        p_part_id: input.partId,
-        p_quantity: input.quantity,
-        p_reason: input.reason.trim() || "Unused part returned from repair",
-      },
-    );
+    const { data, error } = await (
+      supabase.rpc as unknown as (
+        name: string,
+        params: {
+          p_repair_request_id: string;
+          p_part_id: string;
+          p_quantity: number;
+          p_reason: string;
+        },
+      ) => Promise<{ data: { new_stock: number } | null; error: Error | null }>
+    )("return_service_centre_part", {
+      p_repair_request_id: input.repairRequestId,
+      p_part_id: input.partId,
+      p_quantity: input.quantity,
+      p_reason: input.reason.trim() || "Unused part returned from repair",
+    });
 
     if (!error && data) {
       return { success: true, new_stock: data.new_stock };
@@ -1833,12 +1897,14 @@ export async function getPartSales(filters?: {
   try {
     let query = supabase
       .from("service_centre_part_sales")
-      .select(`
+      .select(
+        `
         *,
         part:part_id(part_number, name, category, spec),
         repair:repair_request_id(id, job_number, location),
         actor:recorded_by(full_name)
-      `)
+      `,
+      )
       .order("sold_at", { ascending: false });
 
     if (filters?.partId) {
@@ -1867,8 +1933,7 @@ export async function getPartSales(filters?: {
     const part = allParts.find((p) => p.id === s.part_id || p.part_number === s.part_id);
     const demoRepair = tb.repairs.find(
       (r) =>
-        r.id === s.repair_request_id ||
-        r.id.toLowerCase() === s.repair_request_id.toLowerCase(),
+        r.id === s.repair_request_id || r.id.toLowerCase() === s.repair_request_id.toLowerCase(),
     );
 
     return {

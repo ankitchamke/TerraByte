@@ -186,18 +186,23 @@ export async function handleTranscriptionRequest(
     let profileError: { message: string } | null = null;
 
     const clientWithRpc = userClient as unknown as {
-      rpc?: (fn: string) => Promise<{ data: Array<{ id: string; role: string }> | null; error: { message: string } | null }>;
+      rpc?: (fn: string) => Promise<{
+        data: Array<{ id: string; role: string }> | null;
+        error: { message: string } | null;
+      }>;
     };
 
     if (typeof clientWithRpc.rpc === "function") {
       const { data: sessionData, error } = await clientWithRpc.rpc("get_session_profile");
       profile = sessionData && sessionData.length > 0 ? (sessionData[0] ?? null) : null;
       profileError = error;
-    } else {
+    }
+
+    if (!profile) {
       const res = await userClient
         .from("profiles")
         .select("id, role")
-        .eq("id", user.id)
+        .or(`auth_user_id.eq.${user.id},id.eq.${user.id}`)
         .maybeSingle();
       profile = res.data ?? null;
       profileError = res.error;
@@ -247,13 +252,10 @@ export async function handleTranscriptionRequest(
   try {
     formData = await request.formData();
   } catch {
-    return new Response(
-      JSON.stringify({ error: "Invalid multipart form data in request body." }),
-      {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      },
-    );
+    return new Response(JSON.stringify({ error: "Invalid multipart form data in request body." }), {
+      status: 400,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
   const audioFile = formData.get("file");
@@ -284,7 +286,8 @@ export async function handleTranscriptionRequest(
   if (blob.size > MAX_AUDIO_BYTES) {
     return new Response(
       JSON.stringify({
-        error: "Audio recording exceeds the 10 MB size limit. Please keep voice recordings concise.",
+        error:
+          "Audio recording exceeds the 10 MB size limit. Please keep voice recordings concise.",
       }),
       {
         status: 413,
@@ -300,7 +303,8 @@ export async function handleTranscriptionRequest(
   const extMatch = filename.match(/\.([a-z0-9]+)$/i);
   const ext = extMatch && extMatch[1] ? `.${extMatch[1].toLowerCase()}` : "";
 
-  const isValidMime = ALLOWED_AUDIO_MIME_TYPES.has(rawType) || ALLOWED_AUDIO_MIME_TYPES.has(baseMime);
+  const isValidMime =
+    ALLOWED_AUDIO_MIME_TYPES.has(rawType) || ALLOWED_AUDIO_MIME_TYPES.has(baseMime);
   const isValidExt = ALLOWED_AUDIO_EXTENSIONS.has(ext);
 
   if (!isValidMime && !isValidExt) {
@@ -321,7 +325,8 @@ export async function handleTranscriptionRequest(
   if (!groqApiKey) {
     return new Response(
       JSON.stringify({
-        error: "Voice transcription service is temporarily unavailable. Please use keyboard typing.",
+        error:
+          "Voice transcription service is temporarily unavailable. Please use keyboard typing.",
       }),
       {
         status: 503,

@@ -228,7 +228,7 @@ For judges, evaluators, and reviewers, TerraByte includes pre-configured canonic
 ### Pre-Configured Demo Accounts
 
 > [!TIP]
-> On the `/login` screen, use the quick demo selector buttons or enter the credentials below. All passwords are set to `terrabyte2026`.
+> On the `/login` screen, use the quick demo selector buttons or enter the credentials below. All passwords are set to `[REDACTED]`.
 
 | Role | Demo Email | Persona Name | Location | Seeded Scenario / Ticket |
 | :--- | :--- | :--- | :--- | :--- |

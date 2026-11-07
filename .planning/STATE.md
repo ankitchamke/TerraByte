@@ -19,25 +19,25 @@
   - Phase A (Auth Recovery): **COMPLETED & VERIFIED** — Resolved all 18 `get_session_profile` call sites across 14 modules with safe column fallback (`profiles.id, role, full_name, phone, village`), zero DB modifications, and verified mock client recovery.
   - Phase 11 (Visual Diagnostics): **COMPLETED & VERIFIED ON STAGING** — Dedicated Supabase staging (`ubqgvhcfmrvnmrbllcom`), 18 tables, 49 RLS policies, synthetic seed fixtures, interactive `DefectAnnotationCanvas`, multi-portal `VisualDefectDiagnosticViewer`, fail-closed consent opt-in, fail-open breakdown submission, live catalogue tractor compatibility matching, and staff force rescan lifecycle verified end-to-end. Production (`hwdrypkvszwrcraujctw`) strictly air-gapped and untouched.
   - Phase 12 (Multilingual Experience): **COMPLETED & VERIFIED ON STAGING** — Trilingual Farmer Portal (English, Hindi, Marathi) with 100% dictionary key parity (208 keys), Noto Sans Devanagari typography, compact top-nav segmented selector (`EN` / `हिं` / `म`), canonical Groq Whisper Large V3 voice transcription preservation, responsive 320px–1440px overflow immunity, and verified staging Reset Demo RPC paired authorization.
-  - Phase 13: **ACTIVE / NEXT — INITIALIZED** (Technician Trust, Shared Workshops & Physical KYC — branch `phase-13` created, implementation plan authored)
+  - Phase 13: **IN PROGRESS — MILESTONES 1, 2 & 3 COMPLETE** (Technician Trust, Shared Workshops & Physical KYC: M1 Database Foundations committed `80537c6`, M2 Shared Workshop Governance committed `e0aeaa0`, M3 Physical KYC & AI Skills Workbench verified across 242 tests)
   - Phases 14–17: **PLANNED** (Future phases; not yet implemented)
   - Post-Hackathon: **DEFERRED** (Payments, WhatsApp bot, OEM telematics, FPO networks, towing/flatbed recovery, external ERP inventory)
 
 ```text
-Progress: [███████████████░░░░░] 76% (Phase 12 Complete, Phase 13 Initialized of 17-Phase Roadmap)
+Progress: [████████████████░░░░] 79% (Phase 13 Milestones 1–3 Complete of 17-Phase Roadmap)
 ```
 
 ---
 
 ## 3. Verified Empirical Test & Build Health
 
-The following figures were verified live via empirical command execution on **2026-11-06**:
+The following figures were verified live via empirical command execution on **2026-11-07**:
 
 - **Automated Test Suite (`npm test`)**:
-  - Total Tests: **171**
-  - Passing Tests: **171** (0 failures, 0 skipped, 0 cancelled)
-  - Execution Duration: **1.20s**
-  - Test Suites Covered: 10 suites (`auth-production-compatibility`, `cleanup-verification`, `diagnostics-contract`, `i18n-dictionary-parity`, `parts-desk`, `parts-matching`, `profile-security-architecture`, `route-estimate`, `visual-defect-frontend`, etc.)
+  - Total Tests: **242**
+  - Passing Tests: **242** (0 failures, 0 skipped, 0 cancelled)
+  - Execution Duration: **1.48s**
+  - Test Suites Covered: 13 suites (`auth-production-compatibility`, `cleanup-verification`, `diagnostics-contract`, `i18n-dictionary-parity`, `parts-desk`, `parts-matching`, `profile-security-architecture`, `route-estimate`, `visual-defect-frontend`, `phase-13-db-invariants`, `phase-13-workshop-management`, `phase-13-demo-remediation`, `phase-13-kyc-and-skills`)
 - **Real-Image Acceptance Suite (`scratch/phase-11/run_real_image_acceptance.mjs`)**:
   - Live Tests: **18/18 PASS** (Genuine tractor engine bay photograph, CC BY 4.0, zero PII, 2.84 MB, farmer consent, live `gemini-3.5-flash-lite` 4324ms, zero defect hallucination, non-authoritative zero spurious parts commitment, multi-portal queries, 30s cooldown enforcement, staff force rescan, audit history archival)
 - **Staging & Gemini Acceptance Suite (`scratch/phase-11/run_phase11_acceptance.mjs`)**:

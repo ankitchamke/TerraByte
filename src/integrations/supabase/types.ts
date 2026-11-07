@@ -720,6 +720,16 @@ export type Database = {
           skills: string[];
           updated_at: string;
           workshop_name: string;
+          kyc_verified: boolean;
+          kyc_verified_at: string | null;
+          kyc_verified_by: string | null;
+          kyc_document_type: string | null;
+          kyc_masked_id: string | null;
+          kyc_remarks: string | null;
+          ai_suggested_skills: Json | null;
+          verified_skills: Json | null;
+          review_count: number | null;
+          primary_facility_id: string | null;
         };
         Insert: {
           brands?: string[];
@@ -736,6 +746,16 @@ export type Database = {
           skills?: string[];
           updated_at?: string;
           workshop_name: string;
+          kyc_verified?: boolean;
+          kyc_verified_at?: string | null;
+          kyc_verified_by?: string | null;
+          kyc_document_type?: string | null;
+          kyc_masked_id?: string | null;
+          kyc_remarks?: string | null;
+          ai_suggested_skills?: Json | null;
+          verified_skills?: Json | null;
+          review_count?: number | null;
+          primary_facility_id?: string | null;
         };
         Update: {
           brands?: string[];
@@ -752,6 +772,16 @@ export type Database = {
           skills?: string[];
           updated_at?: string;
           workshop_name?: string;
+          kyc_verified?: boolean;
+          kyc_verified_at?: string | null;
+          kyc_verified_by?: string | null;
+          kyc_document_type?: string | null;
+          kyc_masked_id?: string | null;
+          kyc_remarks?: string | null;
+          ai_suggested_skills?: Json | null;
+          verified_skills?: Json | null;
+          review_count?: number | null;
+          primary_facility_id?: string | null;
         };
         Relationships: [
           {
@@ -1355,6 +1385,29 @@ export type Database = {
       get_technician_private_profile: {
         Args: {
           p_technician_profile_id: string;
+        };
+        Returns: Json;
+      };
+      verify_technician_kyc: {
+        Args: {
+          p_technician_profile_id: string;
+          p_document_type: string;
+          p_masked_id: string;
+          p_remarks: string;
+        };
+        Returns: Json;
+      };
+      approve_technician_skill: {
+        Args: {
+          p_technician_profile_id: string;
+          p_skill: string;
+        };
+        Returns: Json;
+      };
+      dismiss_technician_skill: {
+        Args: {
+          p_technician_profile_id: string;
+          p_skill: string;
         };
         Returns: Json;
       };

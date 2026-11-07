@@ -26,9 +26,9 @@ import type { RepairRequestDetail } from "@/lib/services/repair-requests";
 
 export interface AdminHandoverCardProps {
   repair: RepairRequestDetail;
-  quote?: QuoteDetail | null;
+  quote?: QuoteDetail | null | undefined;
   onUpdate: () => Promise<void>;
-  className?: string;
+  className?: string | undefined;
 }
 
 export function AdminHandoverCard({ repair, quote, onUpdate, className }: AdminHandoverCardProps) {

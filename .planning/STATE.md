@@ -12,19 +12,19 @@
 
 ## 2. Current Position & Milestone Status
 
-- **Current Phase**: **Phase 13 — Technician Trust, Shared Workshops & Accountability (INITIALIZED & PLANNING READY)**
+- **Current Phase**: **Phase 13 — Technician Trust, Shared Workshops & Accountability (COMPLETED — LOCAL INTEGRATION VERIFIED; PENDING REMOTE STAGING GATE)**
 - **Branch**: `phase-13` (Created from completed `phase-12` base commit `7996ccc`; strictly additive Git history, no force-pushing/rebasing)
 - **Status Summary**:
   - Phases 1–10: **COMPLETED & VERIFIED**
   - Phase A (Auth Recovery): **COMPLETED & VERIFIED** — Resolved all 18 `get_session_profile` call sites across 14 modules with safe column fallback (`profiles.id, role, full_name, phone, village`), zero DB modifications, and verified mock client recovery.
   - Phase 11 (Visual Diagnostics): **COMPLETED & VERIFIED ON STAGING** — Dedicated Supabase staging (`ubqgvhcfmrvnmrbllcom`), 18 tables, 49 RLS policies, synthetic seed fixtures, interactive `DefectAnnotationCanvas`, multi-portal `VisualDefectDiagnosticViewer`, fail-closed consent opt-in, fail-open breakdown submission, live catalogue tractor compatibility matching, and staff force rescan lifecycle verified end-to-end. Production (`hwdrypkvszwrcraujctw`) strictly air-gapped and untouched.
   - Phase 12 (Multilingual Experience): **COMPLETED & VERIFIED ON STAGING** — Trilingual Farmer Portal (English, Hindi, Marathi) with 100% dictionary key parity (208 keys), Noto Sans Devanagari typography, compact top-nav segmented selector (`EN` / `हिं` / `म`), canonical Groq Whisper Large V3 voice transcription preservation, responsive 320px–1440px overflow immunity, and verified staging Reset Demo RPC paired authorization.
-  - Phase 13: **IN PROGRESS — MILESTONES 1, 2, 3, 4 & 5 COMPLETE** (Technician Trust, Shared Workshops, Verified Reviews & Digital Handover: M1 Database Foundations committed `80537c6`, M2 Shared Workshop Governance committed `e0aeaa0`, M3 Physical KYC committed `45121f5`, M4 Verified Reviews & Technician Ratings committed, M5 Digital Handover & Equipment Collection verified across 294 tests)
+  - Phase 13: **COMPLETED — LOCAL INTEGRATION VERIFIED; PENDING REMOTE STAGING GATE (ALL MILESTONES 1–6 COMPLETE)** (Technician Trust, Shared Workshops, Verified Reviews & Digital Handover: M1 Database Foundations committed `80537c6`, M2 Shared Workshop Governance committed `e0aeaa0`, M3 Physical KYC committed `45121f5`, M4 Verified Reviews & Technician Ratings committed `5483fd8` / `bbdff3c`, M5 Digital Handover & Equipment Collection committed `f3865a1`, M6 Integration & Staging QA verified across 299 tests. Remote staging database migration pending explicit operator execution).
   - Phases 14–17: **PLANNED** (Future phases; not yet implemented)
   - Post-Hackathon: **DEFERRED** (Payments, WhatsApp bot, OEM telematics, FPO networks, towing/flatbed recovery, external ERP inventory)
 
 ```text
-Progress: [██████████████████░░] 84% (Phase 13 Milestones 1–5 Complete of 17-Phase Roadmap)
+Progress: [███████████████████░] 88% (Phase 13 Complete of 17-Phase Roadmap; Phase 14 Next)
 ```
 
 ---
@@ -34,20 +34,18 @@ Progress: [██████████████████░░] 84% (Ph
 The following figures were verified live via empirical command execution on **2026-11-07**:
 
 - **Automated Test Suite (`npm test`)**:
-  - Total Tests: **294**
-  - Passing Tests: **294** (0 failures, 0 skipped, 0 cancelled)
-  - Execution Duration: **1.71s**
-  - Test Suites Covered: 16 suites (`auth-production-compatibility`, `cleanup-verification`, `diagnostics-contract`, `i18n-dictionary-parity`, `parts-desk`, `parts-matching`, `profile-security-architecture`, `route-estimate`, `visual-defect-frontend`, `phase-13-db-invariants`, `phase-13-workshop-management`, `phase-13-demo-remediation`, `phase-13-kyc-and-skills`, `phase-13-reviews-and-ratings`, `phase-13-auth-review-security`, `phase-13-handover-and-collection`)
+  - Total Tests: **299**
+  - Passing Tests: **299** (0 failures, 0 skipped, 0 cancelled)
+  - Execution Duration: **1.37s**
+  - Test Suites Covered: 17 suites (`auth-production-compatibility`, `cleanup-verification`, `diagnostics-contract`, `i18n-dictionary-parity`, `parts-desk`, `parts-matching`, `profile-security-architecture`, `route-estimate`, `visual-defect-frontend`, `phase-13-db-invariants`, `phase-13-workshop-management`, `phase-13-demo-remediation`, `phase-13-kyc-and-skills`, `phase-13-reviews-and-ratings`, `phase-13-auth-review-security`, `phase-13-handover-and-collection`, `phase-13-milestone6-integration-e2e`)
 - **Real-Image Acceptance Suite (`scratch/phase-11/run_real_image_acceptance.mjs`)**:
   - Live Tests: **18/18 PASS** (Genuine tractor engine bay photograph, CC BY 4.0, zero PII, 2.84 MB, farmer consent, live `gemini-3.5-flash-lite` 4324ms, zero defect hallucination, non-authoritative zero spurious parts commitment, multi-portal queries, 30s cooldown enforcement, staff force rescan, audit history archival)
 - **Staging & Gemini Acceptance Suite (`scratch/phase-11/run_phase11_acceptance.mjs`)**:
   - Live Tests: **24/24 PASS** (GoTrue auth sessions, fail-closed consent, concurrency locks, live `gemini-3.5-flash-lite` multimodal response, catalogue compatibility filtering, technician force rescan, admin corruption recovery)
 - **Phase 12 Responsive Viewport Suite (`scratch/phase-12/test_responsive_viewports.mjs`)**:
   - Viewports: **15/15 PASS** (320x568, 375x667, 768x1024, 1024x768, 1440x900 across English, Hindi, and Marathi with 0px horizontal scroll overflow)
-- **TypeScript Compiler (`npx tsc --noEmit`)**:
-  - Status: **0 ERRORS** (Clean compilation across all application modules and routes)
-- **Production Build (`npm run build`)**:
-  - Status: **SUCCESS** (TanStack Start + Vite 8.1.5 + Nitro `vercel` serverless preset, 1.20s build, 0 errors, 0 warnings)
+- **Production Build (`npm run build:production`)**:
+  - Status: **SUCCESS** (TanStack Start + Vite 8.1.5 + Nitro `vercel` serverless preset, 1.63s SSR / 3.46s client build, 0 errors, 0 warnings)
   - Compiler: Vite 8.1.5 + Nitro (preset: `vercel`)
   - Output Target: `.vercel/output` (Serverless bundle)
 
@@ -70,8 +68,8 @@ The following figures were verified live via empirical command execution on **20
 | **Phase A** | Authentication Recovery & RPC Fallback | **COMPLETED** | Resilient production fallback across 14 modules resolving missing `get_session_profile` RPC / schema cache (`PGRST202`), safe column whitelist, persona reconstruction, 10 compatibility tests pass. |
 | **Phase 11** | Gemini AI Visual Diagnostics | **COMPLETED & STAGING VERIFIED** | Multimodal Gemini 3.5 Flash-Lite integration, interactive `DefectAnnotationCanvas`, `VisualDefectDiagnosticViewer` across farmer/tech/admin portals, fail-closed consent, fail-open breakdown submission, live catalogue matching, and staging acceptance verification (`docs/audits/phase-11/PHASE_11_STAGING_ACCEPTANCE_REPORT.md`). |
 | **Phase 12** | Multilingual Farmer Experience | **COMPLETED & STAGING VERIFIED** | Trilingual Farmer Portal (`en` \| `hi` \| `mr`), 100% dictionary key parity (208 keys), Noto Sans Devanagari typography, compact top nav selector (`EN` / `हिं` / `म`), canonical Groq Whisper Large V3 voice transcription preservation, 15/15 responsive viewport passes, and verified staging Reset Demo RPC paired authorization. |
-| **Phase 13** | Technician Trust, Physical KYC & Workshops | **NEXT — PLANNED** | In-person physical KYC at Nagpur Service Centre (zero Aadhaar storage), independent `repair_facilities`, multi-tech memberships, verified ratings (no default 5.0), touch-canvas handover pad. |
-| **Phase 14** | Smart Dispatch & Workshop Drop-Off | **PLANNED** | Mandatory Doorstep for immobile machinery, OSRM road distance from workshop GPS, Google Maps navigation links, Workshop Drop-Off workflow, atomic bay capacity check, Harvest SOS priority pinning. |
+| **Phase 13** | Technician Trust, Physical KYC & Workshops | **COMPLETED (LOCAL VERIFIED)** | In-person physical KYC at Nagpur Service Centre (zero Aadhaar storage), independent `repair_facilities`, multi-tech memberships, verified ratings (null default, recalculation triggers), structured load-test sign-off, offline payment clearance, location privacy gate, digital handover & equipment collection receipt (`docs/audits/phase-13/PHASE13_MILESTONE6_INTEGRATION_QA_REPORT.md`). Remote staging migration pending operator approval. |
+| **Phase 14** | Smart Dispatch & Workshop Drop-Off | **NEXT — PLANNED** | Mandatory Doorstep for immobile machinery, OSRM road distance from workshop GPS, Google Maps navigation links, Workshop Drop-Off workflow, atomic bay capacity check, Harvest SOS priority pinning. |
 | **Phase 15** | Preventive Maintenance Intelligence | **PLANNED** | Machinery operating-hour alerts (50h, 250h, 500h, 1000h intervals), Vidarbha seasonal crop advisory calendar, 1-click maintenance package booking. |
 | **Phase 16** | Frontend UI/UX Improvement & Product Polish | **PLANNED** | Public homepage redesign and subsequent trilingual localisation (EN/HI/MR), visual consistency overhaul, multi-role portal polish (Farmer, Tech, Admin), 320px–375px mobile responsiveness, $\ge 44\text{px}$ touch targets, Devanagari expansion resilience, accessible states. |
 | **Phase 17** | Master System-Wide QA, Production Migration & Release Gate | **PLANNED** | Master stabilization gate, full regression run, multi-role staging rehearsal, governed production migration (hwdrypkvszwrcraujctw), backup/rollback playbook, zero critical/high severity bugs sign-off. |

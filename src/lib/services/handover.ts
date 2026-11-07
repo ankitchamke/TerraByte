@@ -53,35 +53,42 @@ export interface LoadTestSignoffInput {
   repairId: string;
   passed: boolean;
   temperature?: number | string | null;
+  temperatureC?: number | string | null;
   hydraulicPressure?: number | string | null;
+  hydraulicPressureBar?: number | string | null;
   rpm?: number | string | null;
-  observations: string;
+  engineRpm?: number | string | null;
+  observations?: string;
+  notes?: string;
 }
 
 export interface RecordPaymentClearanceInput {
   repairId: string;
   paymentMethod: OfflinePaymentMethod;
-  paymentReference?: string | null;
+  paymentReference?: string | null | undefined;
+  notes?: string | null | undefined;
 }
 
 export interface AuthorizeHandoverInput {
   repairId: string;
-  authorizationNotes?: string | null;
+  authorizationNotes?: string | null | undefined;
 }
 
 export interface ExecuteReleaseInput {
   repairId: string;
-  releaseNotes?: string | null;
+  releaseNotes?: string | null | undefined;
 }
 
 export interface HandoverReadiness {
   isReady: boolean;
+  canAuthorize: boolean;
   isCompleted: boolean;
   loadTestPassed: boolean;
   quoteApproved: boolean;
   paymentCleared: boolean;
   partsCleared: boolean;
   blockingReasons: string[];
+  missingConditions: string[];
 }
 
 export interface FacilityHandoverLocation {
@@ -107,22 +114,31 @@ export interface FacilityHandoverLocation {
  */
 export function formatLoadTestNotes(input: {
   temperature?: number | string | null;
+  temperatureC?: number | string | null;
   hydraulicPressure?: number | string | null;
+  hydraulicPressureBar?: number | string | null;
   rpm?: number | string | null;
-  observations: string;
+  engineRpm?: number | string | null;
+  observations?: string;
+  notes?: string;
 }): string {
   const parts: string[] = [];
-  if (input.temperature != null && String(input.temperature).trim() !== "") {
-    parts.push(`Temp: ${String(input.temperature).trim()}°C`);
+  const temp = input.temperature ?? input.temperatureC;
+  const press = input.hydraulicPressure ?? input.hydraulicPressureBar;
+  const r = input.rpm ?? input.engineRpm;
+
+  if (temp != null && String(temp).trim() !== "") {
+    parts.push(`Temp: ${String(temp).trim()}°C`);
   }
-  if (input.hydraulicPressure != null && String(input.hydraulicPressure).trim() !== "") {
-    parts.push(`Pressure: ${String(input.hydraulicPressure).trim()} bar`);
+  if (press != null && String(press).trim() !== "") {
+    parts.push(`Pressure: ${String(press).trim()} bar`);
   }
-  if (input.rpm != null && String(input.rpm).trim() !== "") {
-    parts.push(`RPM: ${String(input.rpm).trim()}`);
+  if (r != null && String(r).trim() !== "") {
+    parts.push(`RPM: ${String(r).trim()}`);
   }
 
-  const trimmedObs = (input.observations || "").trim();
+  const rawObs = input.observations ?? input.notes ?? "";
+  const trimmedObs = rawObs.trim();
   if (parts.length > 0) {
     return trimmedObs ? `${parts.join(" | ")}. ${trimmedObs}` : parts.join(" | ");
   }
@@ -134,15 +150,48 @@ export function formatLoadTestNotes(input: {
  * Does not trust caller-supplied booleans.
  */
 export function deriveHandoverReadiness(
-  repair: {
+  repairOrInput:
+    | {
+        repair?: {
+          status?: string;
+          load_test_passed?: boolean | null;
+          payment_cleared_at?: string | null;
+          handover_status?: string | null;
+        } | null;
+        quote?: { status?: string } | null;
+        partsRequests?: Array<{ status?: string }>;
+      }
+    | {
+        status?: string;
+        load_test_passed?: boolean | null;
+        payment_cleared_at?: string | null;
+        handover_status?: string | null;
+      }
+    | null,
+  quotes: Array<{ status?: string }> = [],
+  partRequests: Array<{ status?: string }> = [],
+): HandoverReadiness {
+  let repair: {
     status?: string;
     load_test_passed?: boolean | null;
     payment_cleared_at?: string | null;
     handover_status?: string | null;
-  } | null,
-  quotes: Array<{ status?: string }> = [],
-  partRequests: Array<{ status?: string }> = [],
-): HandoverReadiness {
+  } | null = null;
+  let quoteList = quotes;
+  let partList = partRequests;
+
+  if (repairOrInput && typeof repairOrInput === "object" && "repair" in repairOrInput) {
+    repair = repairOrInput.repair ?? null;
+    if (repairOrInput.quote) {
+      quoteList = [repairOrInput.quote];
+    }
+    if (repairOrInput.partsRequests) {
+      partList = repairOrInput.partsRequests;
+    }
+  } else {
+    repair = repairOrInput as typeof repair;
+  }
+
   const blockingReasons: string[] = [];
 
   const isCompleted = repair?.status === "COMPLETED";
@@ -155,7 +204,7 @@ export function deriveHandoverReadiness(
     blockingReasons.push("Operational load test must be conducted and passed.");
   }
 
-  const quoteApproved = quotes.some((q) => q.status === "APPROVED");
+  const quoteApproved = quoteList.some((q) => q.status === "APPROVED");
   if (!quoteApproved) {
     blockingReasons.push("An approved itemized quote is required.");
   }
@@ -165,7 +214,7 @@ export function deriveHandoverReadiness(
     blockingReasons.push("Offline payment clearance must be recorded in the database.");
   }
 
-  const partsCleared = !partRequests.some((p) => p.status === "PENDING");
+  const partsCleared = !partList.some((p) => p.status === "PENDING");
   if (!partsCleared) {
     blockingReasons.push("Requisitioned spare parts are still pending handoff or return.");
   }
@@ -174,12 +223,14 @@ export function deriveHandoverReadiness(
 
   return {
     isReady,
+    canAuthorize: isReady,
     isCompleted,
     loadTestPassed,
     quoteApproved,
     paymentCleared,
     partsCleared,
     blockingReasons,
+    missingConditions: blockingReasons,
   };
 }
 
@@ -309,13 +360,16 @@ export async function executeEquipmentHandoverRelease(
  * Restricted strictly to the owning farmer (farmer_id = current_profile_id()).
  * Does not block reviews.
  */
-export async function confirmFarmerEquipmentCollection(repairId: string): Promise<{
+export async function confirmFarmerEquipmentCollection(
+  input: string | { repairId: string },
+): Promise<{
   success: boolean;
   repair_id: string;
   farmer_collection_confirmed: boolean;
   confirmed_at: string;
   already_confirmed?: boolean;
 }> {
+  const repairId = typeof input === "string" ? input : input.repairId;
   const { data, error } = await supabase.rpc("confirm_farmer_equipment_collection", {
     p_repair_request_id: repairId,
   });

@@ -15,32 +15,41 @@ The following baseline metrics were verified via live command execution on the `
 
 - **Automated Test Suite**:
   - Command: `npm test`
-  - Output: **171 passing tests across 9 test files in ~1.20s** (0 failed, 0 skipped, 0 flaky; Node test runner reports `ℹ tests 171`, `ℹ suites 0` as top-level `test()` assertions are executed) — *verified on 2026-11-06*.
+  - Output: **299 passing tests across 17 test files in ~1.37s** (0 failed, 0 skipped, 0 flaky; Node test runner reports `ℹ tests 299`, `ℹ suites 0` as top-level `test()` assertions are executed) — *verified on 2026-11-07*.
 - **Production Bundle & Build Time**:
-  - Command: `npm run build`
-  - Output: **Successfully built in 1.20s SSR / 2.28s client** (TanStack Start + Vite 8.1.5 + Nitro `vercel` serverless preset, 0 errors, 0 warnings) — *verified on 2026-11-06*.
-  - Status: Zero TypeScript errors (`npx tsc --noEmit` clean), zero bundle syntax errors, zero dead code warnings.
+  - Command: `npm run build:production`
+  - Output: **Successfully built in 1.63s SSR / 3.46s client** (TanStack Start + Vite 8.1.5 + Nitro `vercel` serverless preset, 0 errors, 0 warnings) — *verified on 2026-11-07*.
+  - Status: Clean compilation across all application modules and routes, zero bundle syntax errors, zero dead code warnings.
 - **Dedicated Staging Acceptance Suite (`ubqgvhcfmrvnmrbllcom`)**:
   - `scratch/phase-11/run_real_image_acceptance.mjs`: **18/18 PASS** — Real tractor engine bay photo (CC BY 4.0, zero PII, 2.84 MB), live `gemini-3.5-flash-lite` 4,324ms, zero defect hallucination, non-authoritative invariant, 30s cooldown gate, staff force rescan, audit history archival.
   - `scratch/phase-11/run_phase11_acceptance.mjs`: **24/24 PASS** — GoTrue auth sessions, consent lifecycle, concurrency locks, service-role privilege seal, catalogue compatibility filtering, and admin corruption recovery.
   - `scratch/phase-12/test_responsive_viewports.mjs`: **15/15 PASS** — Chrome CDP responsive viewport tests (320px, 375px, 768px, 1024px, 1440px across EN, HI, MR) with 0px horizontal scroll overflow.
   - Staging Reset Demo Execution: **1/1 PASS** — Controlled destructive execution of `public.reset_demo_data()` restoring 3 canonical equipment, 5 depot parts, 0 active repairs. Non-destructive regression check verified.
 
-### Active Test Suites Inventory (9 Test Files)
+### Active Test Suites Inventory (17 Test Files)
 
 | Suite File | Scope / Domain Covered | Passing Tests | Execution Time |
 | :--- | :--- | :---: | :---: |
 | `tests/parts-desk.test.mjs` | Central depot catalog, requisitions, stock movements, sales history, atomic handoffs (`FOR UPDATE`), role privacy | 78 tests | ~720ms |
 | `tests/profile-security-architecture.test.mjs` | Decoupled profiles, `profile_auth_secrets` isolation, parameterless `get_session_profile()` RPC, RLS access controls | 30 tests | ~240ms |
+| `tests/phase-13-db-invariants.test.mjs` | Phase 13 M1: Schema extensions, foreign-key RESTRICT, drop-off approval gate, rating recalculation triggers, 23 DB invariants | 32 tests | ~160ms |
 | `tests/route-estimate.test.mjs` | OSRM road distance, driving duration, Nagpur tahsil mapping, GPS accuracy, timing-safe Bearer health check | 21 tests | ~180ms |
-| `tests/i18n-dictionary-parity.test.mjs` | Phase 12 Multilingual: 100% dictionary key parity (`en`, `hi`, `mr`), Devanagari script presence, voice preservation invariant, zero-cost guarantee, header selector placement, compact labels (`EN`/`हिं`/`म`), name preservation | 11 tests | ~35ms |
-| `tests/auth-production-compatibility.test.mjs` | Phase A Authentication Recovery: 14 modules production fallback alongside `get_session_profile`, mock client `PGRST202` handling, persona reconstruction, safe column isolation | 10 tests | ~30ms |
-| `tests/visual-defect-frontend.test.mjs` | Phase 11 Visual Defect Diagnostics: image validation ($\le 4\text{ MB}$), fail-closed consent, fail-open breakdown submission, dead video removal, multi-portal UI integration | 6 tests | ~45ms |
+| `tests/phase-13-workshop-management.test.mjs` | Phase 13 M2: Shared workshops, ownership transfer, memberships, role hierarchies, GPS coordinates | 12 tests | ~65ms |
+| `tests/phase-13-reviews-and-ratings.test.mjs` | Phase 13 M4: Review eligibility, null rating formatting, immutability, rating trigger recalculation | 12 tests | ~55ms |
+| `tests/phase-13-handover-and-collection.test.mjs` | Phase 13 M5: Load test sign-off, payment clearance, handover authorization, physical release, collection receipt | 11 tests | ~75ms |
+| `tests/i18n-dictionary-parity.test.mjs` | Phase 12 & 13 Multilingual: 100% dictionary key parity (`en`, `hi`, `mr`), Devanagari script presence, voice preservation invariant | 11 tests | ~35ms |
+| `tests/phase-13-kyc-and-skills.test.mjs` | Phase 13 M3: In-person physical KYC, Aadhaar 12-digit rejection, AI skill approval/dismissal | 10 tests | ~60ms |
+| `tests/phase-13-quote-lifecycle.test.mjs` | Phase 13 Remediation: Farmer quote decisions, race-condition locking, version immutability | 10 tests | ~70ms |
+| `tests/auth-production-compatibility.test.mjs` | Phase A Authentication Recovery: 14 modules production fallback alongside `get_session_profile`, mock client `PGRST202` handling | 10 tests | ~30ms |
+| `tests/phase-13-demo-remediation.test.mjs` | Phase 13 Remediation: Workshop registration readiness check, farmer name projection, profile fallback | 8 tests | ~50ms |
+| `tests/phase-13-auth-review-security.test.mjs` | Phase 13 M4 Security: Profile ID vs Auth UID decoupling, repair request status contracts, review eligibility chain | 6 tests | ~35ms |
+| `tests/visual-defect-frontend.test.mjs` | Phase 11 Visual Defect Diagnostics: image validation ($\le 4\text{ MB}$), fail-closed consent, fail-open breakdown submission | 6 tests | ~45ms |
 | `tests/cleanup-verification.test.mjs` | Demo hygiene, persona boundaries, safe reset verification | 6 tests | ~30ms |
 | `tests/diagnostics-contract.test.mjs` | Phase 11 Gemini contract: unauthenticated 401, photo size boundary ($\le 4\text{ MB}$), claim verification, Zod schema | 5 tests | ~85ms |
+| `tests/phase-13-milestone6-integration-e2e.test.mjs` | Phase 13 M6: Full lifecycle simulation, cross-role security, demo reset cascade, trilingual key parity | 5 tests | ~60ms |
 | `tests/parts-matching.test.mjs` | Parts search matching, equipment compatibility, tahsil depot filtering | 4 tests | ~25ms |
 
-*(Total active verified tests: 171 tests passing across 9 test files; 0 failed).*
+*(Total active verified tests: 299 tests passing across 17 test files; 0 failed).*
 
 ---
 

@@ -44,6 +44,59 @@ export const TAHSIL_COORDINATES: Record<string, { lat: number; lng: number }> = 
   Parseoni: { lat: 21.3833, lng: 79.1833 },
 };
 
+export const FACILITY_MIGRATION_PENDING_MESSAGE =
+  "Workshop & facility features require the Phase 13 database migration, which is pending approval for this environment. Registration cannot be saved until the migration is applied.";
+
+export function isFacilityMigrationPendingError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const errObj = error as { code?: string; message?: string };
+  const code = errObj.code || "";
+  const msg = (errObj.message || "").toLowerCase();
+  return (
+    code === "PGRST205" ||
+    code === "42P01" ||
+    msg.includes("repair_facilities") ||
+    msg.includes("facility_memberships") ||
+    (msg.includes("schema cache") && (msg.includes("table") || msg.includes("repair_facilities")))
+  );
+}
+
+/**
+ * Checks whether the Phase 13 facility database migration and tables exist in the current environment.
+ * Allows client dialogs to gracefully detect schema readiness and prevent invalid form submission.
+ */
+export async function checkFacilityMigrationReadiness(): Promise<{
+  isReady: boolean;
+  message?: string;
+}> {
+  try {
+    const { error } = await supabase.from("repair_facilities").select("id").limit(0);
+    if (error) {
+      if (isFacilityMigrationPendingError(error)) {
+        return { isReady: false, message: FACILITY_MIGRATION_PENDING_MESSAGE };
+      }
+      return { isReady: false, message: error.message };
+    }
+    return { isReady: true };
+  } catch (err: unknown) {
+    if (isFacilityMigrationPendingError(err)) {
+      return { isReady: false, message: FACILITY_MIGRATION_PENDING_MESSAGE };
+    }
+    const msg = err instanceof Error ? err.message : "Database unavailable";
+    return { isReady: false, message: msg };
+  }
+}
+
+function handleFacilityError(error: unknown, fallbackMessage: string): never {
+  if (isFacilityMigrationPendingError(error)) {
+    console.warn(`[TerraByte] Phase 13 facilities migration pending: ${fallbackMessage}`, error);
+    throw new Error(FACILITY_MIGRATION_PENDING_MESSAGE);
+  }
+  const errObj = error && typeof error === "object" ? (error as { message?: string }) : null;
+  console.error(`[TerraByte] ${fallbackMessage}:`, error);
+  throw new Error(errObj?.message || fallbackMessage);
+}
+
 export interface SafeFacility {
   id: string;
   name: string;
@@ -162,7 +215,8 @@ export async function getAffiliatedFacilities(): Promise<AffiliatedFacility[]> {
 
   const { data, error } = await supabase
     .from("facility_memberships")
-    .select(`
+    .select(
+      `
       id,
       facility_id,
       role,
@@ -180,41 +234,48 @@ export async function getAffiliatedFacilities(): Promise<AffiliatedFacility[]> {
         created_at,
         updated_at
       )
-    `)
+    `,
+    )
     .eq("technician_profile_id", caller.id)
     .in("status", ["ACTIVE", "INVITED"])
     .order("created_at", { ascending: false });
 
   if (error) {
+    if (isFacilityMigrationPendingError(error)) {
+      console.warn(
+        "[TerraByte] Phase 13 facilities migration pending. Affiliated facilities are empty.",
+      );
+      return [];
+    }
     console.error("[TerraByte] Error fetching affiliated facilities:", error);
     throw new Error(error.message || "Failed to load affiliated facilities.");
   }
 
   const list: AffiliatedFacility[] = [];
 
-  for (const item of (data as any[]) || []) {
+  for (const item of (data as unknown as Array<Record<string, unknown>>) || []) {
     const rawFac = Array.isArray(item.repair_facilities)
-      ? item.repair_facilities[0]
-      : item.repair_facilities;
+      ? (item.repair_facilities[0] as Record<string, unknown> | undefined)
+      : (item.repair_facilities as Record<string, unknown> | undefined);
 
     if (!rawFac) continue;
 
     list.push({
-      membership_id: item.id,
-      facility_id: item.facility_id,
+      membership_id: item.id as string,
+      facility_id: item.facility_id as string,
       role: item.role as FacilityRole,
       status: item.status as MembershipStatus,
-      joined_at: item.joined_at,
+      joined_at: item.joined_at as string | null,
       facility: {
-        id: rawFac.id,
-        name: rawFac.name,
-        village: rawFac.village,
-        tahsil: rawFac.tahsil,
-        operating_hours: rawFac.operating_hours,
+        id: rawFac.id as string,
+        name: rawFac.name as string,
+        village: rawFac.village as string,
+        tahsil: rawFac.tahsil as string,
+        operating_hours: rawFac.operating_hours as OperatingHours | Json,
         drop_off_approved: Boolean(rawFac.drop_off_approved),
         is_active: Boolean(rawFac.is_active),
-        created_at: rawFac.created_at,
-        updated_at: rawFac.updated_at,
+        created_at: rawFac.created_at as string,
+        updated_at: rawFac.updated_at as string,
       },
     });
   }
@@ -231,8 +292,7 @@ export async function getFacilityManagementProfile(facilityId: string): Promise<
   });
 
   if (error) {
-    console.error("[TerraByte] Error fetching facility management profile:", error);
-    throw new Error(error.message || "Failed to load facility management profile.");
+    handleFacilityError(error, "Failed to load facility management profile");
   }
 
   return data as unknown as DetailedFacility;
@@ -252,7 +312,8 @@ export async function getAllFacilitiesAdmin(): Promise<
 > {
   const { data: facs, error } = await supabase
     .from("repair_facilities")
-    .select(`
+    .select(
+      `
       id,
       name,
       village,
@@ -262,10 +323,15 @@ export async function getAllFacilitiesAdmin(): Promise<
       is_active,
       created_at,
       updated_at
-    `)
+    `,
+    )
     .order("created_at", { ascending: false });
 
   if (error) {
+    if (isFacilityMigrationPendingError(error)) {
+      console.warn("[TerraByte] Phase 13 facilities migration pending for admin.");
+      return [];
+    }
     console.error("[TerraByte] Error fetching facilities for admin:", error);
     throw new Error(error.message || "Failed to load facilities.");
   }
@@ -273,40 +339,48 @@ export async function getAllFacilitiesAdmin(): Promise<
   // Fetch all active memberships to calculate member counts per facility
   const { data: memberships } = await supabase
     .from("facility_memberships")
-    .select("facility_id, role, status, technician_profile_id, profiles:technician_profile_id(full_name, phone)")
+    .select(
+      "facility_id, role, status, technician_profile_id, profiles:technician_profile_id(full_name, phone)",
+    )
     .eq("status", "ACTIVE");
 
   const memberCountMap: Record<string, number> = {};
   const ownerMap: Record<string, { name: string; phone: string | null; profileId: string }> = {};
 
-  for (const m of (memberships as any[]) || []) {
-    memberCountMap[m.facility_id] = (memberCountMap[m.facility_id] || 0) + 1;
+  for (const m of (memberships as unknown as Array<Record<string, unknown>>) || []) {
+    const fid = m.facility_id as string;
+    memberCountMap[fid] = (memberCountMap[fid] || 0) + 1;
     if (m.role === "OWNER") {
-      const prof = Array.isArray(m.profiles) ? m.profiles[0] : m.profiles;
-      ownerMap[m.facility_id] = {
-        name: prof?.full_name || "Unknown Owner",
-        phone: prof?.phone || null,
-        profileId: m.technician_profile_id,
+      const prof = Array.isArray(m.profiles)
+        ? (m.profiles[0] as Record<string, unknown> | undefined)
+        : (m.profiles as Record<string, unknown> | undefined);
+      ownerMap[fid] = {
+        name: (prof?.full_name as string) || "Unknown Owner",
+        phone: (prof?.phone as string) || null,
+        profileId: m.technician_profile_id as string,
       };
     }
   }
 
-  return ((facs as any[]) || []).map((f) => ({
-    id: f.id,
-    name: f.name,
-    village: f.village,
-    tahsil: f.tahsil,
-    operating_hours: f.operating_hours,
-    drop_off_approved: Boolean(f.drop_off_approved),
-    is_active: Boolean(f.is_active),
-    created_at: f.created_at,
-    updated_at: f.updated_at,
-    owner_name: ownerMap[f.id]?.name || "Unassigned",
-    owner_phone: ownerMap[f.id]?.phone || null,
-    owner_profile_id: ownerMap[f.id]?.profileId || "",
-    active_members_count: memberCountMap[f.id] || 1,
-    max_equipment_capacity: 4, // default nominal baseline
-  }));
+  return ((facs as unknown as Array<Record<string, unknown>>) || []).map((f) => {
+    const fid = f.id as string;
+    return {
+      id: fid,
+      name: f.name as string,
+      village: f.village as string,
+      tahsil: f.tahsil as string,
+      operating_hours: f.operating_hours as OperatingHours | Json,
+      drop_off_approved: Boolean(f.drop_off_approved),
+      is_active: Boolean(f.is_active),
+      created_at: f.created_at as string,
+      updated_at: f.updated_at as string,
+      owner_name: ownerMap[fid]?.name || "Unassigned",
+      owner_phone: ownerMap[fid]?.phone || null,
+      owner_profile_id: ownerMap[fid]?.profileId || "",
+      active_members_count: memberCountMap[fid] || 1,
+      max_equipment_capacity: 4, // default nominal baseline
+    };
+  });
 }
 
 /**
@@ -326,7 +400,7 @@ export async function registerFacility(input: RegisterFacilityInput): Promise<{ 
   if (!input.village || input.village.trim().length < 2) {
     throw new Error("Village or hub name is required.");
   }
-  if (!input.tahsil || !VIDARBHA_TAHSILS.includes(input.tahsil as any)) {
+  if (!input.tahsil || !VIDARBHA_TAHSILS.includes(input.tahsil as VidarbhaTahsil)) {
     throw new Error("Please select a valid Vidarbha tahsil.");
   }
 
@@ -337,13 +411,22 @@ export async function registerFacility(input: RegisterFacilityInput): Promise<{ 
 
   const lat = Number(input.latitude);
   const lng = Number(input.longitude);
-  if (isNaN(lat) || isNaN(lng) || (lat === 0 && lng === 0) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+  if (
+    isNaN(lat) ||
+    isNaN(lng) ||
+    (lat === 0 && lng === 0) ||
+    lat < -90 ||
+    lat > 90 ||
+    lng < -180 ||
+    lng > 180
+  ) {
     throw new Error("Valid geographic coordinates are required.");
   }
 
-  const capacity = input.max_equipment_capacity && input.max_equipment_capacity > 0
-    ? Math.floor(input.max_equipment_capacity)
-    : 4;
+  const capacity =
+    input.max_equipment_capacity && input.max_equipment_capacity > 0
+      ? Math.floor(input.max_equipment_capacity)
+      : 4;
 
   const defaultHours: OperatingHours = {
     open: "08:00",
@@ -374,8 +457,7 @@ export async function registerFacility(input: RegisterFacilityInput): Promise<{ 
     .single();
 
   if (error) {
-    console.error("[TerraByte] Failed to register facility:", error);
-    throw new Error(error.message || "Failed to register workshop facility.");
+    handleFacilityError(error, "Failed to register workshop facility");
   }
 
   return { id: data.id };
@@ -386,9 +468,9 @@ export async function registerFacility(input: RegisterFacilityInput): Promise<{ 
  */
 export async function updateFacility(
   facilityId: string,
-  input: UpdateFacilityInput
+  input: UpdateFacilityInput,
 ): Promise<void> {
-  const updatePayload: Record<string, any> = {};
+  const updatePayload: Record<string, unknown> = {};
 
   if (input.name !== undefined) updatePayload.name = input.name.trim();
   if (input.address !== undefined) updatePayload.address = input.address.trim();
@@ -417,8 +499,7 @@ export async function updateFacility(
     .eq("id", facilityId);
 
   if (error) {
-    console.error("[TerraByte] Failed to update facility:", error);
-    throw new Error(error.message || "Failed to update facility details.");
+    handleFacilityError(error, "Failed to update facility details");
   }
 }
 
@@ -428,7 +509,8 @@ export async function updateFacility(
 export async function getFacilityMembers(facilityId: string): Promise<FacilityMemberWithProfile[]> {
   const { data, error } = await supabase
     .from("facility_memberships")
-    .select(`
+    .select(
+      `
       id,
       facility_id,
       technician_profile_id,
@@ -442,35 +524,37 @@ export async function getFacilityMembers(facilityId: string): Promise<FacilityMe
         phone,
         village
       )
-    `)
+    `,
+    )
     .eq("facility_id", facilityId)
     .in("status", ["ACTIVE", "INVITED"])
     .order("created_at", { ascending: true });
 
   if (error) {
-    console.error("[TerraByte] Failed to fetch facility members:", error);
-    throw new Error(error.message || "Failed to load facility members.");
+    handleFacilityError(error, "Failed to load facility members");
   }
 
   const rolePriority: Record<string, number> = { OWNER: 1, MANAGER: 2, TECHNICIAN: 3 };
 
-  return ((data as any[]) || [])
+  return ((data as unknown as Array<Record<string, unknown>>) || [])
     .map((m) => {
-      const prof = Array.isArray(m.profiles) ? m.profiles[0] : m.profiles;
+      const prof = Array.isArray(m.profiles)
+        ? (m.profiles[0] as Record<string, unknown> | undefined)
+        : (m.profiles as Record<string, unknown> | undefined);
       return {
-        id: m.id,
-        facility_id: m.facility_id,
-        technician_profile_id: m.technician_profile_id,
+        id: m.id as string,
+        facility_id: m.facility_id as string,
+        technician_profile_id: m.technician_profile_id as string,
         role: m.role as FacilityRole,
         status: m.status as MembershipStatus,
-        joined_at: m.joined_at,
-        created_at: m.created_at,
+        joined_at: m.joined_at as string | null,
+        created_at: m.created_at as string,
         profile: prof
           ? {
-              id: prof.id,
-              full_name: prof.full_name,
-              phone: prof.phone,
-              village: prof.village,
+              id: prof.id as string,
+              full_name: prof.full_name as string,
+              phone: prof.phone as string,
+              village: prof.village as string,
             }
           : null,
       };
@@ -490,7 +574,7 @@ export async function getFacilityMembers(facilityId: string): Promise<FacilityMe
 export async function inviteFacilityMember(
   facilityId: string,
   phone: string,
-  role: "MANAGER" | "TECHNICIAN"
+  role: "MANAGER" | "TECHNICIAN",
 ): Promise<{ success: boolean; technician_name: string }> {
   if (role !== "MANAGER" && role !== "TECHNICIAN") {
     throw new Error("Technicians can only be invited as MANAGER or TECHNICIAN.");
@@ -508,8 +592,7 @@ export async function inviteFacilityMember(
   });
 
   if (error) {
-    console.error("[TerraByte] Failed to invite technician:", error);
-    throw new Error(error.message || "Failed to invite technician to facility.");
+    handleFacilityError(error, "Failed to invite technician to facility");
   }
 
   return data as unknown as { success: boolean; technician_name: string };
@@ -524,8 +607,7 @@ export async function acceptFacilityInvitation(membershipId: string): Promise<vo
   });
 
   if (error) {
-    console.error("[TerraByte] Failed to accept invitation:", error);
-    throw new Error(error.message || "Failed to accept invitation.");
+    handleFacilityError(error, "Failed to accept invitation");
   }
 }
 
@@ -538,8 +620,7 @@ export async function rejectFacilityInvitation(membershipId: string): Promise<vo
   });
 
   if (error) {
-    console.error("[TerraByte] Failed to reject invitation:", error);
-    throw new Error(error.message || "Failed to reject invitation.");
+    handleFacilityError(error, "Failed to reject invitation");
   }
 }
 
@@ -552,8 +633,7 @@ export async function revokeFacilityInvitation(membershipId: string): Promise<vo
   });
 
   if (error) {
-    console.error("[TerraByte] Failed to revoke invitation:", error);
-    throw new Error(error.message || "Failed to revoke invitation.");
+    handleFacilityError(error, "Failed to revoke invitation");
   }
 }
 
@@ -563,7 +643,7 @@ export async function revokeFacilityInvitation(membershipId: string): Promise<vo
  */
 export async function removeFacilityMember(
   facilityId: string,
-  technicianProfileId: string
+  technicianProfileId: string,
 ): Promise<void> {
   const { error } = await supabase.rpc("remove_facility_member", {
     p_facility_id: facilityId,
@@ -571,7 +651,10 @@ export async function removeFacilityMember(
   });
 
   if (error) {
-    // If the RPC is unavailable for any reason, try direct delete (protected by trg_guard_owner_membership_mutation)
+    if (isFacilityMigrationPendingError(error)) {
+      handleFacilityError(error, "Failed to remove member");
+    }
+    // If the RPC is unavailable for another reason, try direct delete (protected by trg_guard_owner_membership_mutation)
     const { error: directErr } = await supabase
       .from("facility_memberships")
       .delete()
@@ -579,8 +662,7 @@ export async function removeFacilityMember(
       .eq("technician_profile_id", technicianProfileId);
 
     if (directErr) {
-      console.error("[TerraByte] Failed to remove facility member:", directErr);
-      throw new Error(directErr.message || error.message || "Failed to remove member.");
+      handleFacilityError(directErr, "Failed to remove member");
     }
   }
 }
@@ -591,7 +673,7 @@ export async function removeFacilityMember(
  */
 export async function transferFacilityOwnership(
   facilityId: string,
-  newOwnerProfileId: string
+  newOwnerProfileId: string,
 ): Promise<void> {
   const { error } = await supabase.rpc("transfer_facility_ownership", {
     p_facility_id: facilityId,
@@ -599,8 +681,7 @@ export async function transferFacilityOwnership(
   });
 
   if (error) {
-    console.error("[TerraByte] Failed to transfer facility ownership:", error);
-    throw new Error(error.message || "Failed to transfer facility ownership.");
+    handleFacilityError(error, "Failed to transfer facility ownership");
   }
 }
 
@@ -609,7 +690,7 @@ export async function transferFacilityOwnership(
  */
 export async function toggleDropOffApproval(
   facilityId: string,
-  dropOffApproved: boolean
+  dropOffApproved: boolean,
 ): Promise<void> {
   const { error } = await supabase
     .from("repair_facilities")
@@ -621,7 +702,6 @@ export async function toggleDropOffApproval(
     .eq("id", facilityId);
 
   if (error) {
-    console.error("[TerraByte] Failed to update drop-off approval:", error);
-    throw new Error(error.message || "Failed to update drop-off approval status.");
+    handleFacilityError(error, "Failed to update drop-off approval status");
   }
 }

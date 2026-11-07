@@ -364,6 +364,7 @@ export function Shell({ role, children, wide }: { role: Role; children: ReactNod
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
   const who = profile?.full_name?.trim() || email || "Signed in";
+  const farmerDisplayName = profile?.full_name?.trim() || t("shell.farmerPortal");
   const home = `/${role}` as "/farmer";
 
   const handleToggleNotifications = async () => {
@@ -438,7 +439,7 @@ export function Shell({ role, children, wide }: { role: Role; children: ReactNod
             </span>
             <span className="min-w-0">
               <span className="block font-display text-lg font-bold leading-none">TerraByte</span>
-              <span className="block truncate text-xs text-muted-foreground">{role === "farmer" ? t("shell.farmerPortal") : who}</span>
+              <span className="block truncate text-xs text-muted-foreground">{role === "farmer" ? farmerDisplayName : who}</span>
             </span>
           </Link>
           {typeof window !== "undefined" && sessionStorage.getItem("tb_demo_origin") === "home" && (

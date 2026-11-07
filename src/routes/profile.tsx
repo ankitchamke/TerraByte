@@ -29,11 +29,8 @@ import {
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/profile")({
-  head: () =>
-    meta(
-      "Profile settings",
-      "Manage your personal and workspace profile details."
-    ),
+  ssr: false,
+  head: () => meta("Profile settings", "Manage your personal and workspace profile details."),
   component: ProfilePage,
 });
 
@@ -57,9 +54,7 @@ function ProfilePage() {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
   // Account Security state
-  const isDemoAccount = Boolean(
-    email?.endsWith("@terrabyte.demo") || Boolean(profile?.demo_code)
-  );
+  const isDemoAccount = Boolean(email?.endsWith("@terrabyte.demo") || Boolean(profile?.demo_code));
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -132,17 +127,17 @@ function ProfilePage() {
     role === "service_centre"
       ? { to: "/admin", label: "Pipeline" }
       : role === "technician"
-      ? { to: "/technician", label: "Jobs" }
-      : { to: "/farmer", label: "Home" };
+        ? { to: "/technician", label: "Jobs" }
+        : { to: "/farmer", label: "Home" };
 
   const roleLabel =
     role === "service_centre"
       ? "Service Centre Staff"
       : role === "technician"
-      ? profile.is_verified
-        ? "Verified Technician"
-        : "Technician (Pending Approval)"
-      : "Farmer";
+        ? profile.is_verified
+          ? "Verified Technician"
+          : "Technician (Pending Approval)"
+        : "Farmer";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -182,11 +177,12 @@ function ProfilePage() {
 
       setSuccessMsg("Profile updated successfully.");
       toast.success("Profile updated successfully.");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[TerraByte] Profile update error:", err);
+      const errMsg = err instanceof Error ? err.message : "";
       const friendlyMessage =
-        err?.message && !err.message.includes("violates")
-          ? err.message
+        errMsg && !errMsg.includes("violates")
+          ? errMsg
           : "Failed to update profile. Please try again.";
       setErrorMsg(friendlyMessage);
       toast.error(friendlyMessage);
@@ -264,9 +260,10 @@ function ProfilePage() {
       setShowChangePassword(false);
       setSecuritySuccess("Password updated successfully.");
       toast.success("Password updated successfully.");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[TerraByte] Password change exception:", err);
-      setSecurityError(err?.message || "An unexpected error occurred while updating password.");
+      const errMsg = err instanceof Error ? err.message : "";
+      setSecurityError(errMsg || "An unexpected error occurred while updating password.");
     } finally {
       setSecurityBusy(false);
     }
@@ -317,9 +314,10 @@ function ProfilePage() {
 
       // 4. Navigate directly to Home
       void nav({ to: "/" });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[TerraByte] Account deletion failed:", err);
-      setDeleteError(err?.message || "Failed to delete account. Please try again.");
+      const errMsg = err instanceof Error ? err.message : "";
+      setDeleteError(errMsg || "Failed to delete account. Please try again.");
       setDeleteBusy(false);
     }
   };
@@ -352,7 +350,7 @@ function ProfilePage() {
                     "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold",
                     profile.is_verified
                       ? "bg-success/15 text-success border border-success/30"
-                      : "bg-warning/20 text-warning-foreground border border-warning/40"
+                      : "bg-warning/20 text-warning-foreground border border-warning/40",
                   )}
                 >
                   {profile.is_verified ? (
@@ -401,9 +399,7 @@ function ProfilePage() {
           <Card className="space-y-4 p-5">
             <div>
               <h2 className="font-display text-lg font-bold text-foreground">
-                {role === "service_centre"
-                  ? "Service Centre Details"
-                  : "Personal Information"}
+                {role === "service_centre" ? "Service Centre Details" : "Personal Information"}
               </h2>
               <p className="text-xs text-muted-foreground">
                 {role === "service_centre"
@@ -415,9 +411,7 @@ function ProfilePage() {
             <div className="space-y-3">
               <div>
                 <Label>
-                  {role === "service_centre"
-                    ? "Centre / Facility Name"
-                    : "Full Name"}{" "}
+                  {role === "service_centre" ? "Centre / Facility Name" : "Full Name"}{" "}
                   <span className="text-destructive">*</span>
                 </Label>
                 <input
@@ -440,8 +434,8 @@ function ProfilePage() {
                   {role === "technician"
                     ? "Personal / Direct Mobile"
                     : role === "service_centre"
-                    ? "Helpline / Operations Phone"
-                    : "Phone Number"}
+                      ? "Helpline / Operations Phone"
+                      : "Phone Number"}
                 </Label>
                 <input
                   type="tel"
@@ -468,9 +462,7 @@ function ProfilePage() {
                   value={village}
                   onChange={(e) => setVillage(e.target.value)}
                   placeholder={
-                    role === "service_centre"
-                      ? "e.g. Nagpur District"
-                      : "e.g. Saoner, Nagpur"
+                    role === "service_centre" ? "e.g. Nagpur District" : "e.g. Saoner, Nagpur"
                   }
                   className={input}
                 />
@@ -490,7 +482,7 @@ function ProfilePage() {
                   value={email || ""}
                   className={cn(
                     input,
-                    "cursor-not-allowed bg-muted/50 text-muted-foreground border-border/60"
+                    "cursor-not-allowed bg-muted/50 text-muted-foreground border-border/60",
                   )}
                 />
                 <p className="mt-1 text-[11px] text-muted-foreground">
@@ -521,8 +513,7 @@ function ProfilePage() {
                 <div className="space-y-3">
                   <div>
                     <Label>
-                      Workshop / Garage Name{" "}
-                      <span className="text-destructive">*</span>
+                      Workshop / Garage Name <span className="text-destructive">*</span>
                     </Label>
                     <input
                       type="text"
@@ -556,7 +547,7 @@ function ProfilePage() {
                       "mt-2 rounded-xl p-3.5 text-xs flex items-start gap-2.5",
                       profile.is_verified
                         ? "bg-success/10 border border-success/30 text-success-foreground"
-                        : "bg-warning/15 border border-warning/40 text-warning-foreground"
+                        : "bg-warning/15 border border-warning/40 text-warning-foreground",
                     )}
                   >
                     {profile.is_verified ? (
@@ -609,7 +600,9 @@ function ProfilePage() {
             </div>
             <div>
               <h2 className="font-display text-lg font-bold text-foreground">Account Security</h2>
-              <p className="text-xs text-muted-foreground">Manage your password and sign-in credentials.</p>
+              <p className="text-xs text-muted-foreground">
+                Manage your password and sign-in credentials.
+              </p>
             </div>
           </div>
 
@@ -633,7 +626,8 @@ function ProfilePage() {
               <div>
                 <p className="font-semibold text-foreground">Pre-seeded Nagpur Demo Account</p>
                 <p className="text-muted-foreground mt-0.5">
-                  Password modification is disabled for pre-seeded Nagpur demo accounts to preserve 1-click demo evaluation.
+                  Password modification is disabled for pre-seeded Nagpur demo accounts to preserve
+                  1-click demo evaluation.
                 </p>
               </div>
             </div>
@@ -642,7 +636,9 @@ function ProfilePage() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-border bg-muted/40 p-3.5">
                 <div>
                   <p className="text-xs font-semibold text-foreground">Sign-in Password</p>
-                  <p className="text-xs text-muted-foreground font-mono tracking-widest mt-0.5">••••••••••••</p>
+                  <p className="text-xs text-muted-foreground font-mono tracking-widest mt-0.5">
+                    ••••••••••••
+                  </p>
                 </div>
                 {!showChangePassword && (
                   <button
@@ -660,8 +656,13 @@ function ProfilePage() {
               </div>
 
               {showChangePassword && (
-                <form onSubmit={handleChangePassword} className="rounded-xl border border-border bg-card p-4 space-y-4">
-                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Change Password</h3>
+                <form
+                  onSubmit={handleChangePassword}
+                  className="rounded-xl border border-border bg-card p-4 space-y-4"
+                >
+                  <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Change Password
+                  </h3>
 
                   <div>
                     <Label>Current Password</Label>
@@ -751,7 +752,9 @@ function ProfilePage() {
             </div>
             <div>
               <h2 className="font-display text-lg font-bold text-destructive">Danger Zone</h2>
-              <p className="text-xs text-muted-foreground">Permanently delete your account and remove your access.</p>
+              <p className="text-xs text-muted-foreground">
+                Permanently delete your account and remove your access.
+              </p>
             </div>
           </div>
 
@@ -761,7 +764,8 @@ function ProfilePage() {
               <div>
                 <p className="font-semibold text-foreground">Pre-seeded TerraByte Demo Account</p>
                 <p className="text-muted-foreground mt-0.5">
-                  Account deletion is disabled for pre-seeded TerraByte demo accounts to preserve the demo environment.
+                  Account deletion is disabled for pre-seeded TerraByte demo accounts to preserve
+                  the demo environment.
                 </p>
               </div>
             </div>
@@ -771,7 +775,8 @@ function ProfilePage() {
                 <div>
                   <p className="text-xs font-semibold text-foreground">Delete Account</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Permanently delete your login credentials, unlink machinery assets, and remove access.
+                    Permanently delete your login credentials, unlink machinery assets, and remove
+                    access.
                   </p>
                 </div>
                 <button
@@ -800,7 +805,9 @@ function ProfilePage() {
                   <AlertTriangle className="h-6 w-6" />
                 </div>
                 <div>
-                  <h3 className="font-display text-lg font-bold text-foreground">Permanently Delete Account?</h3>
+                  <h3 className="font-display text-lg font-bold text-foreground">
+                    Permanently Delete Account?
+                  </h3>
                   <p className="text-xs text-muted-foreground">This action cannot be undone.</p>
                 </div>
               </div>
@@ -809,8 +816,14 @@ function ProfilePage() {
                 <p className="font-semibold text-destructive">Please read carefully:</p>
                 <ul className="list-disc pl-4 space-y-1 text-muted-foreground">
                   <li>Your sign-in credentials and active sessions will be permanently revoked.</li>
-                  <li>Active repairs must be completed or cancelled before you can delete your account.</li>
-                  <li>Completed repair records on machinery are preserved for permanent equipment service tracking.</li>
+                  <li>
+                    Active repairs must be completed or cancelled before you can delete your
+                    account.
+                  </li>
+                  <li>
+                    Completed repair records on machinery are preserved for permanent equipment
+                    service tracking.
+                  </li>
                 </ul>
               </div>
 
@@ -838,7 +851,8 @@ function ProfilePage() {
 
                 <div>
                   <Label>
-                    Type <span className="font-mono font-bold text-destructive">DELETE</span> to confirm
+                    Type <span className="font-mono font-bold text-destructive">DELETE</span> to
+                    confirm
                   </Label>
                   <input
                     type="text"
@@ -867,7 +881,9 @@ function ProfilePage() {
                   </button>
                   <button
                     type="submit"
-                    disabled={deleteBusy || deleteConfirmText.trim() !== "DELETE" || !deletePassword}
+                    disabled={
+                      deleteBusy || deleteConfirmText.trim() !== "DELETE" || !deletePassword
+                    }
                     className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-destructive px-4 text-xs font-semibold text-destructive-foreground hover:bg-destructive/90 transition-colors disabled:opacity-50"
                   >
                     {deleteBusy ? (

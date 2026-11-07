@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Building2, Compass, Loader2 } from "lucide-react";
+import { AlertCircle, Building2, Compass, Loader2 } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -21,6 +21,9 @@ import {
 } from "@/components/ui/select";
 import {
   registerFacility,
+  checkFacilityMigrationReadiness,
+  isFacilityMigrationPendingError,
+  FACILITY_MIGRATION_PENDING_MESSAGE,
   VIDARBHA_TAHSILS,
   TAHSIL_COORDINATES,
   type VidarbhaTahsil,
@@ -38,20 +41,53 @@ export function RegisterWorkshopDialog({
   onSuccess,
 }: RegisterWorkshopDialogProps) {
   const [submitting, setSubmitting] = useState(false);
+  const [checkingReadiness, setCheckingReadiness] = useState(false);
+  const [isMigrationUnavailable, setIsMigrationUnavailable] = useState(false);
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
   const [village, setVillage] = useState("");
   const [tahsil, setTahsil] = useState<VidarbhaTahsil>("Nagpur");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
-  const [lat, setLat] = useState<string>(String(TAHSIL_COORDINATES.Nagpur.lat));
-  const [lng, setLng] = useState<string>(String(TAHSIL_COORDINATES.Nagpur.lng));
+  const nagpurCoords = TAHSIL_COORDINATES["Nagpur"] ?? { lat: 21.1458, lng: 79.0882 };
+  const [lat, setLat] = useState<string>(String(nagpurCoords.lat));
+  const [lng, setLng] = useState<string>(String(nagpurCoords.lng));
   const [coordSource, setCoordSource] = useState<"centroid" | "gps" | "manual">("centroid");
   const [confirmCentroid, setConfirmCentroid] = useState(false);
   const [capacity, setCapacity] = useState<number>(4);
   const [openTime, setOpenTime] = useState("08:00");
   const [closeTime, setCloseTime] = useState("19:00");
   const [detectingGps, setDetectingGps] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    let mounted = true;
+    setCheckingReadiness(true);
+    checkFacilityMigrationReadiness()
+      .then((res) => {
+        if (!mounted) return;
+        if (!res.isReady) {
+          setIsMigrationUnavailable(true);
+          setSubmitError(res.message || FACILITY_MIGRATION_PENDING_MESSAGE);
+        } else {
+          setIsMigrationUnavailable(false);
+          setSubmitError(null);
+        }
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setIsMigrationUnavailable(true);
+        setSubmitError(FACILITY_MIGRATION_PENDING_MESSAGE);
+      })
+      .finally(() => {
+        if (mounted) setCheckingReadiness(false);
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [open]);
 
   const handleTahsilChange = (val: VidarbhaTahsil) => {
     setTahsil(val);
@@ -93,12 +129,16 @@ export function RegisterWorkshopDialog({
         setDetectingGps(false);
         toast.error(`Could not get GPS location: ${err.message}. Using tahsil centroid fallback.`);
       },
-      { timeout: 10000, enableHighAccuracy: true }
+      { timeout: 10000, enableHighAccuracy: true },
     );
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (isMigrationUnavailable) {
+      return;
+    }
 
     if (name.trim().length < 3) {
       toast.error("Workshop name must be at least 3 characters.");
@@ -126,13 +166,14 @@ export function RegisterWorkshopDialog({
 
     if (coordSource === "centroid" && !confirmCentroid) {
       toast.error(
-        "Please confirm that you are registering with approximate tahsil centroid coordinates, or click 'Detect GPS' for exact location."
+        "Please confirm that you are registering with approximate tahsil centroid coordinates, or click 'Detect GPS' for exact location.",
       );
       return;
     }
 
     try {
       setSubmitting(true);
+      setSubmitError(null);
       await registerFacility({
         name: name.trim(),
         address: address.trim(),
@@ -151,12 +192,19 @@ export function RegisterWorkshopDialog({
       });
 
       toast.success(
-        "Workshop registered successfully. Nagpur Service Centre will review for public drop-off approval."
+        "Workshop registered successfully. Nagpur Service Centre will review for public drop-off approval.",
       );
       onOpenChange(false);
       onSuccess();
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to register workshop facility.");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to register workshop facility.";
+      setSubmitError(msg);
+      if (isFacilityMigrationPendingError(err) || msg === FACILITY_MIGRATION_PENDING_MESSAGE) {
+        setIsMigrationUnavailable(true);
+        // Migration-pending notice is shown inline in the dialog banner; avoid duplicate toast notification.
+      } else {
+        toast.error(msg);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -175,6 +223,16 @@ export function RegisterWorkshopDialog({
             automatically designated as the <strong>Facility Owner</strong>.
           </DialogDescription>
         </DialogHeader>
+
+        {submitError && (
+          <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-3.5 text-xs text-destructive space-y-1">
+            <p className="font-semibold flex items-center gap-1.5">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span>Registration Unavailable</span>
+            </p>
+            <p>{submitError}</p>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4 py-2">
           <div className="space-y-2">
@@ -272,7 +330,8 @@ export function RegisterWorkshopDialog({
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Used as origin for dispatch distance and farmer turn-by-turn routing during handovers.
+                  Used as origin for dispatch distance and farmer turn-by-turn routing during
+                  handovers.
                 </p>
               </div>
               <Button
@@ -339,7 +398,8 @@ export function RegisterWorkshopDialog({
                     className="mt-0.5 rounded border-warning text-primary focus:ring-primary h-4 w-4"
                   />
                   <span>
-                    I understand these are approximate tahsil centroid coordinates, not my exact physical workshop location.
+                    I understand these are approximate tahsil centroid coordinates, not my exact
+                    physical workshop location.
                   </span>
                 </label>
               </div>
@@ -390,12 +450,17 @@ export function RegisterWorkshopDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={submitting}>
+            <Button
+              type="submit"
+              disabled={submitting || checkingReadiness || isMigrationUnavailable}
+            >
               {submitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Registering…
                 </>
+              ) : isMigrationUnavailable ? (
+                "Registration Unavailable"
               ) : (
                 "Register Workshop"
               )}

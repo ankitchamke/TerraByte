@@ -1159,18 +1159,23 @@ BEGIN
   END IF;
 
   -- 4. Reject Any Complete Identifiers (Strict Anti-PII Guards)
-  IF v_trimmed_id ~* '^[0-9]{12}$' THEN
+  IF v_trimmed_id ~* '^[0-9]{12}$' OR v_trimmed_id ~* '^[0-9]{4}[ -][0-9]{4}[ -][0-9]{4}$' THEN
     RAISE EXCEPTION 'ILLEGAL_FULL_UID_STORAGE: Storing full 12-digit Aadhaar numbers is strictly prohibited.'
       USING ERRCODE = '22000';
   END IF;
 
-  IF v_trimmed_id ~* '^[A-Z]{5}[0-9]{4}[A-Z]$' THEN
+  IF (v_trimmed_id ~* '^[A-Z]{5}[0-9]{4}[A-Z]$') AND NOT (v_trimmed_id ~* '^[X]{5}') THEN
     RAISE EXCEPTION 'ILLEGAL_FULL_PAN_STORAGE: Storing complete PAN numbers is strictly prohibited.'
       USING ERRCODE = '22000';
   END IF;
 
   IF v_trimmed_id ~* '^[A-Z]{3}[0-9]{7}$' THEN
     RAISE EXCEPTION 'ILLEGAL_FULL_VOTER_ID_STORAGE: Storing complete Voter IDs is strictly prohibited.'
+      USING ERRCODE = '22000';
+  END IF;
+
+  IF v_trimmed_id ~* '^[A-Z]{2}[- ]?[0-9]{2}[- ]?[0-9]{4}[- ]?[0-9]{7}$' THEN
+    RAISE EXCEPTION 'ILLEGAL_FULL_DL_STORAGE: Storing complete Driving Licence numbers is strictly prohibited.'
       USING ERRCODE = '22000';
   END IF;
 
@@ -1182,23 +1187,31 @@ BEGIN
           USING ERRCODE = '22000';
       END IF;
     WHEN 'PAN_CARD' THEN
-      IF NOT (v_trimmed_id ~* '^PAN-XX-[0-9A-Z]{4}$') THEN
-        RAISE EXCEPTION 'INVALID_PAN_MASK: PAN card must be masked strictly as PAN-XX-1234.'
+      IF NOT (v_trimmed_id ~* '^X{5}[0-9]{4}[A-Z]$') THEN
+        RAISE EXCEPTION 'INVALID_PAN_MASK: PAN card must be masked strictly as XXXXX1234X.'
           USING ERRCODE = '22000';
       END IF;
     WHEN 'VOTER_ID' THEN
-      IF NOT (v_trimmed_id ~* '^VID-XX-[0-9A-Z]{4}$') THEN
-        RAISE EXCEPTION 'INVALID_VOTER_ID_MASK: Voter ID must be masked strictly as VID-XX-1234.'
+      IF length(v_trimmed_id) != 10 OR NOT (v_trimmed_id ~* '^[A-Z]{3}[*X]{6}[0-9A-Z]$') THEN
+        RAISE EXCEPTION 'INVALID_VOTER_ID_MASK: Voter ID must be 10 characters masked as ABC******7.'
           USING ERRCODE = '22000';
       END IF;
     WHEN 'DRIVING_LICENSE' THEN
-      IF NOT (v_trimmed_id ~* '^DL-XX-[0-9A-Z]{4}$') THEN
-        RAISE EXCEPTION 'INVALID_DL_MASK: Driving license must be masked strictly as DL-XX-1234.'
+      IF NOT (v_trimmed_id ~* '^[A-Z]{2}[- ]?[0-9]{2}[- ]?(?:[0-9]{4}|YYYY)[- ]?[*X]{3,7}[0-9A-Z]{1,4}$') THEN
+        RAISE EXCEPTION 'INVALID_DL_MASK: Driving license must be masked with State, RTO, year and masked serial (e.g. MH-31-2018-XXX1234).'
           USING ERRCODE = '22000';
       END IF;
     WHEN 'WORKSHOP_TRADE_LICENSE' THEN
-      IF NOT (v_trimmed_id ~* '^TL-XX-[0-9A-Z]{4}$') THEN
-        RAISE EXCEPTION 'INVALID_TRADE_LICENSE_MASK: Trade license must be masked strictly as TL-XX-1234.'
+      IF length(v_trimmed_id) < 8 OR length(v_trimmed_id) > 30 THEN
+        RAISE EXCEPTION 'INVALID_TRADE_LICENSE_LENGTH: Trade license must be between 8 and 30 characters.'
+          USING ERRCODE = '22000';
+      END IF;
+      IF NOT (v_trimmed_id ~* '^[A-Z0-9][A-Z0-9\-/ ]+[A-Z0-9]$') THEN
+        RAISE EXCEPTION 'INVALID_TRADE_LICENSE_CHARS: Trade license contains invalid characters.'
+          USING ERRCODE = '22000';
+      END IF;
+      IF NOT (v_trimmed_id ~* '[*X]{2,}') THEN
+        RAISE EXCEPTION 'UNMASKED_TRADE_LICENSE: Trade license must be masked with at least two mask characters (XX or **).'
           USING ERRCODE = '22000';
       END IF;
     ELSE

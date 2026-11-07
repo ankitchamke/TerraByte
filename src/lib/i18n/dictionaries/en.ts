@@ -227,6 +227,28 @@ export const en = {
     activeRepairBanner: "This machine is currently undergoing repair.",
     viewActiveRepair: "View active repair job",
   },
+  reviews: {
+    sectionTitle: "Verified Technician Review",
+    rateTechnician: "Rate & Review Technician",
+    reviewSubtitle: "Help fellow Vidarbha farmers find trusted machinery technicians. Your review is permanently tied to this completed repair.",
+    overallRating: "Overall Rating",
+    timelinessRating: "Timeliness & Punctuality",
+    qualityRating: "Quality of Repair Work",
+    commentsLabel: "Your Review / Feedback",
+    commentsPlaceholder: "Share details about the technician's repair quality, transparency, and conduct…",
+    submitBtn: "Submit Verified Review",
+    submittingBtn: "Submitting Review…",
+    submittedTitle: "Your Verified Review",
+    verifiedBadge: "Verified Repair Review",
+    unrated: "New / Unrated",
+    alreadyReviewedNotice: "You have submitted a verified review for this completed repair.",
+    ineligibleNotice: "Reviews unlock once repair is completed and saved to service history.",
+    repairsCount: "repairs",
+    reviewsCount: "reviews",
+    errorRequiredRating: "Please select an overall star rating (1–5).",
+    errorCommentsSensitive: "Review comments must not contain private phone numbers or credential digits.",
+    successToast: "Thank you! Your verified review has been published.",
+  },
 };
 
 export type TranslationDictionary = typeof en;

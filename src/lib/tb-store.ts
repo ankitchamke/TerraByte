@@ -43,7 +43,7 @@ export interface Technician {
   distanceKm: number;
   etaMin: number;
   available: boolean;
-  rating: number;
+  rating: number | null;
   jobsDone: number;
   phone: string;
 }
@@ -429,7 +429,7 @@ function seed(): TBState {
       distanceKm: 7,
       etaMin: 45,
       available: true,
-      rating: 5.0,
+      rating: null,
       jobsDone: 0,
       phone: "+91 90110 00001",
     },

@@ -131,8 +131,19 @@ export function TechCard({
           {t.distanceKm} km · ~{t.etaMin} min
         </span>
         <span className="flex items-center gap-1">
-          <Star className="h-4 w-4 fill-accent text-accent" />
-          {t.rating} · {t.jobsDone} repairs
+          <Star
+            className={cn(
+              "h-4 w-4",
+              t.rating != null ? "fill-accent text-accent" : "text-muted-foreground",
+            )}
+          />
+          {t.rating != null ? (
+            <span>
+              {typeof t.rating === "number" ? t.rating.toFixed(1) : t.rating} · {t.jobsDone} repairs
+            </span>
+          ) : (
+            <span className="font-medium text-muted-foreground">New / Unrated</span>
+          )}
         </span>
         {isKycVerified ? (
           <span className="inline-flex items-center gap-1 text-xs font-semibold text-success">

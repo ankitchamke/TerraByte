@@ -63,6 +63,7 @@ import {
   type ScoredTechnicianMatch,
   type VerifiedTechnicianWithProfile,
 } from "@/lib/services/technicians";
+import { VerifiedReviewSection } from "@/components/reviews/VerifiedReviewSection";
 import {
   ago,
   fmtTime,
@@ -122,7 +123,7 @@ function formatTechCardData(t: VerifiedTechnicianWithProfile): Technician {
     distanceKm: t.distance_km ?? 0,
     etaMin: t.eta_minutes ?? 45,
     available: Boolean(t.is_available),
-    rating: Number(t.rating ?? 4.8),
+    rating: t.rating != null ? Number(t.rating) : null,
     jobsDone: t.jobs_completed ?? 0,
     phone: t.profile?.phone || t.phone || "",
   };
@@ -347,7 +348,7 @@ function RepairHub() {
           distanceKm: 0,
           etaMin: 45,
           available: true,
-          rating: 4.8,
+          rating: null,
           jobsDone: 0,
           phone: r.technician.phone || "",
         }
@@ -1168,6 +1169,16 @@ function RepairHub() {
             )}
           </div>
         </section>
+      )}
+
+      {r.status === "COMPLETED" && (assignedTechData || r.technician_id) && (
+        <VerifiedReviewSection
+          repairId={r.id}
+          technicianName={assignedTechData?.name || "Technician"}
+          technicianProfileId={assignedTechData?.id || r.technician_id!}
+          facilityId={assignedTech?.primary_facility_id || null}
+          isCompleted={true}
+        />
       )}
 
       {assignedTechData && r.status !== "REQUESTED" && r.status !== "CANCELLED" && (

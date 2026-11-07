@@ -716,7 +716,7 @@ export type Database = {
           jobs_completed: number;
           phone: string | null;
           profile_id: string;
-          rating: number;
+          rating: number | null;
           skills: string[];
           updated_at: string;
           workshop_name: string;
@@ -742,7 +742,7 @@ export type Database = {
           jobs_completed?: number;
           phone?: string | null;
           profile_id: string;
-          rating?: number;
+          rating?: number | null;
           skills?: string[];
           updated_at?: string;
           workshop_name: string;
@@ -768,7 +768,7 @@ export type Database = {
           jobs_completed?: number;
           phone?: string | null;
           profile_id?: string;
-          rating?: number;
+          rating?: number | null;
           skills?: string[];
           updated_at?: string;
           workshop_name?: string;
@@ -908,6 +908,90 @@ export type Database = {
             columns: ["technician_profile_id"];
             isOneToOne: false;
             referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      technician_reviews: {
+        Row: {
+          id: string;
+          repair_id: string;
+          service_history_id: string;
+          farmer_profile_id: string;
+          technician_profile_id: string;
+          facility_id: string | null;
+          rating: number;
+          comment: string | null;
+          timeliness_rating: number | null;
+          quality_rating: number | null;
+          is_published: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          repair_id: string;
+          service_history_id: string;
+          farmer_profile_id: string;
+          technician_profile_id: string;
+          facility_id?: string | null;
+          rating: number;
+          comment?: string | null;
+          timeliness_rating?: number | null;
+          quality_rating?: number | null;
+          is_published?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          repair_id?: string;
+          service_history_id?: string;
+          farmer_profile_id?: string;
+          technician_profile_id?: string;
+          facility_id?: string | null;
+          rating?: number;
+          comment?: string | null;
+          timeliness_rating?: number | null;
+          quality_rating?: number | null;
+          is_published?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "technician_reviews_repair_id_fkey";
+            columns: ["repair_id"];
+            isOneToOne: true;
+            referencedRelation: "repair_requests";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "technician_reviews_service_history_id_fkey";
+            columns: ["service_history_id"];
+            isOneToOne: false;
+            referencedRelation: "service_history";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "technician_reviews_farmer_profile_id_fkey";
+            columns: ["farmer_profile_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "technician_reviews_technician_profile_id_fkey";
+            columns: ["technician_profile_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "technician_reviews_facility_id_fkey";
+            columns: ["facility_id"];
+            isOneToOne: false;
+            referencedRelation: "repair_facilities";
             referencedColumns: ["id"];
           },
         ];

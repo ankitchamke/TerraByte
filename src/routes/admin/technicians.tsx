@@ -14,6 +14,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sparkles,
+  Star,
   UserCheck,
   Wrench,
   X,
@@ -391,6 +392,19 @@ function AdminTechniciansPage() {
                       <span>·</span>
                       <Phone className="h-3 w-3" />
                       <span>{tech.phone || "No phone"}</span>
+                    </p>
+                    <p className="text-xs text-muted-foreground flex items-center gap-1.5 mt-1">
+                      <Star
+                        className={cn(
+                          "h-3.5 w-3.5",
+                          tech.rating != null ? "fill-accent text-accent" : "text-muted-foreground",
+                        )}
+                      />
+                      <span className="font-semibold text-foreground">
+                        {tech.rating != null ? Number(tech.rating).toFixed(1) : "New / Unrated"}
+                      </span>
+                      <span>·</span>
+                      <span>{tech.jobs_completed} repairs</span>
                     </p>
                   </div>
 

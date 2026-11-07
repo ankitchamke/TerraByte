@@ -15,6 +15,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sparkles,
+  Star,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -43,6 +44,11 @@ import {
   rejectFacilityInvitation,
   type AffiliatedFacility,
 } from "@/lib/services/facilities";
+import {
+  getTechnicianReviews,
+  formatTechnicianRating,
+  type TechnicianReview,
+} from "@/lib/services/reviews";
 import { RegisterWorkshopDialog } from "@/components/workshop/RegisterWorkshopDialog";
 import { ManageWorkshopDialog } from "@/components/workshop/ManageWorkshopDialog";
 
@@ -57,6 +63,7 @@ function TechHome() {
   const [privateProfile, setPrivateProfile] = useState<TechnicianPrivateProfile | null>(null);
   const [repairs, setRepairs] = useState<RepairRequestWithEquipment[]>([]);
   const [facilities, setFacilities] = useState<AffiliatedFacility[]>([]);
+  const [reviews, setReviews] = useState<TechnicianReview[]>([]);
   const [available, setAvailable] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -86,10 +93,14 @@ function TechHome() {
       setRepairs(repairsData);
       setFacilities(facilitiesData);
 
-      // Fetch private KYC and AI skills profile
+      // Fetch private KYC, AI skills profile, and verified reviews
       if (profile?.id) {
-        const priv = await getTechnicianPrivateProfile(profile.id).catch(() => null);
+        const [priv, revs] = await Promise.all([
+          getTechnicianPrivateProfile(profile.id).catch(() => null),
+          getTechnicianReviews(profile.id).catch(() => []),
+        ]);
         setPrivateProfile(priv);
+        setReviews(revs);
       }
 
       hasLoadedRef.current = true;
@@ -545,6 +556,123 @@ function TechHome() {
           onFacilityUpdated={() => void loadData()}
         />
       )}
+
+      {/* Verified Reviews & Farmer Feedback Section */}
+      <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="rounded-xl bg-accent/15 p-2 text-accent">
+              <Star className="h-5 w-5 fill-accent" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-bold">Verified Ratings & Farmer Feedback</h2>
+                <Badge
+                  variant={techProfile?.rating != null ? "default" : "outline"}
+                  className="text-xs"
+                >
+                  {techProfile?.rating != null
+                    ? `${Number(techProfile.rating).toFixed(1)} ★ (${reviews.length} reviews)`
+                    : "New / Unrated"}
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Authentic reviews from completed machinery repairs with permanent service history.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Reputation Metrics Summary */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          <div className="rounded-xl border border-border/60 bg-muted/20 p-3 space-y-1">
+            <p className="text-xs text-muted-foreground">Overall Rating</p>
+            <p className="text-xl font-bold font-display text-foreground flex items-center gap-1.5">
+              <Star
+                className={cn(
+                  "h-4 w-4",
+                  techProfile?.rating != null ? "fill-accent text-accent" : "text-muted-foreground",
+                )}
+              />
+              {techProfile?.rating != null
+                ? Number(techProfile.rating).toFixed(1)
+                : "New / Unrated"}
+            </p>
+          </div>
+          <div className="rounded-xl border border-border/60 bg-muted/20 p-3 space-y-1">
+            <p className="text-xs text-muted-foreground">Verified Reviews</p>
+            <p className="text-xl font-bold font-display text-foreground">
+              {reviews.length}
+            </p>
+          </div>
+          <div className="rounded-xl border border-border/60 bg-muted/20 p-3 space-y-1 col-span-2 sm:col-span-1">
+            <p className="text-xs text-muted-foreground">Repairs Completed</p>
+            <p className="text-xl font-bold font-display text-foreground">
+              {techProfile?.jobs_completed ?? 0}
+            </p>
+          </div>
+        </div>
+
+        {/* Reviews List */}
+        {reviews.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+            No farmer reviews yet. Once you complete a repair and it is written to the machine's permanent service history, the farmer can submit a verified review here.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {reviews.map((rev) => (
+              <div
+                key={rev.id}
+                className="rounded-xl border border-border/70 bg-card p-4 space-y-2.5 text-xs"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-foreground text-sm">
+                      {rev.farmer?.full_name || "Verified Farmer"}
+                    </span>
+                    {rev.farmer?.village && (
+                      <span className="text-muted-foreground flex items-center gap-0.5">
+                        <MapPin className="h-3 w-3" />
+                        {rev.farmer.village}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 font-bold text-sm">
+                    <Star className="h-4 w-4 fill-accent text-accent" />
+                    <span>{rev.rating}.0</span>
+                  </div>
+                </div>
+
+                {(rev.timeliness_rating || rev.quality_rating) && (
+                  <div className="flex gap-4 text-[11px] text-muted-foreground">
+                    {rev.timeliness_rating && (
+                      <span>Timeliness: <strong>{rev.timeliness_rating}/5</strong></span>
+                    )}
+                    {rev.quality_rating && (
+                      <span>Quality: <strong>{rev.quality_rating}/5</strong></span>
+                    )}
+                  </div>
+                )}
+
+                {rev.comment && (
+                  <p className="text-foreground whitespace-pre-wrap rounded-lg bg-muted/30 p-2.5">
+                    "{rev.comment}"
+                  </p>
+                )}
+
+                <p className="text-[10px] text-muted-foreground">
+                  Reviewed on{" "}
+                  {new Date(rev.created_at).toLocaleDateString("en-IN", {
+                    day: "numeric",
+                    month: "short",
+                    year: "numeric",
+                  })}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
       <Section
         title={`Incoming requests (${incoming.length})`}
         list={incoming}

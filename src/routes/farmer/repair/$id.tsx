@@ -436,31 +436,45 @@ function RepairHub() {
       }
     : null;
 
-  const allQuotes = quotes.length > 0 ? quotes : demoQuoteDetail ? [demoQuoteDetail] : [];
-  const pendingQuote = allQuotes.find((q) => q.status === "PENDING");
+  const sortedQuotes = [...quotes].sort((a, b) => (a.version || 1) - (b.version || 1));
+  const allQuotes =
+    sortedQuotes.length > 0 ? sortedQuotes : demoQuoteDetail ? [demoQuoteDetail] : [];
+  const latestQuote = allQuotes.length > 0 ? allQuotes[allQuotes.length - 1] : null;
+  const pendingQuote = latestQuote?.status === "PENDING" ? latestQuote : null;
   const approvedQuote = allQuotes.find((q) => q.status === "APPROVED");
-  const activeQuote = pendingQuote || approvedQuote || allQuotes[allQuotes.length - 1];
+  const activeQuote = pendingQuote || approvedQuote || latestQuote;
   const viewQuote = activeQuote ? toQuoteView(activeQuote) : demoRepair?.quote || null;
 
   const isAwaitingDecision = Boolean(
-    pendingQuote ||
-    r.status === "QUOTE_PENDING" ||
-    (r.status === "WAITING_FOR_PARTS" && Boolean(pendingQuote)),
+    pendingQuote &&
+    pendingQuote.status === "PENDING" &&
+    (r.status === "QUOTE_PENDING" || (r.status === "WAITING_FOR_PARTS" && Boolean(pendingQuote))),
   );
 
   const handleApproveQuote = async () => {
     if (!pendingQuote || actionInProgress) return;
     setActionInProgress(true);
     try {
+      let updated: QuoteDetail | undefined;
       if (pendingQuote.id.startsWith("demo-") || !isUuid(pendingQuote.id)) {
         actions.approveQuote(r.job_number || r.id);
       } else {
-        await approveQuote(pendingQuote.id);
+        updated = await approveQuote(pendingQuote.id);
+        try {
+          actions.approveQuote(r.job_number || r.id);
+        } catch (syncErr) {
+          console.debug("[TerraByte] Demo store sync skipped:", syncErr);
+        }
       }
+      if (updated) {
+        setQuotes((prev) => prev.map((q) => (q.id === updated.id ? updated : q)));
+      }
+      setR((prev) => (prev ? { ...prev, status: "IN_PROGRESS" } : null));
       toast.success("Repair authorized. Technician notified.");
       await loadData();
     } catch (err: any) {
       toast.error(err?.message || "Failed to approve quote");
+      await loadData();
     } finally {
       setActionInProgress(false);
     }
@@ -472,18 +486,28 @@ function RepairHub() {
 
     setActionInProgress(true);
     try {
+      let updated: QuoteDetail | undefined;
+      const cleanReason = revisionReason === "Other" ? otherExplanation.trim() : revisionReason;
       if (pendingQuote.id.startsWith("demo-") || !isUuid(pendingQuote.id)) {
-        actions.declineQuote(
-          r.job_number || r.id,
-          revisionReason === "Other" ? otherExplanation.trim() : revisionReason,
-        );
+        actions.declineQuote(r.job_number || r.id, cleanReason);
       } else {
-        await rejectQuote(pendingQuote.id, {
+        updated = await rejectQuote(pendingQuote.id, {
           reason: revisionReason,
           explanation: revisionReason === "Other" ? otherExplanation.trim() : undefined,
           photo: photoUrl.trim() || undefined,
         });
+        try {
+          actions.declineQuote(r.job_number || r.id, cleanReason);
+        } catch (syncErr) {
+          console.debug("[TerraByte] Demo store sync skipped:", syncErr);
+        }
       }
+      if (updated) {
+        setQuotes((prev) => prev.map((q) => (q.id === updated.id ? updated : q)));
+      }
+      setR((prev) =>
+        prev ? { ...prev, status: "QUOTE_REVISED", clarification_note: cleanReason } : null,
+      );
       setDeclining(false);
       setOtherExplanation("");
       setPhotoUrl("");
@@ -491,6 +515,7 @@ function RepairHub() {
       await loadData();
     } catch (err: any) {
       toast.error(err?.message || "Failed to request quote revision");
+      await loadData();
     } finally {
       setActionInProgress(false);
     }
@@ -1293,7 +1318,9 @@ function RepairHub() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {isUnassignedRequested ? t("repair.cancelRepairTitle") : t("repair.cancelRepairTitle")}
+              {isUnassignedRequested
+                ? t("repair.cancelRepairTitle")
+                : t("repair.cancelRepairTitle")}
             </DialogTitle>
             <DialogDescription>
               {isUnassignedRequested

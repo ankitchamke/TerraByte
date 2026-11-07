@@ -21,6 +21,27 @@ export interface TechnicianReview {
   } | null;
 }
 
+interface RawReviewRow {
+  id: string;
+  repair_id: string;
+  service_history_id: string;
+  farmer_profile_id: string;
+  technician_profile_id: string;
+  facility_id: string | null;
+  rating: number;
+  comment: string | null;
+  timeliness_rating: number | null;
+  quality_rating: number | null;
+  is_published: boolean;
+  created_at: string;
+  updated_at: string;
+  farmer?: {
+    id?: string;
+    full_name?: string | null;
+    village?: string | null;
+  } | null;
+}
+
 export interface CreateReviewInput {
   repairId: string;
   serviceHistoryId: string;
@@ -100,36 +121,63 @@ export function formatTechnicianRating(
 
 /**
  * Resolves current authenticated profile id and role.
+ * Resilient against:
+ * 1. SETOF record vs single record RPC returns from get_session_profile.
+ * 2. Profile security architecture column-level privilege boundaries (no forbidden auth_user_id select on profiles).
+ * 3. Session resolution across browser, server, and mock client environments.
  */
-async function getCurrentUserProfile(): Promise<{ id: string; role: string } | null> {
+export async function getCurrentUserProfile(
+  client: any = supabase,
+): Promise<{ id: string; role: string } | null> {
   const {
     data: { session },
-  } = await supabase.auth.getSession();
-  const sessionUser = session?.user;
+  } = await client.auth.getSession();
+  const sessionUser =
+    session?.user || (await client.auth.getUser?.().catch(() => null))?.data?.user;
   if (!sessionUser) return null;
 
   try {
-    const { data: rpcData, error: rpcError } = await supabase.rpc("get_session_profile");
-    if (!rpcError && rpcData && typeof rpcData === "object" && "id" in rpcData) {
-      return {
-        id: (rpcData as { id: string }).id,
-        role: (rpcData as { role: string }).role || "farmer",
-      };
+    const { data: sessionData, error: rpcError } = await client.rpc("get_session_profile");
+    if (!rpcError && sessionData) {
+      const row = Array.isArray(sessionData)
+        ? sessionData[0]
+        : typeof sessionData === "object" && sessionData !== null
+          ? sessionData
+          : null;
+      if (row && typeof row === "object" && "id" in row && (row as any).id) {
+        return {
+          id: String((row as any).id),
+          role: String((row as any).role || "farmer"),
+        };
+      }
     }
   } catch {
     // Ignore RPC missing error
   }
 
-  // Fallback direct profile query
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("id, role")
-    .eq("auth_user_id", sessionUser.id)
-    .maybeSingle();
+  // Fallback direct profile query conforming to profile security architecture
+  try {
+    const { data: secretRow } = await client
+      .from("profile_auth_secrets")
+      .select("profile_id")
+      .eq("auth_user_id", sessionUser.id)
+      .maybeSingle();
 
-  if (profile) {
-    return { id: profile.id, role: profile.role || "farmer" };
+    const targetProfileId = secretRow?.profile_id || sessionUser.id;
+
+    const { data: profile } = await client
+      .from("profiles")
+      .select("id, role")
+      .eq("id", targetProfileId)
+      .maybeSingle();
+
+    if (profile) {
+      return { id: profile.id, role: profile.role || "farmer" };
+    }
+  } catch {
+    // Fail-closed
   }
+
   return null;
 }
 
@@ -143,17 +191,20 @@ async function getCurrentUserProfile(): Promise<{ id: string; role: string } | n
  * 4. Linked permanent service_history record must exist.
  * 5. Exactly one review per repair: must not have already been reviewed.
  */
-export async function checkReviewEligibility(repairId: string): Promise<ReviewEligibilityResult> {
+export async function checkReviewEligibility(
+  repairId: string,
+  client: any = supabase,
+): Promise<ReviewEligibilityResult> {
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairId);
 
   // 1. Resolve Repair
   const { data: repair, error: repairError } = isUuid
-    ? await supabase
+    ? await client
         .from("repair_requests")
         .select("id, job_number, status, farmer_id, technician_id")
         .eq("id", repairId)
         .maybeSingle()
-    : await supabase
+    : await client
         .from("repair_requests")
         .select("id, job_number, status, farmer_id, technician_id")
         .eq("job_number", repairId)
@@ -168,7 +219,7 @@ export async function checkReviewEligibility(repairId: string): Promise<ReviewEl
   }
 
   // 2. Caller Authentication & Ownership
-  const caller = await getCurrentUserProfile();
+  const caller = await getCurrentUserProfile(client);
   if (!caller) {
     return {
       isEligible: false,
@@ -204,7 +255,7 @@ export async function checkReviewEligibility(repairId: string): Promise<ReviewEl
   }
 
   // 5. Linked Service History Invariant
-  const { data: history, error: historyError } = await supabase
+  const { data: history, error: historyError } = await client
     .from("service_history")
     .select("id, service_date, operating_hours")
     .eq("repair_request_id", repair.id)
@@ -220,7 +271,7 @@ export async function checkReviewEligibility(repairId: string): Promise<ReviewEl
   }
 
   // 6. Existing Review Check (One review per repair)
-  const existingReview = await getRepairReview(repair.id).catch(() => null);
+  const existingReview = await getRepairReview(repair.id, client).catch(() => null);
   if (existingReview) {
     return {
       isEligible: false,
@@ -242,12 +293,15 @@ export async function checkReviewEligibility(repairId: string): Promise<ReviewEl
 /**
  * Fetches the review submitted for a specific repair request, if any.
  */
-export async function getRepairReview(repairId: string): Promise<TechnicianReview | null> {
+export async function getRepairReview(
+  repairId: string,
+  client: any = supabase,
+): Promise<TechnicianReview | null> {
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairId);
   let targetRepairId = repairId;
 
   if (!isUuid) {
-    const { data: repair } = await supabase
+    const { data: repair } = await client
       .from("repair_requests")
       .select("id")
       .eq("job_number", repairId)
@@ -256,7 +310,7 @@ export async function getRepairReview(repairId: string): Promise<TechnicianRevie
     targetRepairId = repair.id;
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from("technician_reviews")
     .select(
       `
@@ -292,30 +346,26 @@ export async function getRepairReview(repairId: string): Promise<TechnicianRevie
 
   if (!data) return null;
 
-  const raw = data as Record<string, unknown>;
-  const farmerData = raw.farmer as {
-    id?: string;
-    full_name?: string | null;
-    village?: string | null;
-  } | null;
+  const raw = data as unknown as RawReviewRow;
+  const farmerData = raw.farmer;
 
   return {
-    id: raw.id as string,
-    repair_id: raw.repair_id as string,
-    service_history_id: raw.service_history_id as string,
-    farmer_profile_id: raw.farmer_profile_id as string,
-    technician_profile_id: raw.technician_profile_id as string,
-    facility_id: (raw.facility_id as string) || null,
+    id: raw.id,
+    repair_id: raw.repair_id,
+    service_history_id: raw.service_history_id,
+    farmer_profile_id: raw.farmer_profile_id,
+    technician_profile_id: raw.technician_profile_id,
+    facility_id: raw.facility_id || null,
     rating: Number(raw.rating),
-    comment: (raw.comment as string) || null,
+    comment: raw.comment || null,
     timeliness_rating: raw.timeliness_rating != null ? Number(raw.timeliness_rating) : null,
     quality_rating: raw.quality_rating != null ? Number(raw.quality_rating) : null,
     is_published: Boolean(raw.is_published),
-    created_at: raw.created_at as string,
-    updated_at: raw.updated_at as string,
+    created_at: raw.created_at,
+    updated_at: raw.updated_at,
     farmer: farmerData
       ? {
-          id: farmerData.id || (raw.farmer_profile_id as string),
+          id: farmerData.id || raw.farmer_profile_id,
           full_name: farmerData.full_name || "Verified Farmer",
           village: farmerData.village || null,
         }
@@ -327,7 +377,10 @@ export async function getRepairReview(repairId: string): Promise<TechnicianRevie
  * Submits a verified review for a completed repair.
  * Enforces client and server validation: rating bounds 1..5, anti-PII remarks, ownership, and service history.
  */
-export async function submitTechnicianReview(input: CreateReviewInput): Promise<TechnicianReview> {
+export async function submitTechnicianReview(
+  input: CreateReviewInput,
+  client: any = supabase,
+): Promise<TechnicianReview> {
   // 1. Rating Range Invariant (1 to 5 integer)
   if (!Number.isInteger(input.rating) || input.rating < 1 || input.rating > 5) {
     throw new Error("INVALID_RATING: Overall rating must be an integer between 1 and 5 stars.");
@@ -359,7 +412,7 @@ export async function submitTechnicianReview(input: CreateReviewInput): Promise<
   }
 
   // 4. Verify Eligibility
-  const eligibility = await checkReviewEligibility(input.repairId);
+  const eligibility = await checkReviewEligibility(input.repairId, client);
   if (!eligibility.isEligible) {
     switch (eligibility.reason) {
       case "ALREADY_REVIEWED":
@@ -381,7 +434,7 @@ export async function submitTechnicianReview(input: CreateReviewInput): Promise<
     }
   }
 
-  const caller = await getCurrentUserProfile();
+  const caller = await getCurrentUserProfile(client);
   if (!caller) {
     throw new Error("UNAUTHORIZED: You must be logged in to submit a review.");
   }
@@ -393,7 +446,7 @@ export async function submitTechnicianReview(input: CreateReviewInput): Promise<
   // 5. Insert directly into public.technician_reviews
   // Protected by RLS WITH CHECK, DB CHECK constraints, and unique constraint on repair_id.
   // Triggers trg_recalculate_technician_rating automatically.
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from("technician_reviews")
     .insert({
       repair_id: targetRepairId,
@@ -461,8 +514,9 @@ export async function submitTechnicianReview(input: CreateReviewInput): Promise<
  */
 export async function getTechnicianReviews(
   technicianProfileId: string,
+  client: any = supabase,
 ): Promise<TechnicianReview[]> {
-  const { data, error } = await supabase
+  const { data, error } = await client
     .from("technician_reviews")
     .select(
       `
@@ -497,29 +551,25 @@ export async function getTechnicianReviews(
     throw new Error(`Failed to load technician reviews: ${error.message}`);
   }
 
-  return ((data as unknown as Array<Record<string, unknown>>) || []).map((raw) => {
-    const farmerData = raw.farmer as {
-      id?: string;
-      full_name?: string | null;
-      village?: string | null;
-    } | null;
+  return ((data as unknown as RawReviewRow[]) || []).map((raw) => {
+    const farmerData = raw.farmer;
     return {
-      id: raw.id as string,
-      repair_id: raw.repair_id as string,
-      service_history_id: raw.service_history_id as string,
-      farmer_profile_id: raw.farmer_profile_id as string,
-      technician_profile_id: raw.technician_profile_id as string,
-      facility_id: (raw.facility_id as string) || null,
+      id: raw.id,
+      repair_id: raw.repair_id,
+      service_history_id: raw.service_history_id,
+      farmer_profile_id: raw.farmer_profile_id,
+      technician_profile_id: raw.technician_profile_id,
+      facility_id: raw.facility_id || null,
       rating: Number(raw.rating),
-      comment: (raw.comment as string) || null,
+      comment: raw.comment || null,
       timeliness_rating: raw.timeliness_rating != null ? Number(raw.timeliness_rating) : null,
       quality_rating: raw.quality_rating != null ? Number(raw.quality_rating) : null,
       is_published: Boolean(raw.is_published),
-      created_at: raw.created_at as string,
-      updated_at: raw.updated_at as string,
+      created_at: raw.created_at,
+      updated_at: raw.updated_at,
       farmer: farmerData
         ? {
-            id: farmerData.id || (raw.farmer_profile_id as string),
+            id: farmerData.id || raw.farmer_profile_id,
             full_name: farmerData.full_name || "Verified Farmer",
             village: farmerData.village || null,
           }

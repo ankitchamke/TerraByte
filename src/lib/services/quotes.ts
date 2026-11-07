@@ -1129,154 +1129,229 @@ export async function reviseQuote(input: ReviseQuoteInput): Promise<QuoteDetail>
   };
 }
 
+const inFlightQuoteMutations = new Set<string>();
+
 /**
  * Approves a pending quote and authorizes physical repair work.
  * Authorization Rules:
  * - Only the farmer who owns the machinery / repair ticket can approve quotes.
  * - Technicians cannot approve their own quotes.
- * - Quote must currently be in 'PENDING' status.
+ * - Quote must currently be in 'PENDING' status and must be the latest revision.
  * - Advances repair status to 'IN_PROGRESS'.
  * - Records timeline audit event.
  */
 export async function approveQuote(quoteId: string): Promise<QuoteDetail> {
   if (!quoteId) throw new Error("Quote ID is required.");
 
-  const profile = await getAuthenticatedProfile();
-
-  // 1. Fetch quote with repair request
-  const { data: quote, error: quoteError } = await supabase
-    .from("quotes")
-    .select(
-      "*, quote_items(*), repair_request:repair_request_id(id, job_number, farmer_id, status)",
-    )
-    .eq("id", quoteId)
-    .maybeSingle();
-
-  if (quoteError || !quote) {
-    throw new Error("Quote not found or inaccessible.");
+  if (inFlightQuoteMutations.has(quoteId)) {
+    throw new Error("A quote action is already in progress for this quotation. Please wait.");
   }
+  inFlightQuoteMutations.add(quoteId);
 
-  const repair = quote.repair_request as unknown as {
-    id: string;
-    job_number: string;
-    farmer_id: string;
-    status: RepairStatus;
-  };
-  if (!repair) {
-    throw new Error("Associated repair ticket not found.");
-  }
+  try {
+    const profile = await getAuthenticatedProfile();
 
-  // 2. Authorization check: only owning farmer or admin can approve
-  const isOwner = repair.farmer_id === profile.id;
-  const isAdmin = profile.role === "admin";
-
-  if (!isOwner && !isAdmin) {
-    throw new Error("Unauthorized: Only the machinery owner (farmer) can approve quotes.");
-  }
-
-  // 3. Status check: quote must be PENDING
-  if (quote.status !== "PENDING") {
-    throw new Error(`Cannot approve quote: Quote is already '${quote.status}'.`);
-  }
-
-  const approvableStatuses: RepairStatus[] = ["QUOTE_PENDING", "WAITING_FOR_PARTS", "IN_PROGRESS"];
-  if (!approvableStatuses.includes(repair.status)) {
-    throw new Error(
-      `Cannot approve quote: Repair ticket is in '${repair.status}' status (must be QUOTE_PENDING, WAITING_FOR_PARTS, or IN_PROGRESS).`,
-    );
-  }
-
-  const now = new Date().toISOString();
-
-  // 4. Update quote status to APPROVED
-  const { data: updatedQuote, error: updateError } = await supabase
-    .from("quotes")
-    .update({ status: "APPROVED" })
-    .eq("id", quote.id)
-    .eq("status", "PENDING")
-    .select("*, quote_items(*), technician:technician_id(id, full_name, phone, village)")
-    .maybeSingle();
-
-  if (updateError) {
-    throw new Error(`Failed to approve quote: ${updateError.message}`);
-  }
-
-  if (!updatedQuote) {
-    throw new Error("This quote is no longer pending or was already processed. Please refresh.");
-  }
-
-  // 5. Advance repair status to IN_PROGRESS only if it was not WAITING_FOR_PARTS; if WAITING_FOR_PARTS, keep WAITING_FOR_PARTS
-  if (repair.status !== "WAITING_FOR_PARTS") {
-    const { data: updatedRepair, error: repairError2 } = await supabase
-      .from("repair_requests")
-      .update({
-        status: "IN_PROGRESS",
-        status_since: now,
-      })
-      .eq("id", repair.id)
-      .in("status", ["QUOTE_PENDING", "IN_PROGRESS"])
-      .select()
+    // 1. Fetch quote with repair request
+    const { data: quote, error: quoteError } = await supabase
+      .from("quotes")
+      .select(
+        "*, quote_items(*), repair_request:repair_request_id(id, job_number, farmer_id, status)",
+      )
+      .eq("id", quoteId)
       .maybeSingle();
 
-    if (repairError2 || !updatedRepair) {
-      // Rollback quote approval
-      await supabase.from("quotes").update({ status: "PENDING" }).eq("id", quote.id);
+    if (quoteError || !quote) {
+      throw new Error("Quote not found or inaccessible.");
+    }
 
-      if (repairError2) {
-        throw new Error(`Failed to advance repair status to IN_PROGRESS: ${repairError2.message}`);
-      }
+    const repair = quote.repair_request as unknown as {
+      id: string;
+      job_number: string;
+      farmer_id: string;
+      status: RepairStatus;
+    };
+    if (!repair) {
+      throw new Error("Associated repair ticket not found.");
+    }
+
+    // 2. Authorization check: only owning farmer or admin can approve
+    const isOwner = repair.farmer_id === profile.id;
+    const isAdmin = profile.role === "admin";
+
+    if (!isOwner && !isAdmin) {
+      throw new Error("Unauthorized: Only the machinery owner (farmer) can approve quotes.");
+    }
+
+    // 3. Status check: quote must be PENDING
+    if (quote.status !== "PENDING") {
+      throw new Error(`Cannot approve quote: Quote is already '${quote.status}'.`);
+    }
+
+    // Version Invariant Guard: Prevent older quote versions from mutating newer versions
+    const { data: newerQuotes } = await supabase
+      .from("quotes")
+      .select("id, version")
+      .eq("repair_request_id", repair.id)
+      .gt("version", quote.version);
+
+    const latestNewerQuote = newerQuotes?.[0];
+    if (latestNewerQuote) {
       throw new Error(
-        "This repair request status changed while approving the quote. Please refresh.",
+        `Cannot approve quote: A newer quotation version (v${latestNewerQuote.version}) exists. Older quote versions cannot be processed. Please review the latest quote.`,
       );
     }
-  }
 
-  // 6. Record timeline audit entry
-  const timelineStatus =
-    repair.status === "WAITING_FOR_PARTS" ? "WAITING_FOR_PARTS" : "IN_PROGRESS";
-  const timelineNote =
-    repair.status === "WAITING_FOR_PARTS"
-      ? `Quote revision v${quote.version} approved by farmer while waiting for parts.`
-      : `Quote approved & repair authorized (v${quote.version})`;
+    const approvableStatuses: RepairStatus[] = ["QUOTE_PENDING", "WAITING_FOR_PARTS", "IN_PROGRESS"];
+    if (!approvableStatuses.includes(repair.status)) {
+      throw new Error(
+        `Cannot approve quote: Repair ticket is in '${repair.status}' status (must be QUOTE_PENDING, WAITING_FOR_PARTS, or IN_PROGRESS).`,
+      );
+    }
 
-  const { error: timelineError } = await supabase.from("repair_timeline").insert({
-    repair_request_id: repair.id,
-    status: timelineStatus,
-    note: timelineNote,
-    created_by_role: profile.role,
-    created_by_id: profile.id,
-  });
+    // 4. Try atomic server-side decision API when running in browser with active session
+    if (typeof window !== "undefined") {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData?.session?.access_token;
+        if (token) {
+          const res = await fetch("/api/quote-decision", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({ quoteId, action: "approve" }),
+          });
+          if (res.ok) {
+            const payload = await res.json();
+            if (payload?.quote) {
+              return payload.quote;
+            }
+          } else {
+            const errJson = await res.json().catch(() => null);
+            if (
+              errJson?.error &&
+              (res.status === 400 || res.status === 403 || res.status === 409)
+            ) {
+              throw new Error(errJson.error);
+            }
+          }
+        }
+      } catch (apiErr: unknown) {
+        const errMessage = apiErr instanceof Error ? apiErr.message : String(apiErr);
+        if (
+          errMessage.includes("Cannot approve quote") ||
+          errMessage.includes("Unauthorized") ||
+          errMessage.includes("newer quotation") ||
+          errMessage.includes("already")
+        ) {
+          throw apiErr;
+        }
+        // Endpoint network failure; continue to direct transactional fallback
+      }
+    }
 
-  if (timelineError) {
-    console.warn(
-      `[TerraByte] Warning: Failed to record quote approval timeline entry: ${timelineError.message}`,
-    );
-  }
+    const now = new Date().toISOString();
 
-  // Notify technician that quote was approved and work can begin
-  try {
-    await createNotification({
-      recipient_role: "technician",
-      recipient_user_id: quote.technician_id,
-      notification_text: `Farmer approved quote for repair ${repair.job_number}. Proceed with repair work.`,
-      link_target: `/technician/job/${repair.id}`,
+    // 5. Direct Supabase transactional table operation
+    const { data: updatedQuote, error: updateError } = await supabase
+      .from("quotes")
+      .update({ status: "APPROVED", updated_at: now })
+      .eq("id", quote.id)
+      .eq("status", "PENDING")
+      .select("*, quote_items(*), technician:technician_id(id, full_name, phone, village)")
+      .maybeSingle();
+
+    if (updateError) {
+      throw new Error(`Failed to approve quote: ${updateError.message}`);
+    }
+
+    // 6. Advance repair status to IN_PROGRESS only if it was not WAITING_FOR_PARTS; if WAITING_FOR_PARTS, keep WAITING_FOR_PARTS
+    if (repair.status !== "WAITING_FOR_PARTS") {
+      const { data: updatedRepair, error: repairError2 } = await supabase
+        .from("repair_requests")
+        .update({
+          status: "IN_PROGRESS",
+          status_since: now,
+        })
+        .eq("id", repair.id)
+        .in("status", ["QUOTE_PENDING", "IN_PROGRESS"])
+        .select()
+        .maybeSingle();
+
+      if (repairError2 || !updatedRepair) {
+        if (updatedQuote) {
+          // Rollback quote approval if direct quote update had succeeded
+          await supabase.from("quotes").update({ status: "PENDING" }).eq("id", quote.id);
+        }
+
+        if (repairError2) {
+          throw new Error(
+            `Failed to advance repair status to IN_PROGRESS: ${repairError2.message}`,
+          );
+        }
+        throw new Error(
+          "This repair request status changed while approving the quote. Please refresh.",
+        );
+      }
+    }
+
+    // 7. Record timeline audit entry
+    const timelineStatus =
+      repair.status === "WAITING_FOR_PARTS" ? "WAITING_FOR_PARTS" : "IN_PROGRESS";
+    const timelineNote =
+      repair.status === "WAITING_FOR_PARTS"
+        ? `Quote revision v${quote.version} approved by farmer while waiting for parts.`
+        : `Quote approved & repair authorized (v${quote.version})`;
+
+    const { error: timelineError } = await supabase.from("repair_timeline").insert({
+      repair_request_id: repair.id,
+      status: timelineStatus,
+      note: timelineNote,
+      created_by_role: profile.role,
+      created_by_id: profile.id,
     });
-  } catch (notifErr) {
-    console.warn("[TerraByte] Warning: Failed to send quote approval notification:", notifErr);
+
+    if (timelineError) {
+      console.warn(
+        `[TerraByte] Warning: Failed to record quote approval timeline entry: ${timelineError.message}`,
+      );
+    }
+
+    // Notify technician that quote was approved and work can begin
+    try {
+      await createNotification({
+        recipient_role: "technician",
+        recipient_user_id: quote.technician_id,
+        notification_text: `Farmer approved quote for repair ${repair.job_number}. Proceed with repair work.`,
+        link_target: `/technician/job/${repair.id}`,
+      });
+    } catch (notifErr) {
+      console.warn("[TerraByte] Warning: Failed to send quote approval notification:", notifErr);
+    }
+
+    const items = (updatedQuote as any)?.quote_items || quote.quote_items || [];
+    const totals = calculateQuoteTotals(
+      items,
+      Number(updatedQuote?.labour_amount ?? quote.labour_amount),
+      Number(updatedQuote?.tax_percent ?? quote.tax_percent),
+    );
+
+    return {
+      ...(updatedQuote || quote),
+      status: "APPROVED",
+      quote_items: items,
+      totals,
+    };
+  } finally {
+    inFlightQuoteMutations.delete(quoteId);
   }
-
-  const items = (updatedQuote as any).quote_items || [];
-  const totals = calculateQuoteTotals(
-    items,
-    Number(updatedQuote.labour_amount),
-    Number(updatedQuote.tax_percent),
-  );
-
-  return {
-    ...(updatedQuote as unknown as QuoteRow & { quote_items: QuoteItemRow[]; technician: any }),
-    totals,
-  };
 }
+
+/**
+ * Standard alias for approveQuote matching farmer quotation acceptance specifications.
+ */
+export const acceptQuote = approveQuote;
 
 export interface RejectQuoteInput {
   reason: string;
@@ -1351,180 +1426,253 @@ export async function rejectQuote(
 ): Promise<QuoteDetail> {
   if (!quoteId) throw new Error("Quote ID is required.");
 
-  const profile = await getAuthenticatedProfile();
-
-  // 1. Fetch quote with repair request
-  const { data: quote, error: quoteError } = await supabase
-    .from("quotes")
-    .select(
-      "*, quote_items(*), repair_request:repair_request_id(id, job_number, farmer_id, status)",
-    )
-    .eq("id", quoteId)
-    .maybeSingle();
-
-  if (quoteError || !quote) {
-    throw new Error("Quote not found or inaccessible.");
+  if (inFlightQuoteMutations.has(quoteId)) {
+    throw new Error("A quote action is already in progress for this quotation. Please wait.");
   }
+  inFlightQuoteMutations.add(quoteId);
 
-  const repair = quote.repair_request as unknown as {
-    id: string;
-    job_number: string;
-    farmer_id: string;
-    status: RepairStatus;
-  };
-  if (!repair) {
-    throw new Error("Associated repair ticket not found.");
-  }
-
-  // 2. Authorization check: only owning farmer or admin can reject
-  const isOwner = repair.farmer_id === profile.id;
-  const isAdmin = profile.role === "admin";
-
-  if (!isOwner && !isAdmin) {
-    throw new Error("Unauthorized: Only the machinery owner (farmer) can reject quotes.");
-  }
-
-  // 3. Status check: quote must be PENDING
-  if (quote.status !== "PENDING") {
-    throw new Error(`Cannot reject quote: Quote is already '${quote.status}'.`);
-  }
-
-  const rejectableStatuses: RepairStatus[] = ["QUOTE_PENDING", "WAITING_FOR_PARTS", "IN_PROGRESS"];
-  if (!rejectableStatuses.includes(repair.status)) {
-    throw new Error(
-      `Cannot reject quote: Repair ticket is in '${repair.status}' status (must be QUOTE_PENDING, WAITING_FOR_PARTS, or IN_PROGRESS).`,
-    );
-  }
-
-  let selectedReason = "";
-  let explanation = "";
-  let photo: string | undefined = undefined;
-
-  if (typeof reasonOrInput === "object" && reasonOrInput !== null) {
-    selectedReason = reasonOrInput.reason?.trim() || "";
-    explanation = reasonOrInput.explanation?.trim() || "";
-    photo = reasonOrInput.photo?.trim();
-  } else if (typeof reasonOrInput === "string") {
-    const trimmed = reasonOrInput.trim();
-    const parsed = parseClarificationNote(trimmed);
-    selectedReason = parsed.reason || "";
-    explanation = parsed.explanation || (parsed.reason ? "" : trimmed);
-  }
-
-  // Format clarification note to persist in repair_requests.clarification_note
-  let clarificationToSave: string;
-  if (selectedReason && explanation) {
-    clarificationToSave = `Reason: ${selectedReason}\nExplanation: ${explanation}${photo ? `\nPhoto: ${photo}` : ""}`;
-  } else if (selectedReason) {
-    clarificationToSave = photo ? `Reason: ${selectedReason}\nPhoto: ${photo}` : selectedReason;
-  } else if (explanation) {
-    clarificationToSave = explanation;
-  } else {
-    clarificationToSave = "Quote declined by farmer";
-  }
-
-  const notifSummary =
-    selectedReason && explanation
-      ? `${selectedReason}: "${explanation.length > 60 ? explanation.slice(0, 57) + "..." : explanation}"`
-      : selectedReason || explanation || "Quote declined by farmer";
-
-  const newStatus: QuoteStatus = selectedReason || explanation ? "REVISED" : "REJECTED";
-  const now = new Date().toISOString();
-
-  // 4. Update quote status
-  const { data: updatedQuote, error: updateError } = await supabase
-    .from("quotes")
-    .update({ status: newStatus })
-    .eq("id", quote.id)
-    .eq("status", "PENDING")
-    .select("*, quote_items(*), technician:technician_id(id, full_name, phone, village)")
-    .maybeSingle();
-
-  if (updateError) {
-    throw new Error(`Failed to reject quote: ${updateError.message}`);
-  }
-
-  if (!updatedQuote) {
-    throw new Error("This quote is no longer pending or was already processed. Please refresh.");
-  }
-
-  // 5. Update repair request status to QUOTE_REVISED (or preserve WAITING_FOR_PARTS) and save clarification note
-  const nextRepairStatus: RepairStatus =
-    repair.status === "WAITING_FOR_PARTS" ? "WAITING_FOR_PARTS" : "QUOTE_REVISED";
-  const { data: updatedRepair, error: repairError2 } = await supabase
-    .from("repair_requests")
-    .update({
-      status: nextRepairStatus,
-      clarification_note: clarificationToSave,
-      status_since: now,
-    })
-    .eq("id", repair.id)
-    .in("status", rejectableStatuses)
-    .select()
-    .maybeSingle();
-
-  if (repairError2 || !updatedRepair) {
-    // Rollback quote update
-    await supabase.from("quotes").update({ status: "PENDING" }).eq("id", quote.id);
-
-    if (repairError2) {
-      throw new Error(`Failed to set repair status to QUOTE_REVISED: ${repairError2.message}`);
-    }
-    throw new Error(
-      "This repair request status changed while processing the quote revision request. Please refresh.",
-    );
-  }
-
-  // 6. Record timeline audit entry
-  const { error: timelineError } = await supabase.from("repair_timeline").insert({
-    repair_request_id: repair.id,
-    status: nextRepairStatus,
-    note: `Quote revision requested: "${notifSummary}"`,
-    created_by_role: profile.role,
-    created_by_id: profile.id,
-  });
-
-  if (timelineError) {
-    console.warn(
-      `[TerraByte] Warning: Failed to record quote rejection timeline entry: ${timelineError.message}`,
-    );
-  }
-
-  // Notify technician and admin
   try {
-    if (selectedReason || explanation) {
-      await createNotification({
-        recipient_role: "technician",
-        recipient_user_id: quote.technician_id,
-        notification_text: `Farmer requested changes to quote for repair ${repair.job_number}: ${notifSummary.endsWith(".") ? notifSummary : `${notifSummary}.`}`,
-        link_target: `/technician/job/${repair.id}`,
-      });
-    } else {
-      await createNotification({
-        recipient_role: "technician",
-        recipient_user_id: quote.technician_id,
-        notification_text: `Quote rejected by farmer for repair ${repair.job_number}.`,
-        link_target: `/technician/job/${repair.id}`,
-      });
-      await createNotification({
-        recipient_role: "admin",
-        notification_text: `Quote rejected by farmer for repair ${repair.job_number}.`,
-        link_target: `/admin/repair/${repair.id}`,
-      });
+    const profile = await getAuthenticatedProfile();
+
+    // 1. Fetch quote with repair request
+    const { data: quote, error: quoteError } = await supabase
+      .from("quotes")
+      .select(
+        "*, quote_items(*), repair_request:repair_request_id(id, job_number, farmer_id, status)",
+      )
+      .eq("id", quoteId)
+      .maybeSingle();
+
+    if (quoteError || !quote) {
+      throw new Error("Quote not found or inaccessible.");
     }
-  } catch (notifErr) {
-    console.warn("[TerraByte] Warning: Failed to send quote rejection notification:", notifErr);
+
+    const repair = quote.repair_request as unknown as {
+      id: string;
+      job_number: string;
+      farmer_id: string;
+      status: RepairStatus;
+    };
+    if (!repair) {
+      throw new Error("Associated repair ticket not found.");
+    }
+
+    // 2. Authorization check: only owning farmer or admin can reject
+    const isOwner = repair.farmer_id === profile.id;
+    const isAdmin = profile.role === "admin";
+
+    if (!isOwner && !isAdmin) {
+      throw new Error("Unauthorized: Only the machinery owner (farmer) can reject quotes.");
+    }
+
+    // 3. Status check: quote must be PENDING
+    if (quote.status !== "PENDING") {
+      throw new Error(`Cannot reject quote: Quote is already '${quote.status}'.`);
+    }
+
+    // Version Invariant Guard: Prevent older quote versions from mutating newer versions
+    const { data: newerQuotes } = await supabase
+      .from("quotes")
+      .select("id, version")
+      .eq("repair_request_id", repair.id)
+      .gt("version", quote.version);
+
+    const latestNewerQuote = newerQuotes?.[0];
+    if (latestNewerQuote) {
+      throw new Error(
+        `Cannot reject quote: A newer quotation version (v${latestNewerQuote.version}) exists. Older quote versions cannot be processed. Please review the latest quote.`,
+      );
+    }
+
+    const rejectableStatuses: RepairStatus[] = ["QUOTE_PENDING", "WAITING_FOR_PARTS", "IN_PROGRESS"];
+    if (!rejectableStatuses.includes(repair.status)) {
+      throw new Error(
+        `Cannot reject quote: Repair ticket is in '${repair.status}' status (must be QUOTE_PENDING, WAITING_FOR_PARTS, or IN_PROGRESS).`,
+      );
+    }
+
+    let selectedReason = "";
+    let explanation = "";
+    let photo: string | undefined = undefined;
+
+    if (typeof reasonOrInput === "object" && reasonOrInput !== null) {
+      selectedReason = reasonOrInput.reason?.trim() || "";
+      explanation = reasonOrInput.explanation?.trim() || "";
+      photo = reasonOrInput.photo?.trim();
+    } else if (typeof reasonOrInput === "string") {
+      const trimmed = reasonOrInput.trim();
+      const parsed = parseClarificationNote(trimmed);
+      selectedReason = parsed.reason || "";
+      explanation = parsed.explanation || (parsed.reason ? "" : trimmed);
+    }
+
+    // Format clarification note to persist in repair_requests.clarification_note
+    let clarificationToSave: string;
+    if (selectedReason && explanation) {
+      clarificationToSave = `Reason: ${selectedReason}\nExplanation: ${explanation}${photo ? `\nPhoto: ${photo}` : ""}`;
+    } else if (selectedReason) {
+      clarificationToSave = photo ? `Reason: ${selectedReason}\nPhoto: ${photo}` : selectedReason;
+    } else if (explanation) {
+      clarificationToSave = explanation;
+    } else {
+      clarificationToSave = "Quote declined by farmer";
+    }
+
+    const notifSummary =
+      selectedReason && explanation
+        ? `${selectedReason}: "${explanation.length > 60 ? explanation.slice(0, 57) + "..." : explanation}"`
+        : selectedReason || explanation || "Quote declined by farmer";
+
+    const newStatus: QuoteStatus = selectedReason || explanation ? "REVISED" : "REJECTED";
+
+    // 4. Try atomic server-side decision API when running in browser with active session
+    if (typeof window !== "undefined") {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData?.session?.access_token;
+        if (token) {
+          const res = await fetch("/api/quote-decision", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              quoteId,
+              action: "reject",
+              reason: selectedReason,
+              explanation,
+              photo,
+            }),
+          });
+          if (res.ok) {
+            const payload = await res.json();
+            if (payload?.quote) {
+              return payload.quote;
+            }
+          } else {
+            const errJson = await res.json().catch(() => null);
+            if (
+              errJson?.error &&
+              (res.status === 400 || res.status === 403 || res.status === 409)
+            ) {
+              throw new Error(errJson.error);
+            }
+          }
+        }
+      } catch (apiErr: unknown) {
+        const errMessage = apiErr instanceof Error ? apiErr.message : String(apiErr);
+        if (
+          errMessage.includes("Cannot reject quote") ||
+          errMessage.includes("Unauthorized") ||
+          errMessage.includes("newer quotation") ||
+          errMessage.includes("already")
+        ) {
+          throw apiErr;
+        }
+        // Endpoint network failure; continue to direct transactional fallback
+      }
+    }
+
+    const now = new Date().toISOString();
+
+    // 5. Update quote status
+    const { data: updatedQuote, error: updateError } = await supabase
+      .from("quotes")
+      .update({ status: newStatus, updated_at: now })
+      .eq("id", quote.id)
+      .eq("status", "PENDING")
+      .select("*, quote_items(*), technician:technician_id(id, full_name, phone, village)")
+      .maybeSingle();
+
+    if (updateError) {
+      throw new Error(`Failed to reject quote: ${updateError.message}`);
+    }
+
+    // 6. Update repair request status to QUOTE_REVISED (or preserve WAITING_FOR_PARTS) and save clarification note
+    const nextRepairStatus: RepairStatus =
+    repair.status === "WAITING_FOR_PARTS" ? "WAITING_FOR_PARTS" : "QUOTE_REVISED";
+    const { data: updatedRepair, error: repairError2 } = await supabase
+      .from("repair_requests")
+      .update({
+        status: nextRepairStatus,
+        clarification_note: clarificationToSave,
+        status_since: now,
+      })
+      .eq("id", repair.id)
+      .in("status", rejectableStatuses)
+      .select()
+      .maybeSingle();
+
+    if (repairError2 || !updatedRepair) {
+      if (updatedQuote) {
+        // Rollback quote update
+        await supabase.from("quotes").update({ status: "PENDING" }).eq("id", quote.id);
+      }
+
+      if (repairError2) {
+        throw new Error(`Failed to set repair status to QUOTE_REVISED: ${repairError2.message}`);
+      }
+      throw new Error(
+        "This repair request status changed while processing the quote revision request. Please refresh.",
+      );
+    }
+
+    // 7. Record timeline audit entry
+    const { error: timelineError } = await supabase.from("repair_timeline").insert({
+      repair_request_id: repair.id,
+      status: nextRepairStatus,
+      note: `Quote revision requested: "${notifSummary}"`,
+      created_by_role: profile.role,
+      created_by_id: profile.id,
+    });
+
+    if (timelineError) {
+      console.warn(
+        `[TerraByte] Warning: Failed to record quote rejection timeline entry: ${timelineError.message}`,
+      );
+    }
+
+    // Notify technician and admin
+    try {
+      if (selectedReason || explanation) {
+        await createNotification({
+          recipient_role: "technician",
+          recipient_user_id: quote.technician_id,
+          notification_text: `Farmer requested changes to quote for repair ${repair.job_number}: ${notifSummary.endsWith(".") ? notifSummary : `${notifSummary}.`}`,
+          link_target: `/technician/job/${repair.id}`,
+        });
+      } else {
+        await createNotification({
+          recipient_role: "technician",
+          recipient_user_id: quote.technician_id,
+          notification_text: `Quote rejected by farmer for repair ${repair.job_number}.`,
+          link_target: `/technician/job/${repair.id}`,
+        });
+        await createNotification({
+          recipient_role: "admin",
+          notification_text: `Quote rejected by farmer for repair ${repair.job_number}.`,
+          link_target: `/admin/repair/${repair.id}`,
+        });
+      }
+    } catch (notifErr) {
+      console.warn("[TerraByte] Warning: Failed to send quote rejection notification:", notifErr);
+    }
+
+    const items = (updatedQuote as any)?.quote_items || quote.quote_items || [];
+    const totals = calculateQuoteTotals(
+      items,
+      Number(updatedQuote?.labour_amount ?? quote.labour_amount),
+      Number(updatedQuote?.tax_percent ?? quote.tax_percent),
+    );
+
+    return {
+      ...(updatedQuote || quote),
+      status: newStatus,
+      quote_items: items,
+      totals,
+    };
+  } finally {
+    inFlightQuoteMutations.delete(quoteId);
   }
-
-  const items = (updatedQuote as any).quote_items || [];
-  const totals = calculateQuoteTotals(
-    items,
-    Number(updatedQuote.labour_amount),
-    Number(updatedQuote.tax_percent),
-  );
-
-  return {
-    ...(updatedQuote as unknown as QuoteRow & { quote_items: QuoteItemRow[]; technician: any }),
-    totals,
-  };
 }

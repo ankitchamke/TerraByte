@@ -95,6 +95,8 @@ import {
   type QuoteDetail,
   type QuoteVersionDetail,
 } from "@/lib/services/quotes";
+import { LoadTestWorkbench } from "@/components/handover/load-test-workbench";
+import { TechnicianHandoverCard } from "@/components/handover/technician-handover-card";
 
 export const Route = createFileRoute("/technician/job/$id")({
   head: () => meta("Job", "Repair job details and actions."),
@@ -865,6 +867,7 @@ function Job() {
         <InProgress
           repairId={r.id}
           r={adaptedRepair}
+          realRepair={r}
           notes={notes}
           onUpdate={loadData}
           isQuoteApproved={Boolean(approvedQuote)}
@@ -915,20 +918,28 @@ function Job() {
       )}
 
       {r.status === "COMPLETED" && (
-        <Card className="border-success">
-          <p className="font-bold text-success">
-            Completed
-            {adaptedRepair.quote ? ` · ${inr(quoteTotals(adaptedRepair.quote).total)}` : ""}
-          </p>
-          <p className="text-sm">
-            {adaptedRepair.completion?.notes ||
-              (r.completion_details as any)?.notes ||
-              "Repair completed and verified."}
-          </p>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Repair completed and recorded in equipment service history.
-          </p>
-        </Card>
+        <div className="space-y-4">
+          <Card className="border-success">
+            <p className="font-bold text-success">
+              Completed
+              {adaptedRepair.quote ? ` · ${inr(quoteTotals(adaptedRepair.quote).total)}` : ""}
+            </p>
+            <p className="text-sm">
+              {adaptedRepair.completion?.notes ||
+                (r.completion_details as { notes?: string } | null)?.notes ||
+                "Repair completed and verified."}
+            </p>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Repair completed and recorded in equipment service history.
+            </p>
+          </Card>
+
+          <TechnicianHandoverCard
+            repair={r}
+            quote={approvedQuote || (quotes.length > 0 ? quotes[0] : null)}
+            onUpdate={loadData}
+          />
+        </div>
       )}
 
       {/* Ticket Communication Thread */}
@@ -1583,6 +1594,7 @@ function QuoteBuilder({
 interface InProgressProps {
   repairId: string;
   r: Repair;
+  realRepair?: RepairRequestDetail | null;
   notes: RepairNoteWithAuthor[];
   onUpdate: () => Promise<void>;
   isQuoteApproved?: boolean;
@@ -1592,6 +1604,7 @@ interface InProgressProps {
 function InProgress({
   repairId,
   r,
+  realRepair,
   notes,
   onUpdate,
   isQuoteApproved = true,
@@ -1739,11 +1752,12 @@ function InProgress({
       toast.error("Please enter final repair notes.");
       return;
     }
-    if (!tested) {
-      toast.error("Please confirm that machine was tested under load.");
+    const isLoadTestPassed = realRepair?.load_test_passed === true || tested;
+    if (!isLoadTestPassed || realRepair?.load_test_passed === false) {
+      toast.error("Verified passing operational load test is required before completion.");
       return;
     }
-    if (!r.testing) {
+    if (!r.testing && !realRepair?.is_testing) {
       toast.error("Please start machine testing before completing the repair.");
       return;
     }
@@ -2051,6 +2065,20 @@ function InProgress({
             Final sign-off on completed repair. This marks the equipment as Operational, saves the
             repair to permanent service history, and notifies the farmer and Service Centre.
           </p>
+
+          <LoadTestWorkbench
+            repairId={repairId}
+            isTesting={Boolean(r.testing || realRepair?.is_testing)}
+            loadTestPassed={realRepair?.load_test_passed ?? (tested ? true : null)}
+            loadTestNotes={realRepair?.load_test_notes || null}
+            loadTestedAt={realRepair?.load_tested_at || null}
+            onSignoffSuccess={(passed) => {
+              setTested(passed);
+              void onUpdate();
+            }}
+            onResumeRepair={handleFailTesting}
+          />
+
           <div>
             <Label>Final repair notes</Label>
             <textarea
@@ -2076,21 +2104,17 @@ function InProgress({
               }}
             />
           </label>
-          <label className="flex min-h-12 items-center gap-3 rounded-xl border-2 border-border p-3">
-            <input
-              type="checkbox"
-              className="h-5 w-5"
-              checked={tested}
-              onChange={(e) => setTested(e.target.checked)}
-            />{" "}
-            Machine tested under load and working
-          </label>
           <div className="grid grid-cols-2 gap-2">
             <button disabled={submitting} onClick={() => setMode("none")} className={btn.ghost}>
               Cancel
             </button>
             <button
-              disabled={!tested || !final.trim() || submitting}
+              disabled={
+                realRepair?.load_test_passed === false ||
+                (!tested && realRepair?.load_test_passed !== true) ||
+                !final.trim() ||
+                submitting
+              }
               onClick={handleComplete}
               className={cn(btn.primary, "disabled:opacity-50")}
             >

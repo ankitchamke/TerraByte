@@ -500,6 +500,23 @@ export type Database = {
           technician_id: string | null;
           updated_at: string;
           verified_at: string | null;
+          facility_id: string | null;
+          load_test_passed: boolean | null;
+          load_test_notes: string | null;
+          load_tested_at: string | null;
+          load_tested_by: string | null;
+          payment_cleared_at: string | null;
+          payment_cleared_by: string | null;
+          payment_method: string | null;
+          payment_reference: string | null;
+          handover_status: "PENDING" | "AUTHORIZED" | "RELEASED";
+          handover_authorized_at: string | null;
+          handover_authorized_by: string | null;
+          handover_released_at: string | null;
+          handover_released_by: string | null;
+          handover_notes: string | null;
+          farmer_collection_confirmed: boolean;
+          farmer_collection_confirmed_at: string | null;
         };
         Insert: {
           assessment?: Json;
@@ -528,6 +545,23 @@ export type Database = {
           technician_id?: string | null;
           updated_at?: string;
           verified_at?: string | null;
+          facility_id?: string | null;
+          load_test_passed?: boolean | null;
+          load_test_notes?: string | null;
+          load_tested_at?: string | null;
+          load_tested_by?: string | null;
+          payment_cleared_at?: string | null;
+          payment_cleared_by?: string | null;
+          payment_method?: string | null;
+          payment_reference?: string | null;
+          handover_status?: "PENDING" | "AUTHORIZED" | "RELEASED";
+          handover_authorized_at?: string | null;
+          handover_authorized_by?: string | null;
+          handover_released_at?: string | null;
+          handover_released_by?: string | null;
+          handover_notes?: string | null;
+          farmer_collection_confirmed?: boolean;
+          farmer_collection_confirmed_at?: string | null;
         };
         Update: {
           assessment?: Json;
@@ -556,6 +590,23 @@ export type Database = {
           technician_id?: string | null;
           updated_at?: string;
           verified_at?: string | null;
+          facility_id?: string | null;
+          load_test_passed?: boolean | null;
+          load_test_notes?: string | null;
+          load_tested_at?: string | null;
+          load_tested_by?: string | null;
+          payment_cleared_at?: string | null;
+          payment_cleared_by?: string | null;
+          payment_method?: string | null;
+          payment_reference?: string | null;
+          handover_status?: "PENDING" | "AUTHORIZED" | "RELEASED";
+          handover_authorized_at?: string | null;
+          handover_authorized_by?: string | null;
+          handover_released_at?: string | null;
+          handover_released_by?: string | null;
+          handover_notes?: string | null;
+          farmer_collection_confirmed?: boolean;
+          farmer_collection_confirmed_at?: string | null;
         };
         Relationships: [
           {
@@ -1542,6 +1593,42 @@ export type Database = {
         Returns: Json;
       };
       get_facility_handover_location: {
+        Args: {
+          p_repair_request_id: string;
+        };
+        Returns: Json;
+      };
+      record_load_test_signoff: {
+        Args: {
+          p_repair_request_id: string;
+          p_passed: boolean;
+          p_notes: string;
+        };
+        Returns: Json;
+      };
+      record_offline_payment_clearance: {
+        Args: {
+          p_repair_request_id: string;
+          p_payment_method: string;
+          p_payment_reference: string;
+        };
+        Returns: Json;
+      };
+      authorize_equipment_handover: {
+        Args: {
+          p_repair_request_id: string;
+          p_authorization_notes: string;
+        };
+        Returns: Json;
+      };
+      execute_equipment_handover_release: {
+        Args: {
+          p_repair_request_id: string;
+          p_release_notes: string;
+        };
+        Returns: Json;
+      };
+      confirm_farmer_equipment_collection: {
         Args: {
           p_repair_request_id: string;
         };

@@ -64,6 +64,7 @@ import {
   type VerifiedTechnicianWithProfile,
 } from "@/lib/services/technicians";
 import { VerifiedReviewSection } from "@/components/reviews/VerifiedReviewSection";
+import { FarmerHandoverCard } from "@/components/handover/farmer-handover-card";
 import {
   ago,
   fmtTime,
@@ -1195,6 +1196,8 @@ function RepairHub() {
           </div>
         </section>
       )}
+
+      {r.status === "COMPLETED" && <FarmerHandoverCard repair={r} onUpdate={loadData} />}
 
       {r.status === "COMPLETED" && (assignedTechData || r.technician_id) && (
         <VerifiedReviewSection

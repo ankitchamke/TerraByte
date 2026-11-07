@@ -85,6 +85,7 @@ import {
   type QuoteDetail,
   type QuoteVersionDetail,
 } from "@/lib/services/quotes";
+import { AdminHandoverCard } from "@/components/handover/admin-handover-card";
 
 export const Route = createFileRoute("/admin/repair/$id")({
   head: () => meta("Repair detail", "Inspect, dispatch and unblock a repair."),
@@ -1013,6 +1014,14 @@ function AdminRepair() {
             </div>
           </div>
         </section>
+      )}
+
+      {status === "COMPLETED" && dbRepair && (
+        <AdminHandoverCard
+          repair={dbRepair}
+          quote={approvedQuote || (quotes.length > 0 ? quotes[0] : null)}
+          onUpdate={loadData}
+        />
       )}
 
       {isReal &&

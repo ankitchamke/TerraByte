@@ -952,56 +952,102 @@ All tests in `tests/phase-14-dropoff-and-capacity.test.mjs` pass.
 
 ---
 
-### Milestone 5: Multi-Role Integration, Regression & QA
+### Milestone 5: Manual Technician Dispatch & Reassignment
 
 #### 1. Objective
-Execute complete cross-portal integration verification, full test suite regression ($\ge 320$ passing tests), production build verification, author Milestone 5 audit report, and synchronize canonical planning documentation.
+Implement administrator-controlled manual technician dispatch and reassignment workflow. All assignment and reassignment mutations are strictly enforced server-side via trusted `SECURITY DEFINER` RPC `public.admin_dispatch_technician` with row-level locking (`SELECT ... FOR UPDATE`), Optimistic Concurrency Control (OCC) guards against stale overwrites, mandatory reassignment reasons, and full audit logging in `public.repair_assignment_history` and `public.repair_timeline`. Direct client mutation of `technician_id` on `public.repair_requests` is revoked via Discretionary Access Control (DAC). The admin interface provides practical candidate comparison with qualification scores (Brand 40, Skill 30, Availability 20, max 90), OSRM driving distance/ETA decision support, and interactive reassignment reason dialogs.
 
 #### 2. Exact Files Expected to Change
-- `tests/phase-14-integration-e2e.test.mjs` *(NEW: full cross-role integration test)*
-- `.planning/ROADMAP.md` *(UPDATE: Phase 14 status synchronized)*
-- `.planning/STATE.md` *(UPDATE: phase progress and test counts synchronized)*
-- `.planning/TESTING.md` *(UPDATE: active test suite inventory synchronized)*
-- `docs/audits/phase-14/PHASE14_MILESTONE5_INTEGRATION_QA_REPORT.md` *(NEW audit report)*
+- `supabase/migrations/20261109000000_phase14_m5_manual_dispatch_and_reassignment.sql` *(NEW: assignment table, hardened dispatch RPC, DAC revocations, history RPC)*
+- `src/integrations/supabase/types.ts` *(UPDATE: Phase 14 M5 table and RPC types)*
+- `src/lib/services/technicians.ts` *(UPDATE: add `adminDispatchTechnician` and `getRepairAssignmentHistory` service wrappers)*
+- `src/components/dispatch/manual-dispatch-dialog.tsx` *(NEW: manual dispatch & reassignment dialog with candidate comparison and mandatory reason)*
+- `src/components/dispatch/assignment-history-card.tsx` *(NEW: assignment history timeline card for admin repair detail)*
+- `src/routes/admin/repair/$id.tsx` *(UPDATE: integrate manual dispatch dialog and assignment history card)*
+- `src/routes/technician/job/$id.tsx` *(UPDATE: reflect current assignment status and handover transitions)*
+- `tests/phase-14-m5-dispatch.test.mjs` *(NEW: comprehensive live PostgreSQL dispatch and reassignment integration test suite)*
+- `.planning/ROADMAP.md` *(UPDATE: Phase 14 M5 status synchronized)*
+- `.planning/STATE.md` *(UPDATE: Phase 14 M5 status and test counts synchronized)*
+- `docs/audits/phase-14/PHASE14_MILESTONE5_IMPLEMENTATION_REPORT.md` *(NEW: authoritative M5 report)*
+- `docs/audits/phase-14/PHASE14_MILESTONE5_MANUAL_TESTING_CHECKLIST.md` *(NEW: manual testing scenarios)*
 
-#### 3. Database Changes
-None.
+#### 3. Database Changes (Forward Migration Only)
+- **Table**: `public.repair_assignment_history`
+  - `id UUID PRIMARY KEY DEFAULT gen_random_uuid()`
+  - `repair_request_id UUID NOT NULL REFERENCES public.repair_requests(id) ON DELETE CASCADE`
+  - `previous_technician_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL`
+  - `assigned_technician_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE RESTRICT`
+  - `assigned_by UUID NOT NULL REFERENCES public.profiles(id) ON DELETE RESTRICT`
+  - `assigned_by_role TEXT NOT NULL`
+  - `assignment_type TEXT NOT NULL CHECK (assignment_type IN ('DISPATCH', 'REASSIGNMENT'))`
+  - `reason TEXT` (mandatory for `REASSIGNMENT`)
+  - `created_at TIMESTAMPTZ NOT NULL DEFAULT pg_catalog.now()`
+- **RPC**: `public.admin_dispatch_technician(p_repair_request_id UUID, p_technician_id UUID, p_reassignment_reason TEXT DEFAULT NULL, p_expected_current_technician_id UUID DEFAULT NULL)`
+  - Hardened with `SECURITY DEFINER` and `SET search_path = ''`.
+  - Authorized strictly for `role IN ('admin', 'service_centre')`.
+  - Serializes operations with `SELECT ... FOR UPDATE` on `repair_requests`.
+  - Validates terminal state: rejects `status IN ('COMPLETED', 'CANCELLED')` with `22000 INVALID_STATE`.
+  - OCC concurrency check: if `p_expected_current_technician_id` provided and does not match `v_repair.technician_id`, raises `40001 CONCURRENT_MUTATION`.
+  - Duplicate check: if `p_technician_id = v_repair.technician_id`, raises `22000 DUPLICATE_ASSIGNMENT`.
+  - Mandatory reassignment reason: if `v_repair.technician_id IS NOT NULL`, requires non-empty `p_reassignment_reason`, else raises `22000 REASON_REQUIRED`.
+  - Technician verification check: requires candidate exists in `technician_profiles`, has `is_verified = TRUE`, role `'technician'`, and is not in `declined_by`.
+  - Atomically updates `technician_id`, records `repair_assignment_history`, and writes to `repair_timeline`.
+- **RPC**: `public.get_repair_assignment_history(p_repair_request_id UUID)`
+  - Returns formatted historical assignments joined with technician names, actor names, and reasons.
+- **DAC Hardening**:
+  - `REVOKE UPDATE (technician_id) ON public.repair_requests FROM authenticated;`
+  - Direct client updates to assignment are blocked at database engine level.
 
 #### 4. Dependencies
-Milestones 1 through 4.
+Milestones 1 through 4. Option C qualification-first candidate matching and OSRM workshop origin routing from Milestone 2.
 
 #### 5. Implementation Sequence
-1. Author `tests/phase-14-integration-e2e.test.mjs` simulating:
-   - Scenario 1 (Doorstep Golden Path): Farmer logs breakdown $\rightarrow$ OSRM workshop origin matching $\rightarrow$ Technician assigned $\rightarrow$ Card displays real road distance.
-   - Scenario 2 (Immobile Emergency): Machine marked `is_immobile = true` $\rightarrow$ Drop-off blocked $\rightarrow$ Doorstep service locked $\rightarrow$ Field dispatch.
-   - Scenario 3 (Workshop Drop-Off Golden Path): Farmer selects approved workshop $\rightarrow$ Bay reserved $\rightarrow$ Machine arrives $\rightarrow$ Manager check-in $\rightarrow$ Receipt `RCP-TB-YYYYMMDD-XXXX` generated $\rightarrow$ Bay occupancy incremented $\rightarrow$ Repair completed $\rightarrow$ Handover release.
-   - Scenario 4 (Routing Outage Resilience): OSRM downtime simulated $\rightarrow$ UI renders `"Road Distance Temporarily Unavailable"` $\rightarrow$ Candidate remains eligible without Haversine fallback or stale data.
-   - Scenario 5 (Capacity Saturation & Dispatcher Reroute): Workshop bay capacity filled $\rightarrow$ Drop-off blocked $\rightarrow$ Dispatcher reroutes to adjacent workshop.
-   - Scenario 6 (Reservation Expiry & Standby Check-in): Reservation expires $\rightarrow$ Bay released $\rightarrow$ Physical check-in succeeds only when bays free; rejected when full.
-2. Run full automated test suite: `npm test`. Verify 100% pass rate.
-3. Run production build: `npm run build:production`. Verify 0 errors, 0 warnings.
-4. Author Milestone 5 QA report under `docs/audits/phase-14/PHASE14_MILESTONE5_INTEGRATION_QA_REPORT.md`.
-5. Update canonical planning documents (`ROADMAP.md`, `STATE.md`, `TESTING.md`).
+1. Author migration `supabase/migrations/20261109000000_phase14_m5_manual_dispatch_and_reassignment.sql`.
+2. Apply migration locally to Docker container `127.0.0.1:54332`.
+3. Update `src/integrations/supabase/types.ts`.
+4. Update `src/lib/services/technicians.ts` with `adminDispatchTechnician` and `getRepairAssignmentHistory`.
+5. Author `ManualDispatchDialog` component and `AssignmentHistoryCard` component.
+6. Integrate components into `src/routes/admin/repair/$id.tsx`.
+7. Author `tests/phase-14-m5-dispatch.test.mjs` verifying all negative security gates, concurrency serialization, history persistence, and RLS access transitions.
+8. Verify test suite, full regression, ESLint, and production build.
+9. Synchronize documentation and produce M5 implementation report.
 
 #### 6. Security Considerations
-- Comprehensive RLS audit on all new tables and columns.
-- Verify zero Aadhaar or PII leakage.
-- Verify zero live GPS tracking.
+- Zero client-side assignment tampering: DAC revokes direct `UPDATE (technician_id)`.
+- Reassignment immediately revokes former technician's RLS SELECT and profile visibility.
+- Newly assigned technician automatically acquires RLS SELECT and ticket access.
+- Mandatory reassignment reason creates an immutable accountability trail.
+- Terminal repairs (`COMPLETED`, `CANCELLED`) cannot be modified or reassigned.
 
 #### 7. Automated Tests
-Full test suite execution: `npm test` ($\ge 320$ tests across 21 test files).
+`tests/phase-14-m5-dispatch.test.mjs`:
+- `TEST-14-M5-01`: Authorized admin can dispatch unassigned ticket to eligible technician.
+- `TEST-14-M5-02`: Unauthorized farmer caller is rejected with 42501.
+- `TEST-14-M5-03`: Unauthorized technician caller is rejected with 42501.
+- `TEST-14-M5-04`: Workshop manager cannot dispatch without admin role (42501).
+- `TEST-14-M5-05`: Ineligible technician (unverified) is rejected with 22000.
+- `TEST-14-M5-06`: Declined technician cannot be assigned without triage (22000).
+- `TEST-14-M5-07`: Duplicate assignment to currently assigned technician is rejected (22000).
+- `TEST-14-M5-08`: Reassignment of active technician requires mandatory non-empty reason (22000).
+- `TEST-14-M5-09`: Reassignment records structured history in `repair_assignment_history` and `repair_timeline`.
+- `TEST-14-M5-10`: OCC concurrency guard rejects stale assignment attempts (40001).
+- `TEST-14-M5-11`: Direct client `UPDATE (technician_id)` is blocked by DAC (42501).
+- `TEST-14-M5-12`: Reassigned technician loses RLS access; new technician gains RLS access.
+- `TEST-14-M5-13`: Completed repair request rejects reassignment (42501 / 22000).
 
 #### 8. Acceptance Criteria
-- **AC-14-M5-01**: All 6 end-to-end integration scenarios pass.
-- **AC-14-M5-02**: Full test suite passes with 100% green tests ($\ge 320$ tests).
-- **AC-14-M5-03**: Production build compiles in $< 2.0\text{s}$ SSR with 0 warnings/errors.
-- **AC-14-M5-04**: Planning documents synchronized accurately.
+- **AC-14-M5-01**: Admin can view eligible technicians, inspect qualifications, and dispatch manually.
+- **AC-14-M5-02**: Reassignment requires a mandatory reason and records previous technician.
+- **AC-14-M5-03**: All dispatch mutations enforced via server-side SECURITY DEFINER RPC.
+- **AC-14-M5-04**: Direct client mutation of `technician_id` blocked by DAC.
+- **AC-14-M5-05**: RLS access strictly transitions to the newly assigned technician.
+- **AC-14-M5-06**: All Phase 14 tests, Phase 13 tests, and full test suite pass.
 
 #### 9. Completion Evidence
-All tests pass, production build succeeds, Milestone 5 QA report generated.
+All tests in `tests/phase-14-m5-dispatch.test.mjs` pass, full test suite passes, production build succeeds, and M5 implementation report generated.
 
 #### 10. Commit Checkpoint
-`test(phase-14): complete multi-role integration, regression and smart dispatch qa`
+`feat(phase-14): implement manual technician dispatch and reassignment workflow`
 
 ---
 
@@ -1096,8 +1142,8 @@ This implementation plan establishes the complete, refined technical specificati
 1. **Milestone 1 (Database Foundation & Domain Invariants)**: **FORMALLY SIGNED OFF** (22 live PostgreSQL integration tests verified).
 2. **Milestone 2 (Workshop-Origin OSRM Routing & Matching Integration)**: **FORMALLY SIGNED OFF BY USER APPROVAL** (15/15 unit/contract tests, 21/21 route estimate tests, 369/369 full workspace tests, clean production build; user sign-off granted). Authorized read-only staging manual QA checks resulted in **BLOCKED** due to absence of active staging repairs/jobs (zero staging writes performed), with all four follow-up checks remaining active and tracked in the **Deferred QA Register** (`Deferred M2-QA-01` through `M2-QA-04`) in `PHASE14_MILESTONE2_MANUAL_TESTING_CHECKLIST.md`.
 3. **Milestone 3 (Farmer Intake Wizard Dual Delivery & Immobile Machinery Lock)**: **FORMALLY SIGNED OFF BY USER APPROVAL** (Intake delivery mode selection, immobile machinery lock to DOORSTEP, 6-scenario forged submission database attack guards in `20261108180000_phase14_m3_strict_dropoff_integrity.sql`, 7/7 intake tests, 20/20 live DB attack tests, 100% trilingual dictionary parity).
-4. **Milestone 4 (Workshop Drop-Off Lifecycle, Check-in Receipt & Bay Occupancy)**: **IMPLEMENTATION COMPLETE & VERIFIED — PENDING USER REVIEW & SIGN-OFF** (Complete M4 service layer in `facility-capacity.ts`, printable custody receipt modal `RCP-TB-YYYYMMDD-XXXX`, workshop checkin dialog, admin dialogs for extension/rerouting/release, workshop operations desk in `/admin/facilities`, multi-portal detail views in admin/farmer/technician routes, 10 new trilingual keys with 100% parity across 270 keys, 9/9 live PostgreSQL tests in `phase-14-m4-dropoff-lifecycle.test.mjs`, 406/406 full test suite pass, zero lint errors, exit code 0 production build; awaiting user review).
-5. **Milestone 5 (Multi-Role Integration & QA Verification)**: **NOT STARTED**.
+4. **Milestone 4 (Workshop Drop-Off Lifecycle, Check-in Receipt & Bay Occupancy)**: **FORMALLY SIGNED OFF BY USER APPROVAL** (Complete M4 service layer in `facility-capacity.ts`, printable custody receipt modal `RCP-TB-YYYYMMDD-XXXX`, workshop checkin dialog, admin dialogs for extension/rerouting/release, workshop operations desk in `/admin/facilities`, multi-portal detail views in admin/farmer/technician routes, 10 new trilingual keys with 100% parity across 270 keys, 18/18 live PostgreSQL tests in `phase-14-m4-dropoff-lifecycle.test.mjs`, 415/415 full test suite pass, zero lint errors, exit code 0 production build; user sign-off granted).
+5. **Milestone 5 (Manual Technician Dispatch & Reassignment)**: **AUDITED & VERIFIED — AWAITING USER SIGN-OFF GATE** (Dedicated audit table `repair_assignment_history` with RLS; DAC revoking direct client update of `technician_id`; trusted RPC `admin_dispatch_technician` with row lock `FOR UPDATE`, OCC token `p_expected_current_technician_id`, duplicate check, explicit lifecycle allowlist, mandatory reason on reassignment, dual-table logging; dedicated `farmer_request_technician` RPC preserving farmer technician nomination; RPC `get_repair_assignment_history`; hardened RLS on `quotes`, `quote_items`, `service_centre_part_requests`; UI components `ManualDispatchDialog` and `AssignmentHistoryCard` integrated into `/admin/repair/$id`; 15/15 dedicated PostgreSQL tests pass in `tests/phase-14-m5-dispatch.test.mjs`; 131/131 Phase 14 tests pass; 430/430 workspace tests pass; clean production build).
 6. **Phase 16 (Frontend UI/UX Improvement & Product Polish)**: **PLANNED**.
 7. **Phase 17 (Master System QA, Production Migration & Release Gate)**: **PLANNED RELEASE GATE** (Air-gapped production migration and demo data replacement occur strictly in Phase 17).
 

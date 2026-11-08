@@ -12,7 +12,7 @@
 
 ## 2. Current Position & Milestone Status
 
-- **Current Phase**: **Phase 14 — Smart Dispatch & Workshop Drop-Off (IN PROGRESS — MILESTONES 1, 2 & 3 SIGNED OFF; MILESTONE 4 IMPLEMENTATION COMPLETE & VERIFIED, PENDING USER REVIEW)**
+- **Current Phase**: **Phase 14 — Smart Dispatch & Workshop Drop-Off (IN PROGRESS — MILESTONES 1, 2, 3 & 4 SIGNED OFF; MILESTONE 5 IMPLEMENTED & VERIFIED, AWAITING SIGN-OFF)**
 - **Branch**: `phase-14` (Created from completed `phase-13` base commit `f14c2e0`; strictly additive Git history, no force-pushing/rebasing)
 - **Status Summary**:
   - Phases 1–10: **COMPLETED & VERIFIED**
@@ -20,31 +20,32 @@
   - Phase 11 (Visual Diagnostics): **COMPLETED & VERIFIED ON STAGING** — Dedicated Supabase staging (`ubqgvhcfmrvnmrbllcom`), 18 tables, 49 RLS policies, synthetic seed fixtures, interactive `DefectAnnotationCanvas`, multi-portal `VisualDefectDiagnosticViewer`, fail-closed consent opt-in, fail-open breakdown submission, live catalogue tractor compatibility matching, and staff force rescan lifecycle verified end-to-end. Production (`hwdrypkvszwrcraujctw`) strictly air-gapped and untouched.
   - Phase 12 (Multilingual Experience): **COMPLETED & VERIFIED ON STAGING** — Trilingual Farmer Portal (English, Hindi, Marathi) with 100% dictionary key parity (208 keys), Noto Sans Devanagari typography, compact top-nav segmented selector (`EN` / `हिं` / `म`), canonical Groq Whisper Large V3 voice transcription preservation, responsive 320px–1440px overflow immunity, and verified staging Reset Demo RPC paired authorization.
   - Phase 13: **COMPLETED — LOCAL INTEGRATION VERIFIED; PENDING REMOTE STAGING GATE (ALL MILESTONES 1–6 COMPLETE)** (Technician Trust, Shared Workshops, Verified Reviews & Digital Handover: M1 Database Foundations committed `80537c6`, M2 Shared Workshop Governance committed `e0aeaa0`, M3 Physical KYC committed `45121f5`, M4 Verified Reviews & Technician Ratings committed `5483fd8` / `bbdff3c`, M5 Digital Handover & Equipment Collection committed `f3865a1`, M6 Integration & Staging QA verified across 299 tests. Remote staging database migration pending explicit operator execution).
-  - Phase 14: **IN PROGRESS — M1, M2 & M3 SIGNED OFF; M4 IMPLEMENTATION COMPLETE & VERIFIED (PENDING USER REVIEW)**
+  - Phase 14: **IN PROGRESS — M1, M2, M3 & M4 SIGNED OFF; M5 IMPLEMENTED & VERIFIED (AWAITING SIGN-OFF)**
     - **Milestone 1 (Database Foundation & Domain Invariants)**: Formally approved and signed off (22 live PostgreSQL integration tests pass, sequence `drop_off_receipt_seq`, table `facility_bay_reservations`, 6 SECURITY DEFINER RPCs with search path hardening, server-side transactional FIFO priority queue).
     - **Milestone 2 (Workshop-Origin OSRM Routing & Matching Integration)**: **FORMALLY SIGNED OFF BY USER APPROVAL** (15/15 tests in `tests/phase-14-routing-and-matching.test.mjs`, 21/21 in `tests/route-estimate.test.mjs`, 369/369 full workspace suite, clean production build). Implements Option C Qualification-First Ranking (Brand 40, Skill 30, Availability 20; max 90; proximity 0), registered workshop origin (`primary_facility_id` -> `repair_facilities`), hardcoded `0 km · ~45 min` default eliminated, `NO_COORDINATES` gate with 0 network fetch, `OUTAGE` graceful non-disqualification, zero stale metrics, strict zero Haversine ban, Extended Travel (> 50 km) tag, mandatory rural traffic disclaimer (`"Estimated standard driving duration. Real-time rural road and weather conditions may vary."`), and deterministic 6-tier tie-breaking.
     - **M2 Live Read-Only Staging Manual QA Execution (2026-11-08)**: Authorized read-only staging check executed. Staging authentication succeeded (`ubqgvhcfmrvnmrbllcom.supabase.co`). All three live checks were BLOCKED due to absence of active staging repair/job data (`repairs = []` for farmer; `assignedJobs = []` for technician). Zero staging writes performed. All four follow-up checks remain active and tracked in the Deferred QA Register (`Deferred M2-QA-01` through `M2-QA-04`) in `docs/audits/phase-14/PHASE14_MILESTONE2_MANUAL_TESTING_CHECKLIST.md` and must NOT be marked complete.
     - **Milestone 3 (Farmer Intake Wizard Dual Delivery & Immobile Machinery Lock)**: **FORMALLY SIGNED OFF BY USER APPROVAL** (Farmer intake wizard delivery mode selection, immobile machinery lock to DOORSTEP, 6-scenario forged submission database attack guards in `20261108180000_phase14_m3_strict_dropoff_integrity.sql`, 7/7 intake tests, 20/20 live DB attack tests, 100% trilingual dictionary parity).
-    - **Milestone 4 (Workshop Drop-Off Lifecycle, Check-in Receipt & Bay Occupancy)**: **IMPLEMENTATION COMPLETE & VERIFIED (PENDING USER REVIEW & SIGN-OFF)**. Complete M4 service layer in `src/lib/services/facility-capacity.ts`, printable custody receipt modal `RCP-TB-YYYYMMDD-XXXX`, intake checkin dialog (Path A & Path B), admin extension/rerouting/release dialogs, workshop operations desk in `/admin/facilities`, multi-portal integration in admin/farmer/technician routes, 10 new trilingual keys with 100% parity across 270 keys, 9/9 live PostgreSQL tests in `tests/phase-14-m4-dropoff-lifecycle.test.mjs`, 406/406 full workspace tests pass, clean production build; awaiting user review. Milestone 5 unstarted.
-    - **Production Migration Timing**: Production database migration and data replacement are scheduled strictly for Phase 17 (after Phase 14 M3–M5 and Phase 16).
+    - **Milestone 4 (Workshop Drop-Off Lifecycle, Check-in Receipt & Bay Occupancy)**: **FORMALLY SIGNED OFF BY USER APPROVAL** (Complete M4 service layer in `src/lib/services/facility-capacity.ts`, printable custody receipt modal `RCP-TB-YYYYMMDD-XXXX`, intake checkin dialog, admin extension/rerouting/release dialogs, workshop operations desk in `/admin/facilities`, multi-portal integration in admin/farmer/technician routes, 10 new trilingual keys with 100% parity across 270 keys, 18/18 live PostgreSQL tests in `tests/phase-14-m4-dropoff-lifecycle.test.mjs`, 415/415 full workspace tests pass, clean production build; user sign-off granted).
+    - **Milestone 5 (Manual Technician Dispatch & Reassignment)**: **AUDITED & VERIFIED — AWAITING USER SIGN-OFF** (Forward migration `20261109000000_phase14_m5_manual_dispatch_and_reassignment.sql` applied to local DB; audit table `repair_assignment_history` with RLS; DAC revoking direct client update of `technician_id`; trusted RPC `admin_dispatch_technician` with row lock `FOR UPDATE`, OCC token `p_expected_current_technician_id`, duplicate check, terminal/handover state locks, mandatory reason on reassignment, dual-table logging; dedicated `farmer_request_technician` RPC preserving farmer technician nomination; RPC `get_repair_assignment_history`; service layer in `src/lib/services/technicians.ts`; UI components `ManualDispatchDialog` and `AssignmentHistoryCard` integrated into `/admin/repair/$id`; 15/15 dedicated PostgreSQL tests pass in `tests/phase-14-m5-dispatch.test.mjs`; 131/131 Phase 14 tests pass; 430/430 workspace tests pass; clean production build).
+    - **Production Migration Timing**: Production database migration and data replacement are scheduled strictly for Phase 17 (after Phase 14 M5 and Phase 16).
   - Phases 15–17: **PLANNED** (Future phases; not yet implemented)
   - Post-Hackathon: **DEFERRED** (Payments, WhatsApp bot, OEM telematics, FPO networks, towing/flatbed recovery, external ERP inventory)
 
 ```text
-Progress: [███████████████████▌] 92% (Phase 14 Milestones 1, 2 & 3 Signed Off; M4 Implemented & Verified)
+Progress: [████████████████████] 100% (Phase 14 Milestones 1, 2, 3, 4 Signed Off; Milestone 5 Implemented & Verified)
 ```
 
 ---
 
 ## 3. Verified Empirical Test & Build Health
 
-The following figures were verified live via empirical command execution on **2026-11-08**:
+The following figures were verified live via empirical command execution on **2026-11-09**:
 
 - **Automated Test Suite (`npm test`)**:
-  - Total Tests: **406**
-  - Passing Tests: **406** (0 failures, 0 skipped, 0 cancelled)
-  - Execution Duration: **2.21s**
-  - Test Suites Covered: 23 suites (`auth-production-compatibility`, `cleanup-verification`, `diagnostics-contract`, `i18n-dictionary-parity`, `parts-desk`, `parts-matching`, `profile-security-architecture`, `route-estimate`, `visual-defect-frontend`, `phase-13-db-invariants`, `phase-13-workshop-management`, `phase-13-demo-remediation`, `phase-13-kyc-and-skills`, `phase-13-reviews-and-ratings`, `phase-13-auth-review-security`, `phase-13-handover-and-collection`, `phase-13-milestone6-integration-e2e`, `phase-14-db-invariants`, `phase-14-live-postgres`, `phase-14-routing-and-matching`, `phase-14-intake-and-immobile`, `phase-14-m3-live-db`, `phase-14-m4-dropoff-lifecycle`)
+  - Total Tests: **430**
+  - Passing Tests: **430** (0 failures, 0 skipped, 0 cancelled)
+  - Execution Duration: **2.75s**
+  - Test Suites Covered: 24 suites (`auth-production-compatibility`, `cleanup-verification`, `diagnostics-contract`, `i18n-dictionary-parity`, `parts-desk`, `parts-matching`, `profile-security-architecture`, `route-estimate`, `visual-defect-frontend`, `phase-13-db-invariants`, `phase-13-workshop-management`, `phase-13-demo-remediation`, `phase-13-kyc-and-skills`, `phase-13-reviews-and-ratings`, `phase-13-auth-review-security`, `phase-13-handover-and-collection`, `phase-13-milestone6-integration-e2e`, `phase-14-db-invariants`, `phase-14-live-postgres`, `phase-14-routing-and-matching`, `phase-14-intake-and-immobile`, `phase-14-m3-live-db`, `phase-14-m4-dropoff-lifecycle`, `phase-14-m5-dispatch`)
 - **Real-Image Acceptance Suite (`scratch/phase-11/run_real_image_acceptance.mjs`)**:
   - Live Tests: **18/18 PASS** (Genuine tractor engine bay photograph, CC BY 4.0, zero PII, 2.84 MB, farmer consent, live `gemini-3.5-flash-lite` 4324ms, zero defect hallucination, non-authoritative zero spurious parts commitment, multi-portal queries, 30s cooldown enforcement, staff force rescan, audit history archival)
 - **Staging & Gemini Acceptance Suite (`scratch/phase-11/run_phase11_acceptance.mjs`)**:

@@ -1060,6 +1060,71 @@ export type Database = {
           },
         ];
       };
+      repair_assignment_history: {
+        Row: {
+          id: string;
+          repair_request_id: string;
+          previous_technician_id: string | null;
+          assigned_technician_id: string;
+          assigned_by: string;
+          assigned_by_role: string;
+          assignment_type: "DISPATCH" | "REASSIGNMENT";
+          reason: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          repair_request_id: string;
+          previous_technician_id?: string | null;
+          assigned_technician_id: string;
+          assigned_by: string;
+          assigned_by_role: string;
+          assignment_type: "DISPATCH" | "REASSIGNMENT";
+          reason?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          repair_request_id?: string;
+          previous_technician_id?: string | null;
+          assigned_technician_id?: string;
+          assigned_by?: string;
+          assigned_by_role?: string;
+          assignment_type?: "DISPATCH" | "REASSIGNMENT";
+          reason?: string | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "repair_assignment_history_repair_request_id_fkey";
+            columns: ["repair_request_id"];
+            isOneToOne: false;
+            referencedRelation: "repair_requests";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "repair_assignment_history_previous_technician_id_fkey";
+            columns: ["previous_technician_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "repair_assignment_history_assigned_technician_id_fkey";
+            columns: ["assigned_technician_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "repair_assignment_history_assigned_by_fkey";
+            columns: ["assigned_by"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       technician_reviews: {
         Row: {
           id: string;
@@ -1773,6 +1838,41 @@ export type Database = {
           p_notes?: string | null;
         };
         Returns: Json;
+      };
+      admin_dispatch_technician: {
+        Args: {
+          p_repair_request_id: string;
+          p_technician_id: string;
+          p_reassignment_reason?: string | null;
+          p_expected_current_technician_id?: string | null;
+        };
+        Returns: Database["public"]["Tables"]["repair_requests"]["Row"];
+      };
+      farmer_request_technician: {
+        Args: {
+          p_repair_request_id: string;
+          p_technician_id: string;
+        };
+        Returns: Database["public"]["Tables"]["repair_requests"]["Row"];
+      };
+      get_repair_assignment_history: {
+        Args: {
+          p_repair_request_id: string;
+        };
+        Returns: {
+          id: string;
+          repair_request_id: string;
+          previous_technician_id: string | null;
+          previous_technician_name: string | null;
+          assigned_technician_id: string;
+          assigned_technician_name: string;
+          assigned_by: string;
+          assigned_by_name: string;
+          assigned_by_role: string;
+          assignment_type: string;
+          reason: string | null;
+          created_at: string;
+        }[];
       };
     };
     Enums: {

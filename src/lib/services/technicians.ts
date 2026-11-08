@@ -34,6 +34,30 @@ export interface ScoredTechnicianMatch {
 export interface AssignTechnicianInput {
   repair_request_id: string;
   technician_id: string; // The technician's profile UUID (profiles.id / technician_profiles.profile_id)
+  reassignment_reason?: string | null;
+  expected_current_technician_id?: string | null;
+}
+
+export interface AdminDispatchInput {
+  repairRequestId: string;
+  technicianId: string;
+  reassignmentReason?: string | null;
+  expectedCurrentTechnicianId?: string | null;
+}
+
+export interface RepairAssignmentHistoryItem {
+  id: string;
+  repairRequestId: string;
+  previousTechnicianId: string | null;
+  previousTechnicianName: string | null;
+  assignedTechnicianId: string;
+  assignedTechnicianName: string;
+  assignedBy: string;
+  assignedByName: string;
+  assignedByRole: string;
+  assignmentType: "DISPATCH" | "REASSIGNMENT";
+  reason: string | null;
+  createdAt: string;
 }
 
 /**
@@ -410,159 +434,221 @@ export async function getEligibleTechnicians(
  * - Unverified technicians cannot be assigned.
  * - Technicians who previously declined the ticket cannot be reassigned without triage.
  */
+/**
+ * Phase 14 Milestone 5: Admin-controlled manual technician dispatch & reassignment.
+ * Calls trusted SECURITY DEFINER RPC `admin_dispatch_technician` with row-level locking,
+ * OCC concurrency protection, validation, and dual-table audit logging.
+ */
+export async function adminDispatchTechnician(
+  input: AdminDispatchInput,
+): Promise<RepairRequestRow> {
+  if (!input.repairRequestId) throw new Error("Repair request ID is required.");
+  if (!input.technicianId) throw new Error("Technician ID is required.");
+
+  const profile = await getAuthenticatedProfile();
+  if (profile.role !== "admin") {
+    throw new Error(
+      "Unauthorized: Only service centre administrators can dispatch or reassign technicians.",
+    );
+  }
+
+  // Resolve UUID if input was job_number
+  let repairId = input.repairRequestId;
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairId);
+  if (!isUuid) {
+    const { data: row, error } = await supabase
+      .from("repair_requests")
+      .select("id")
+      .eq("job_number", repairId)
+      .maybeSingle();
+    if (error || !row) {
+      throw new Error("Repair request not found.");
+    }
+    repairId = row.id;
+  }
+
+  const { data, error } = await supabase.rpc("admin_dispatch_technician", {
+    p_repair_request_id: repairId,
+    p_technician_id: input.technicianId,
+    p_reassignment_reason: input.reassignmentReason?.trim() || null,
+    p_expected_current_technician_id: input.expectedCurrentTechnicianId || null,
+  });
+
+  if (error) {
+    throw new Error(error.message || "Failed to dispatch technician.");
+  }
+
+  if (!data) {
+    throw new Error("Dispatch completed but no repair request was returned.");
+  }
+
+  const updatedRow = data as unknown as RepairRequestRow;
+
+  // Send notifications idempotently
+  try {
+    const jobNumber = updatedRow.job_number || "Repair Request";
+    await createNotification({
+      recipient_role: "technician",
+      recipient_user_id: input.technicianId,
+      notification_text: `You have been assigned to repair request ${jobNumber}.`,
+      link_target: `/technician/job/${updatedRow.id}`,
+    });
+
+    if (updatedRow.farmer_id) {
+      await createNotification({
+        recipient_role: "farmer",
+        recipient_user_id: updatedRow.farmer_id,
+        notification_text: `Technician assigned to ${jobNumber}. Inspection on the way.`,
+        link_target: `/farmer/repair/${updatedRow.id}`,
+      });
+    }
+  } catch (notifErr) {
+    console.warn("[TerraByte] Warning: Failed to send dispatch notification:", notifErr);
+  }
+
+  return updatedRow;
+}
+
+/**
+ * Phase 14 Milestone 5: Fetches the chronological technician assignment history for a repair request.
+ */
+export async function getRepairAssignmentHistory(
+  repairRequestId: string,
+): Promise<RepairAssignmentHistoryItem[]> {
+  if (!repairRequestId) throw new Error("Repair request ID is required.");
+
+  let repairId = repairRequestId;
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairId);
+  if (!isUuid) {
+    const { data: row, error } = await supabase
+      .from("repair_requests")
+      .select("id")
+      .eq("job_number", repairId)
+      .maybeSingle();
+    if (error || !row) {
+      return [];
+    }
+    repairId = row.id;
+  }
+
+  const { data, error } = await supabase.rpc("get_repair_assignment_history", {
+    p_repair_request_id: repairId,
+  });
+
+  if (error) {
+    console.warn("[TerraByte] Failed to load repair assignment history:", error.message);
+    return [];
+  }
+
+  return ((data as Array<Record<string, unknown>>) || []).map((row) => ({
+    id: row.id as string,
+    repairRequestId: row.repair_request_id as string,
+    previousTechnicianId: (row.previous_technician_id as string) || null,
+    previousTechnicianName: (row.previous_technician_name as string) || null,
+    assignedTechnicianId: row.assigned_technician_id as string,
+    assignedTechnicianName: (row.assigned_technician_name as string) || "Technician",
+    assignedBy: row.assigned_by as string,
+    assignedByName: (row.assigned_by_name as string) || "Administrator",
+    assignedByRole: (row.assigned_by_role as string) || "admin",
+    assignmentType: (row.assignment_type as "DISPATCH" | "REASSIGNMENT") || "DISPATCH",
+    reason: (row.reason as string) || null,
+    createdAt: row.created_at as string,
+  }));
+}
+
+/**
+ * Phase 14 Milestone 5: Allows a machinery owner to nominate an initial technician
+ * for their own unassigned repair request in REQUESTED status.
+ * Invokes trusted SECURITY DEFINER RPC `farmer_request_technician` with row-level locking
+ * and strict ownership verification.
+ */
+export async function farmerRequestTechnician(
+  repairRequestId: string,
+  technicianId: string,
+): Promise<RepairRequestRow> {
+  if (!repairRequestId) throw new Error("Repair request ID is required.");
+  if (!technicianId) throw new Error("Technician ID is required.");
+
+  const profile = await getAuthenticatedProfile();
+  if (profile.role !== "farmer") {
+    throw new Error("Unauthorized: Only machinery owners can request or nominate a technician.");
+  }
+
+  // Resolve UUID if input was job_number
+  let repairId = repairRequestId;
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(repairId);
+  if (!isUuid) {
+    const { data: row, error } = await supabase
+      .from("repair_requests")
+      .select("id")
+      .eq("job_number", repairId)
+      .maybeSingle();
+    if (error || !row) {
+      throw new Error("Repair request not found.");
+    }
+    repairId = row.id;
+  }
+
+  const { data, error } = await supabase.rpc("farmer_request_technician", {
+    p_repair_request_id: repairId,
+    p_technician_id: technicianId,
+  });
+
+  if (error) {
+    throw new Error(error.message || "Failed to request technician.");
+  }
+
+  if (!data) {
+    throw new Error("Request completed but no repair request was returned.");
+  }
+
+  const updatedRow = data as unknown as RepairRequestRow;
+
+  // Idempotently notify technician
+  try {
+    const jobNumber = updatedRow.job_number || "Repair Request";
+    await createNotification({
+      recipient_role: "technician",
+      recipient_user_id: technicianId,
+      notification_text: `You have been requested for repair ${jobNumber}.`,
+      link_target: `/technician/job/${updatedRow.id}`,
+    });
+  } catch (notifErr) {
+    console.warn(
+      "[TerraByte] Warning: Failed to send technician notification for farmer request:",
+      notifErr,
+    );
+  }
+
+  return updatedRow;
+}
+
+/**
+ * Assigns or reassigns a technician to a repair request.
+ * Dispatches to adminDispatchTechnician for administrators, or farmerRequestTechnician for farmers.
+ */
 export async function assignTechnician(input: AssignTechnicianInput): Promise<RepairRequestRow> {
   const profile = await getAuthenticatedProfile();
 
   if (!input.repair_request_id) throw new Error("Repair request ID is required.");
   if (!input.technician_id) throw new Error("Technician ID is required.");
 
-  // 1. Fetch repair request to validate ownership and state
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-    input.repair_request_id,
-  );
-  const { data: repair, error: repairError } = isUuid
-    ? await supabase
-        .from("repair_requests")
-        .select("*")
-        .eq("id", input.repair_request_id)
-        .maybeSingle()
-    : await supabase
-        .from("repair_requests")
-        .select("*")
-        .eq("job_number", input.repair_request_id)
-        .maybeSingle();
-
-  if (repairError || !repair) {
-    throw new Error("Repair request not found or inaccessible.");
-  }
-
-  // 2. Authorization check
-  const isOwner = repair.farmer_id === profile.id;
-  const isAdmin = profile.role === "admin";
-
-  if (!isOwner && !isAdmin) {
-    throw new Error(
-      "Unauthorized: Only the machinery owner or Service Centre can assign technicians.",
-    );
-  }
-
-  // Terminal states cannot receive assignments
-  if (repair.status === "COMPLETED" || repair.status === "CANCELLED") {
-    throw new Error(`Cannot assign technician: Repair is already ${repair.status.toLowerCase()}.`);
-  }
-
-  // Farmers can only nominate/assign while ticket is in REQUESTED state
-  if (isOwner && !isAdmin && repair.status !== "REQUESTED") {
-    throw new Error(
-      `Cannot reassign technician: Repair is already in '${repair.status}' stage. Contact Service Centre.`,
-    );
-  }
-
-  // 3. Validate candidate technician existence, role, and verification status
-  const { data: techRecord, error: techCheckError } = await supabase
-    .from("technician_profiles")
-    .select(
-      "profile_id, workshop_name, is_verified, is_available, profile:profile_id(id, full_name, role)",
-    )
-    .eq("profile_id", input.technician_id)
-    .maybeSingle();
-
-  if (techCheckError || !techRecord) {
-    throw new Error("Technician profile not found. Please select a valid registered technician.");
-  }
-
-  const techProfile = (techRecord as { profile?: { role?: string } | null }).profile;
-  if (!techProfile || techProfile.role !== "technician") {
-    throw new Error("Invalid assignment: Selected user profile is not a registered technician.");
-  }
-
-  if (!techRecord.is_verified) {
-    throw new Error(
-      "Assignment rejected: Selected technician has not been verified by the Service Centre.",
-    );
-  }
-
-  // Check if technician previously declined this ticket
-  if (repair.declined_by && repair.declined_by.includes(input.technician_id)) {
-    throw new Error(
-      "Assignment rejected: This technician has already declined this repair request.",
-    );
-  }
-
-  const now = new Date().toISOString();
-  const techName = techProfile.full_name || "Technician";
-  const workshopName = techRecord.workshop_name || "Field Workshop";
-
-  // 4. Persist assignment in repair_requests
-  let updateQuery = supabase
-    .from("repair_requests")
-    .update({
-      technician_id: input.technician_id,
-      status_since: now,
-    })
-    .eq("id", repair.id);
-
-  if (isOwner && !isAdmin) {
-    updateQuery = updateQuery.eq("status", "REQUESTED");
-  } else {
-    updateQuery = updateQuery.neq("status", "COMPLETED").neq("status", "CANCELLED");
-  }
-
-  const { data: updatedRepair, error: updateError } = await updateQuery.select().maybeSingle();
-
-  if (updateError) {
-    throw new Error(`Failed to assign technician: ${updateError.message}`);
-  }
-
-  if (!updatedRepair) {
-    throw new Error(
-      "This repair request could not be assigned because its status changed. Please refresh.",
-    );
-  }
-
-  // 5. Record chronological audit event in repair_timeline
-  const timelineStatus = isAdmin && repair.technician_id ? "REASSIGNED" : "REQUESTED";
-  const timelineNote =
-    isAdmin && repair.technician_id
-      ? `Reassigned to ${techName} (${workshopName}) by Service Centre`
-      : `Technician assigned: ${techName} (${workshopName})`;
-
-  const { error: timelineError } = await supabase.from("repair_timeline").insert({
-    repair_request_id: repair.id,
-    status: timelineStatus,
-    note: timelineNote,
-    created_by_role: isAdmin ? "admin" : "farmer",
-    created_by_id: profile.id,
-  });
-
-  if (timelineError) {
-    console.warn(
-      `[TerraByte] Warning: Failed to record assignment timeline entry: ${timelineError.message}`,
-    );
-  }
-
-  // Notify technician of assignment
-  try {
-    await createNotification({
-      recipient_role: "technician",
-      recipient_user_id: input.technician_id,
-      notification_text: `You have been assigned to repair request ${repair.job_number}.`,
-      link_target: `/technician/job/${repair.id}`,
+  if (profile.role === "admin") {
+    return await adminDispatchTechnician({
+      repairRequestId: input.repair_request_id,
+      technicianId: input.technician_id,
+      reassignmentReason: input.reassignment_reason,
+      expectedCurrentTechnicianId: input.expected_current_technician_id,
     });
-
-    if (isAdmin) {
-      await createNotification({
-        recipient_role: "farmer",
-        recipient_user_id: repair.farmer_id,
-        notification_text: `Technician assigned to ${repair.job_number}. Inspection on the way.`,
-        link_target: `/farmer/repair/${repair.id}`,
-      });
-    }
-  } catch (notifErr) {
-    console.warn("[TerraByte] Warning: Failed to send assignment notification:", notifErr);
   }
 
-  return updatedRepair;
+  if (profile.role === "farmer") {
+    return await farmerRequestTechnician(input.repair_request_id, input.technician_id);
+  }
+
+  throw new Error(
+    "Unauthorized: Only service centre administrators or machinery owners can assign technicians.",
+  );
 }
 
 /**

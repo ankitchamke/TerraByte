@@ -102,6 +102,8 @@ import {
   RerouteWorkshopDialog,
   ReleaseEquipmentDialog,
 } from "@/components/facilities/workshop-admin-dialogs";
+import { ManualDispatchDialog } from "@/components/dispatch/manual-dispatch-dialog";
+import { AssignmentHistoryCard } from "@/components/dispatch/assignment-history-card";
 
 export const Route = createFileRoute("/admin/repair/$id")({
   head: () => meta("Repair detail", "Inspect, dispatch and unblock a repair."),
@@ -261,6 +263,11 @@ function AdminRepair() {
   const [dispatchLocation, setDispatchLocation] = useState<RepairDispatchLocation | null>(null);
   const [partRequests, setPartRequests] = useState<ServiceCentrePartRequestDetail[]>([]);
   const [confirmingHandoffId, setConfirmingHandoffId] = useState<string | null>(null);
+
+  // Manual dispatch & reassignment dialog states (Phase 14 Milestone 5)
+  const [selectedCandidate, setSelectedCandidate] = useState<ScoredTechnicianMatch | null>(null);
+  const [dispatchDialogOpen, setDispatchDialogOpen] = useState(false);
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
 
   // Coordinate Part ETA state
   const [partEtaTarget, setPartEtaTarget] = useState<ServiceCentrePartRequestDetail | null>(null);
@@ -1383,18 +1390,18 @@ function AdminRepair() {
                             )}
                           </p>
                         </div>
-                        <button
-                          disabled={assigning === m.technician.profile_id}
-                          onClick={() =>
-                            void handleAssign(
-                              m.technician.profile_id,
-                              m.technician.profile?.full_name || "technician",
-                            )
-                          }
-                          className="h-10 shrink-0 rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                        <Button
+                          type="button"
+                          variant={r.technician_id ? "outline" : "default"}
+                          size="sm"
+                          className="h-9 shrink-0 font-semibold"
+                          onClick={() => {
+                            setSelectedCandidate(m);
+                            setDispatchDialogOpen(true);
+                          }}
                         >
-                          {assigning === m.technician.profile_id ? "Assigning…" : "Assign"}
-                        </button>
+                          {r.technician_id ? "Reassign" : "Dispatch"}
+                        </Button>
                       </div>
                     ))
                 ) : (
@@ -1407,6 +1414,9 @@ function AdminRepair() {
               </div>
             </Card>
           )}
+
+          {/* Technician Assignment History (Phase 14 Milestone 5) */}
+          {isReal && <AssignmentHistoryCard repairId={r.id} refreshTrigger={historyRefreshKey} />}
 
           {/* Parts Blocker Card */}
           {partsHold && status === "WAITING_FOR_PARTS" && (
@@ -2297,6 +2307,22 @@ function AdminRepair() {
           equipmentSummary={`${equipmentMake} ${equipmentModel}`}
           farmerName={farmerName}
           onSuccess={() => void loadData()}
+        />
+      )}
+
+      {dispatchDialogOpen && selectedCandidate && isReal && (
+        <ManualDispatchDialog
+          open={dispatchDialogOpen}
+          onOpenChange={setDispatchDialogOpen}
+          repairId={r.id}
+          jobNumber={jobNumber}
+          currentTechnicianId={r.technician_id || null}
+          currentTechnicianName={technicianName || null}
+          candidate={selectedCandidate}
+          onDispatchSuccess={async () => {
+            setHistoryRefreshKey((k) => k + 1);
+            await loadData();
+          }}
         />
       )}
     </div>

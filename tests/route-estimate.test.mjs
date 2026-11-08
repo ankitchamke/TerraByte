@@ -57,15 +57,17 @@ test("parseGoogleDurationSeconds parses duration strings accurately", () => {
   assert.equal(parseGoogleDurationSeconds("invalid"), 0);
 });
 
-test("isValidGpsCoordinate strictly validates coordinate bounds and rejects Null Island", () => {
+test("isValidGpsCoordinate strictly validates coordinate bounds and accepts valid zero coordinates", () => {
   // Valid coordinates
   assert.equal(isValidGpsCoordinate(21.1458, 79.0882), true);
   assert.equal(isValidGpsCoordinate(-21.1458, -79.0882), true);
   assert.equal(isValidGpsCoordinate(90, 180), true);
   assert.equal(isValidGpsCoordinate(-90, -180), true);
 
-  // Null Island (0, 0) rejection
-  assert.equal(isValidGpsCoordinate(0, 0), false);
+  // Valid zero coordinates (Equator / Prime Meridian)
+  assert.equal(isValidGpsCoordinate(0, 79.0882), true, "latitude = 0 with valid longitude must be accepted");
+  assert.equal(isValidGpsCoordinate(21.1458, 0), true, "longitude = 0 with valid latitude must be accepted");
+  assert.equal(isValidGpsCoordinate(0, 0), true, "both coordinates zero (0, 0) must be accepted");
 
   // Out of range
   assert.equal(isValidGpsCoordinate(90.1, 79.0), false);
@@ -73,11 +75,14 @@ test("isValidGpsCoordinate strictly validates coordinate bounds and rejects Null
   assert.equal(isValidGpsCoordinate(21.0, 180.1), false);
   assert.equal(isValidGpsCoordinate(21.0, -180.1), false);
 
-  // Non-numbers, NaN, null
+  // Non-numbers, NaN, null, undefined, Infinity
   assert.equal(isValidGpsCoordinate("21.0", 79.0), false);
   assert.equal(isValidGpsCoordinate(NaN, 79.0), false);
   assert.equal(isValidGpsCoordinate(21.0, Infinity), false);
+  assert.equal(isValidGpsCoordinate(21.0, -Infinity), false);
   assert.equal(isValidGpsCoordinate(null, null), false);
+  assert.equal(isValidGpsCoordinate(undefined, 79.0), false);
+  assert.equal(isValidGpsCoordinate(21.0, undefined), false);
 });
 
 // ==============================================================================

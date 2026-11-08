@@ -1111,8 +1111,21 @@ function AdminRepair() {
                           </p>
                           <p className="truncate text-xs text-muted-foreground">
                             {m.reasons.join(" · ") || "Verified technician"} ·{" "}
-                            {m.technician.profile?.village || "Nagpur"} · ~
-                            {m.technician.eta_minutes ?? 45} min
+                            {m.technician.profile?.village || "Nagpur"} ·{" "}
+                            {m.routingStatus === "NO_COORDINATES" ? (
+                              <span>Distance Unavailable</span>
+                            ) : m.routingStatus === "OUTAGE" || m.distanceKm == null ? (
+                              <span>Road Distance Temporarily Unavailable</span>
+                            ) : (
+                              <span>
+                                {m.distanceKm} km · ~{m.etaMin} min
+                                {m.routingStatus === "EXTENDED" || (m.distanceKm != null && m.distanceKm > 50) ? (
+                                  <span className="ml-1 text-warning-foreground font-semibold">
+                                    (Extended Travel)
+                                  </span>
+                                ) : null}
+                              </span>
+                            )}
                           </p>
                         </div>
                         <button

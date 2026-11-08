@@ -164,6 +164,17 @@ export const mr: TranslationDictionary = {
     validationEquipment: "कृपया एक यंत्र निवडा.",
     validationSymptoms: "कृपया किमान एक लक्षण निवडा किंवा समस्या लिहा.",
     validationVillage: "कृपया तुमचे गाव किंवा खुणेचे ठिकाण टाका.",
+    immobileQuestion: "यंत्र पूर्णपणे बंद किंवा चालवण्यास असमर्थ आहे का?",
+    immobileWarning:
+      "अचल यंत्र कार्यशाळेत नेले जाऊ शकत नाही. सेवा शेतावर / डोरस्टेपवर निश्चित केली आहे.",
+    deliveryModeDoorstep: "डोरस्टेप / शेतावर सेवा (तंत्रज्ञ तुमच्या शेतावर भेट देईल)",
+    deliveryModeDropOff: "कार्यशाळा ड्रॉप-ऑफ (यंत्र मंजूर कार्यशाळेत घेऊन जा)",
+    selectWorkshop: "मंजूर कार्यशाळा निवडा",
+    machineMobility: "यंत्राची गतिशीलता",
+    deliveryModeTitle: "सेवा वितरण पद्धत",
+    noApprovedWorkshops: "ड्रॉप-ऑफसाठी सध्या कोणतीही मंजूर कार्यशाळा उपलब्ध नाही.",
+    validationWorkshop: "कृपया कार्यशाळा ड्रॉप-ऑफसाठी मंजूर कार्यशाळा निवडा.",
+    validationDeliveryMode: "कृपया सेवा वितरण पद्धत निवडा (डोरस्टेप किंवा कार्यशाळा ड्रॉप-ऑफ).",
   },
   repair: {
     jobHeader: "दुरुस्ती काम",

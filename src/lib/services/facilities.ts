@@ -705,3 +705,70 @@ export async function toggleDropOffApproval(
     handleFacilityError(error, "Failed to update drop-off approval status");
   }
 }
+
+export interface DropOffFacilityOption {
+  id: string;
+  name: string;
+  village: string;
+  tahsil: string;
+  address: string;
+  phone: string;
+  operating_hours: OperatingHours | Json;
+  drop_off_approved: boolean;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+/**
+ * Loads all active, drop-off approved workshop facilities.
+ * Used by the Farmer Intake Wizard to populate the workshop drop-off selector.
+ * Avoids bay capacity and reservation checks (reserved for Phase 14 Milestone 4).
+ */
+export async function getDropOffApprovedFacilities(): Promise<DropOffFacilityOption[]> {
+  try {
+    const { data: facilities, error } = await supabase
+      .from("repair_facilities")
+      .select(
+        "id, name, village, tahsil, address, phone, operating_hours, drop_off_approved, is_active, created_at, updated_at",
+      )
+      .eq("drop_off_approved", true)
+      .eq("is_active", true)
+      .order("name", { ascending: true });
+
+    if (error) {
+      if (isFacilityMigrationPendingError(error)) {
+        return [];
+      }
+      handleFacilityError(error, "Failed to load drop-off facilities");
+    }
+
+    if (!facilities || facilities.length === 0) {
+      return [];
+    }
+
+    return facilities.map((fac) => ({
+      id: fac.id,
+      name: fac.name,
+      village: fac.village || "",
+      tahsil: fac.tahsil || "",
+      address: fac.address || "",
+      phone: fac.phone || "",
+      operating_hours: fac.operating_hours || {
+        open: "08:00",
+        close: "18:00",
+        days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
+      },
+      drop_off_approved: fac.drop_off_approved,
+      is_active: fac.is_active,
+      created_at: fac.created_at,
+      updated_at: fac.updated_at,
+    }));
+  } catch (err: unknown) {
+    if (isFacilityMigrationPendingError(err)) {
+      return [];
+    }
+    console.error("[TerraByte] Error fetching drop-off approved facilities:", err);
+    throw err;
+  }
+}

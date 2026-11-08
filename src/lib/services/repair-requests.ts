@@ -18,6 +18,9 @@ export interface CreateRepairRequestInput {
   photos?: string[];
   location: string;
   assessment?: Json;
+  delivery_mode?: "DOORSTEP" | "WORKSHOP_DROPOFF";
+  is_immobile?: boolean;
+  facility_id?: string | null;
   gpsLocation?:
     | {
         latitude: number;
@@ -213,6 +216,41 @@ export async function createRepairRequest(
     );
   }
 
+  const isImmobile = Boolean(input.is_immobile);
+  const deliveryMode = input.delivery_mode === "WORKSHOP_DROPOFF" ? "WORKSHOP_DROPOFF" : "DOORSTEP";
+
+  if (isImmobile && deliveryMode === "WORKSHOP_DROPOFF") {
+    throw new Error(
+      "Immobile machinery cannot be transported. Service is locked to Doorstep / On-Field.",
+    );
+  }
+
+  if (deliveryMode === "DOORSTEP" && input.facility_id) {
+    throw new Error("Facility reference cannot be provided when delivery mode is DOORSTEP.");
+  }
+
+  if (deliveryMode === "WORKSHOP_DROPOFF") {
+    if (!input.facility_id?.trim()) {
+      throw new Error("An approved workshop facility must be selected for workshop drop-off.");
+    }
+
+    const { data: targetFacility, error: facErr } = await supabase
+      .from("repair_facilities")
+      .select("id, is_active, drop_off_approved")
+      .eq("id", input.facility_id.trim())
+      .maybeSingle();
+
+    if (facErr || !targetFacility) {
+      throw new Error("Selected workshop facility was not found.");
+    }
+    if (!targetFacility.is_active) {
+      throw new Error("Selected workshop facility is currently inactive.");
+    }
+    if (!targetFacility.drop_off_approved) {
+      throw new Error("Selected workshop facility is not approved for drop-off.");
+    }
+  }
+
   // 2. Generate unique job number
   const jobNumber = await generateUniqueJobNumber();
   const now = new Date().toISOString();
@@ -232,6 +270,9 @@ export async function createRepairRequest(
       location,
       assessment: input.assessment ?? {},
       status_since: now,
+      delivery_mode: deliveryMode,
+      is_immobile: isImmobile,
+      facility_id: deliveryMode === "WORKSHOP_DROPOFF" ? input.facility_id : null,
     })
     .select()
     .single();
@@ -453,7 +494,7 @@ export async function getAdminRepairRequests(): Promise<RepairRequestDetail[]> {
     throw new Error(`Failed to load operations repair requests: ${error.message}`);
   }
 
-  return (data as any[]) ?? [];
+  return (data as unknown as RepairRequestRow[]) ?? [];
 }
 
 /**
@@ -1564,7 +1605,7 @@ export async function waitForParts(
   const existingHold = (repair.parts_hold as Record<string, unknown>) ?? {};
   const rawItems = existingHold["items"];
   const rawPart = existingHold["part"] as string | undefined;
-  const existingItems: any[] = Array.isArray(rawItems)
+  const existingItems: Record<string, unknown>[] = Array.isArray(rawItems)
     ? [...rawItems]
     : rawPart
       ? [
@@ -1611,7 +1652,7 @@ export async function waitForParts(
   const pendingItems = existingItems.filter((it) => it.status === "PENDING");
   const summaryPart =
     pendingItems.length > 1
-      ? `${pendingItems.length} parts (${pendingItems.map((i: any) => i.part).join(", ")})`
+      ? `${pendingItems.length} parts (${pendingItems.map((i: Record<string, unknown>) => String(i.part || "")).join(", ")})`
       : input.part.trim();
 
   const partsHoldData = {
@@ -1729,7 +1770,9 @@ export async function updatePartsEta(
 
   const currentHold = (repair.parts_hold as Record<string, unknown>) ?? {};
   const rawCurrentItems = currentHold["items"];
-  const existingItems: any[] = Array.isArray(rawCurrentItems) ? [...rawCurrentItems] : [];
+  const existingItems: Record<string, unknown>[] = Array.isArray(rawCurrentItems)
+    ? [...rawCurrentItems]
+    : [];
 
   if (input.requestId || input.partId || input.itemId || input.partName) {
     const targetKey = (input.requestId ||

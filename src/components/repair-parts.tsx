@@ -126,10 +126,27 @@ export function TechCard({
         </span>
       </div>
       <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm">
-        <span className="flex items-center gap-1">
-          <MapPin className="h-4 w-4" />
-          {t.distanceKm} km · ~{t.etaMin} min
-        </span>
+        {t.routingStatus === "NO_COORDINATES" ? (
+          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+            <MapPin className="h-4 w-4 shrink-0" />
+            Distance Unavailable
+          </span>
+        ) : t.routingStatus === "OUTAGE" || (t.distanceKm == null && t.etaMin == null) ? (
+          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+            <MapPin className="h-4 w-4 shrink-0" />
+            Road Distance Temporarily Unavailable
+          </span>
+        ) : (
+          <span className="flex items-center gap-1">
+            <MapPin className="h-4 w-4 shrink-0" />
+            {t.distanceKm} km · ~{t.etaMin} min
+            {t.routingStatus === "EXTENDED" || (t.distanceKm != null && t.distanceKm > 50) ? (
+              <span className="ml-1 text-xs text-warning-foreground font-semibold">
+                (Extended Travel)
+              </span>
+            ) : null}
+          </span>
+        )}
         <span className="flex items-center gap-1">
           <Star
             className={cn(

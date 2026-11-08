@@ -33,6 +33,12 @@ export interface Equipment {
   photo?: string | undefined;
   status: EquipStatus;
 }
+export type TechnicianRoutingStatus =
+  | "AVAILABLE" // Road route computed (<= 50 km)
+  | "EXTENDED" // Road route computed (> 50 km; informational tag)
+  | "OUTAGE" // OSRM network error, timeout, 5xx, or NoRoute -> "Road Distance Temporarily Unavailable"
+  | "NO_COORDINATES"; // Missing or invalid workshop or breakdown coordinates -> "Distance Unavailable"
+
 export interface Technician {
   id: string;
   name: string;
@@ -40,8 +46,9 @@ export interface Technician {
   brands: string[];
   skills: string[];
   verified: boolean;
-  distanceKm: number;
-  etaMin: number;
+  distanceKm: number | null;
+  etaMin: number | null;
+  routingStatus?: TechnicianRoutingStatus;
   available: boolean;
   rating: number | null;
   jobsDone: number;

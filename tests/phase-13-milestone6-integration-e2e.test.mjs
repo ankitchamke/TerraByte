@@ -482,10 +482,278 @@ test("Cross-Role Security & Negative Transition Enforcement", () => {
 });
 
 // ==============================================================================
-// 6. TRILINGUAL PARITY (250 KEYS) & DEVANAGARI VERIFICATION
+// 6. TRILINGUAL PARITY (250 BASELINE + 10 PHASE 14 KEYS) & DEVANAGARI VERIFICATION
 // ==============================================================================
 
-test("Trilingual Parity: 100% Key Parity (250 Keys) across EN, HI, MR", () => {
+// Canonical snapshot of all 250 original Phase 13 keys preserved across EN, HI, MR
+const PHASE_13_BASELINE_KEYS = [
+  "breakdown.btnNext",
+  "breakdown.btnPrev",
+  "breakdown.btnSubmit",
+  "breakdown.btnSubmitting",
+  "breakdown.offlineDraftNotice",
+  "breakdown.step1AddBtn",
+  "breakdown.step1Desc",
+  "breakdown.step1Tab",
+  "breakdown.step1Title",
+  "breakdown.step2Desc",
+  "breakdown.step2Tab",
+  "breakdown.step2TextPlaceholder",
+  "breakdown.step2Title",
+  "breakdown.step2VoiceClear",
+  "breakdown.step2VoiceDesc",
+  "breakdown.step2VoiceListening",
+  "breakdown.step2VoiceRecordBtn",
+  "breakdown.step2VoiceRecording",
+  "breakdown.step2VoiceStop",
+  "breakdown.step2VoiceTitle",
+  "breakdown.step2VoiceTranscribing",
+  "breakdown.step3ConsentCheckbox",
+  "breakdown.step3ConsentDisclaimer",
+  "breakdown.step3ConsentTitle",
+  "breakdown.step3Desc",
+  "breakdown.step3Tab",
+  "breakdown.step3TakePhoto",
+  "breakdown.step3Title",
+  "breakdown.step3UploadPhoto",
+  "breakdown.step4Accuracy",
+  "breakdown.step4Desc",
+  "breakdown.step4DoorstepNotice",
+  "breakdown.step4GpsAcquired",
+  "breakdown.step4Tab",
+  "breakdown.step4TahsilLabel",
+  "breakdown.step4Title",
+  "breakdown.step4UseGps",
+  "breakdown.step4VillageLabel",
+  "breakdown.step4VillagePlaceholder",
+  "breakdown.subtitle",
+  "breakdown.successToast",
+  "breakdown.title",
+  "breakdown.validationEquipment",
+  "breakdown.validationSymptoms",
+  "breakdown.validationVillage",
+  "common.actionNeeded",
+  "common.activeRepair",
+  "common.all",
+  "common.back",
+  "common.backToHome",
+  "common.broken",
+  "common.cancel",
+  "common.close",
+  "common.confirm",
+  "common.date",
+  "common.delete",
+  "common.demoData",
+  "common.details",
+  "common.edit",
+  "common.farmer",
+  "common.hrs",
+  "common.inProgress",
+  "common.loading",
+  "common.notAssigned",
+  "common.offlineBanner",
+  "common.operational",
+  "common.phone",
+  "common.save",
+  "common.serviceCentre",
+  "common.status",
+  "common.submit",
+  "common.tahsil",
+  "common.technician",
+  "common.time",
+  "common.underRepair",
+  "common.unknown",
+  "common.view",
+  "common.village",
+  "dashboard.addFirstMachine",
+  "dashboard.addManage",
+  "dashboard.arrives",
+  "dashboard.checkingRepairs",
+  "dashboard.expectedReady",
+  "dashboard.fieldHelplineNotice",
+  "dashboard.greeting",
+  "dashboard.helpline",
+  "dashboard.inspectionRequired",
+  "dashboard.loadingMachines",
+  "dashboard.myMachines",
+  "dashboard.noActiveRepairsSub",
+  "dashboard.noActiveRepairsTitle",
+  "dashboard.noMachinesYet",
+  "dashboard.pendingSupplier",
+  "dashboard.reportBreakdownBtn",
+  "dashboard.sendRequestToTech",
+  "dashboard.serviceHistory",
+  "dashboard.viewRepair",
+  "dashboard.waitingForPart",
+  "equipment.activeRepairBanner",
+  "equipment.addBtn",
+  "equipment.btnSaveMachine",
+  "equipment.btnSaving",
+  "equipment.dialogDesc",
+  "equipment.dialogTitle",
+  "equipment.hoursLabel",
+  "equipment.hoursPlaceholder",
+  "equipment.makeLabel",
+  "equipment.makePlaceholder",
+  "equipment.modelLabel",
+  "equipment.modelPlaceholder",
+  "equipment.noHistoryYet",
+  "equipment.photoLabel",
+  "equipment.recordTitle",
+  "equipment.serialLabel",
+  "equipment.serialPlaceholder",
+  "equipment.serviceHistoryTitle",
+  "equipment.specifications",
+  "equipment.subtitle",
+  "equipment.successAdded",
+  "equipment.title",
+  "equipment.typeLabel",
+  "equipment.viewActiveRepair",
+  "equipment.yearLabel",
+  "equipmentTypes.Harvester",
+  "equipmentTypes.Power Tiller",
+  "equipmentTypes.Pump",
+  "equipmentTypes.Sprayer",
+  "equipmentTypes.Tractor",
+  "handover.authorizedBadge",
+  "handover.authorizedNotice",
+  "handover.confirmButton",
+  "handover.confirmedBadge",
+  "handover.confirmingButton",
+  "handover.counterPhone",
+  "handover.getDirections",
+  "handover.loadTestPassed",
+  "handover.loadTestPending",
+  "handover.loadTestStatus",
+  "handover.operatingHours",
+  "handover.paymentCleared",
+  "handover.paymentPending",
+  "handover.paymentStatus",
+  "handover.pendingBadge",
+  "handover.pendingNotice",
+  "handover.pickupDetails",
+  "handover.receiptConfirmed",
+  "handover.releasedBadge",
+  "handover.releasedNotice",
+  "handover.sectionTitle",
+  "handover.successToast",
+  "repair.aiAnalysisDisclaimer",
+  "repair.backToRepairs",
+  "repair.btnApproveQuote",
+  "repair.btnDisputeQuote",
+  "repair.btnSendMessage",
+  "repair.cancelReasonLabel",
+  "repair.cancelRepairDesc",
+  "repair.cancelRepairTitle",
+  "repair.componentAffected",
+  "repair.confidence",
+  "repair.confirmCancelBtn",
+  "repair.contactTechnician",
+  "repair.diagnosticsCardTitle",
+  "repair.directions",
+  "repair.disputeReasonPlaceholder",
+  "repair.etaArrival",
+  "repair.jobHeader",
+  "repair.labourSubtotal",
+  "repair.messagePlaceholder",
+  "repair.messagesTitle",
+  "repair.partsSubtotal",
+  "repair.quoteApprovedSuccess",
+  "repair.quoteCardTitle",
+  "repair.quotePendingNotice",
+  "repair.quoteRevisedNotice",
+  "repair.safetyAdvisory",
+  "repair.severity",
+  "repair.statusBadge",
+  "repair.stepAssigned",
+  "repair.stepCompleted",
+  "repair.stepDiagnosing",
+  "repair.stepInProgress",
+  "repair.stepRequested",
+  "repair.stepTesting",
+  "repair.submitDispute",
+  "repair.taxAmount",
+  "repair.technicianCardTitle",
+  "repair.ticketId",
+  "repair.timelineTitle",
+  "repair.totalAmount",
+  "reviews.alreadyReviewedNotice",
+  "reviews.commentsLabel",
+  "reviews.commentsPlaceholder",
+  "reviews.errorCommentsSensitive",
+  "reviews.errorRequiredRating",
+  "reviews.ineligibleNotice",
+  "reviews.overallRating",
+  "reviews.qualityRating",
+  "reviews.rateTechnician",
+  "reviews.repairsCount",
+  "reviews.reviewSubtitle",
+  "reviews.reviewsCount",
+  "reviews.sectionTitle",
+  "reviews.submitBtn",
+  "reviews.submittedTitle",
+  "reviews.submittingBtn",
+  "reviews.successToast",
+  "reviews.timelinessRating",
+  "reviews.unrated",
+  "reviews.verifiedBadge",
+  "shell.brand",
+  "shell.farmerPortal",
+  "shell.markAllRead",
+  "shell.noNotifications",
+  "shell.notifications",
+  "shell.profileSettings",
+  "shell.selectLanguage",
+  "statuses.accepted",
+  "statuses.assigned",
+  "statuses.cancellation_requested",
+  "statuses.cancelled",
+  "statuses.completed",
+  "statuses.in_progress",
+  "statuses.quote_approved",
+  "statuses.quote_pending",
+  "statuses.quote_revised",
+  "statuses.requested",
+  "statuses.testing",
+  "statuses.waiting_for_parts",
+  "symptoms.Black smoke",
+  "symptoms.Brake failure",
+  "symptoms.Electrical/battery issue",
+  "symptoms.Engine stalls",
+  "symptoms.Engine won't start",
+  "symptoms.Hydraulic lift failure",
+  "symptoms.Loss of power",
+  "symptoms.Other",
+  "symptoms.Overheating",
+  "symptoms.Steering failure",
+  "symptoms.Strange grinding sound",
+  "symptoms.White smoke",
+  "systems.Cooling system / head gasket",
+  "systems.Electrical / starting circuit",
+  "systems.Fuel injection / filtration",
+  "systems.Fuel supply",
+  "systems.General Mechanical",
+  "systems.General engine / mechanical",
+  "systems.Hydraulics",
+  "systems.Steering & brakes",
+  "systems.Transmission / clutch",
+];
+
+// Explicit list of the 10 Phase 14 Milestone 3 enumerable breakdown keys
+const PHASE_14_M3_KEYS = [
+  "breakdown.deliveryModeDoorstep",
+  "breakdown.deliveryModeDropOff",
+  "breakdown.deliveryModeTitle",
+  "breakdown.immobileQuestion",
+  "breakdown.immobileWarning",
+  "breakdown.machineMobility",
+  "breakdown.noApprovedWorkshops",
+  "breakdown.selectWorkshop",
+  "breakdown.validationDeliveryMode",
+  "breakdown.validationWorkshop",
+];
+
+test("Trilingual Parity: Explicit Phase 13 (250 Keys) & Phase 14 M3 (10 Keys) Preservation", () => {
   function getAllKeys(obj, prefix = "") {
     let keys = [];
     for (const [key, value] of Object.entries(obj)) {
@@ -503,36 +771,92 @@ test("Trilingual Parity: 100% Key Parity (250 Keys) across EN, HI, MR", () => {
   const hiKeys = getAllKeys(hi).sort();
   const mrKeys = getAllKeys(mr).sort();
 
+  // 1. Explicit Phase 13 Key Preservation Assertions (not length-alone)
+  assert.equal(
+    PHASE_13_BASELINE_KEYS.length,
+    250,
+    "Phase 13 baseline snapshot must define exactly 250 keys",
+  );
+
+  const missingPhase13InEn = PHASE_13_BASELINE_KEYS.filter((k) => !enKeys.includes(k));
+  const missingPhase13InHi = PHASE_13_BASELINE_KEYS.filter((k) => !hiKeys.includes(k));
+  const missingPhase13InMr = PHASE_13_BASELINE_KEYS.filter((k) => !mrKeys.includes(k));
+  assert.deepEqual(
+    missingPhase13InEn,
+    [],
+    "All 250 original Phase 13 keys must exist in EN dictionary",
+  );
+  assert.deepEqual(
+    missingPhase13InHi,
+    [],
+    "All 250 original Phase 13 keys must exist in HI dictionary",
+  );
+  assert.deepEqual(
+    missingPhase13InMr,
+    [],
+    "All 250 original Phase 13 keys must exist in MR dictionary",
+  );
+
+  // 2. Explicit Phase 14 M3 Keys & Ordinary Enumerability Verification
+  assert.equal(PHASE_14_M3_KEYS.length, 10, "Phase 14 M3 must define exactly 10 new keys");
+  for (const key of PHASE_14_M3_KEYS) {
+    assert.ok(enKeys.includes(key), `Phase 14 M3 key ${key} must exist in EN`);
+    assert.ok(hiKeys.includes(key), `Phase 14 M3 key ${key} must exist in HI`);
+    assert.ok(mrKeys.includes(key), `Phase 14 M3 key ${key} must exist in MR`);
+    const prop = key.replace("breakdown.", "");
+    assert.equal(
+      Object.prototype.propertyIsEnumerable.call(en.breakdown, prop),
+      true,
+      `Phase 14 key breakdown.${prop} must be an ordinary enumerable property in EN (no Object.defineProperties workaround)`,
+    );
+    assert.equal(
+      Object.prototype.propertyIsEnumerable.call(hi.breakdown, prop),
+      true,
+      `Phase 14 key breakdown.${prop} must be an ordinary enumerable property in HI (no Object.defineProperties workaround)`,
+    );
+    assert.equal(
+      Object.prototype.propertyIsEnumerable.call(mr.breakdown, prop),
+      true,
+      `Phase 14 key breakdown.${prop} must be an ordinary enumerable property in MR (no Object.defineProperties workaround)`,
+    );
+  }
+
+  // 3. Exact Total Count & Parity
+  const expectedTotalKeys = PHASE_13_BASELINE_KEYS.length + PHASE_14_M3_KEYS.length;
   assert.equal(
     enKeys.length,
-    250,
-    `Expected exactly 250 keys in EN dictionary (found ${enKeys.length})`,
+    expectedTotalKeys,
+    `Expected exact total of ${expectedTotalKeys} enumerable keys in EN dictionary (found ${enKeys.length})`,
   );
   assert.equal(
     hiKeys.length,
-    250,
-    `Expected exactly 250 keys in HI dictionary (found ${hiKeys.length})`,
+    enKeys.length,
+    `Expected HI dictionary key count (${hiKeys.length}) to match EN dictionary (${enKeys.length})`,
   );
   assert.equal(
     mrKeys.length,
-    250,
-    `Expected exactly 250 keys in MR dictionary (found ${mrKeys.length})`,
+    enKeys.length,
+    `Expected MR dictionary key count (${mrKeys.length}) to match EN dictionary (${enKeys.length})`,
   );
 
-  // Parity checks
+  // 4. Zero Dangling / Missing Keys Across All 3 Languages
   const missingInHi = enKeys.filter((k) => !hiKeys.includes(k));
   const missingInMr = enKeys.filter((k) => !mrKeys.includes(k));
+  const extraInHi = hiKeys.filter((k) => !enKeys.includes(k));
+  const extraInMr = mrKeys.filter((k) => !enKeys.includes(k));
   assert.deepEqual(missingInHi, [], "Zero missing keys in Hindi dictionary");
   assert.deepEqual(missingInMr, [], "Zero missing keys in Marathi dictionary");
+  assert.deepEqual(extraInHi, [], "Zero extra keys in Hindi dictionary");
+  assert.deepEqual(extraInMr, [], "Zero extra keys in Marathi dictionary");
 
-  // Phase 13 Section Validation
+  // 5. Phase 13 Section Validation
   const phase13Prefixes = ["reviews", "handover"];
   for (const prefix of phase13Prefixes) {
     const matchingEn = enKeys.filter((k) => k.startsWith(prefix));
     assert.ok(matchingEn.length > 0, `Prefix ${prefix} has keys in EN`);
   }
 
-  // Devanagari Presence in HI & MR
+  // 6. Devanagari Presence in HI & MR
   const devanagariRegex = /[\u0900-\u097F]/;
   const sampleHi = hi.handover?.confirmButton;
   const sampleMr = mr.handover?.confirmButton;

@@ -25,6 +25,7 @@ import { Route as AdminPartsDeskRouteImport } from './routes/admin/parts-desk'
 import { Route as AdminTechniciansRouteImport } from './routes/admin/technicians'
 import { Route as ApiAssessVisualDefectRouteImport } from './routes/api/assess-visual-defect'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
+import { Route as ApiQuoteDecisionRouteImport } from './routes/api/quote-decision'
 import { Route as ApiRouteEstimateRouteImport } from './routes/api/route-estimate'
 import { Route as AuthConfirmRouteImport } from './routes/auth/confirm'
 import { Route as AuthResetPasswordRouteImport } from './routes/auth/reset-password'
@@ -121,6 +122,11 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
   path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiQuoteDecisionRoute = ApiQuoteDecisionRouteImport.update({
+  id: '/api/quote-decision',
+  path: '/api/quote-decision',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiRouteEstimateRoute = ApiRouteEstimateRouteImport.update({
   id: '/api/route-estimate',
   path: '/api/route-estimate',
@@ -208,6 +214,7 @@ export interface FileRoutesByFullPath {
   '/admin/technicians': typeof AdminTechniciansRoute
   '/api/assess-visual-defect': typeof ApiAssessVisualDefectRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/quote-decision': typeof ApiQuoteDecisionRoute
   '/api/route-estimate': typeof ApiRouteEstimateRoute
   '/auth/confirm': typeof AuthConfirmRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
@@ -237,6 +244,7 @@ export interface FileRoutesByTo {
   '/admin/technicians': typeof AdminTechniciansRoute
   '/api/assess-visual-defect': typeof ApiAssessVisualDefectRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/quote-decision': typeof ApiQuoteDecisionRoute
   '/api/route-estimate': typeof ApiRouteEstimateRoute
   '/auth/confirm': typeof AuthConfirmRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
@@ -270,6 +278,7 @@ export interface FileRoutesById {
   '/admin/technicians': typeof AdminTechniciansRoute
   '/api/assess-visual-defect': typeof ApiAssessVisualDefectRoute
   '/api/health': typeof ApiHealthRoute
+  '/api/quote-decision': typeof ApiQuoteDecisionRoute
   '/api/route-estimate': typeof ApiRouteEstimateRoute
   '/auth/confirm': typeof AuthConfirmRoute
   '/auth/reset-password': typeof AuthResetPasswordRoute
@@ -304,6 +313,7 @@ export interface FileRouteTypes {
     | '/admin/technicians'
     | '/api/assess-visual-defect'
     | '/api/health'
+    | '/api/quote-decision'
     | '/api/route-estimate'
     | '/auth/confirm'
     | '/auth/reset-password'
@@ -333,6 +343,7 @@ export interface FileRouteTypes {
     | '/admin/technicians'
     | '/api/assess-visual-defect'
     | '/api/health'
+    | '/api/quote-decision'
     | '/api/route-estimate'
     | '/auth/confirm'
     | '/auth/reset-password'
@@ -365,6 +376,7 @@ export interface FileRouteTypes {
     | '/admin/technicians'
     | '/api/assess-visual-defect'
     | '/api/health'
+    | '/api/quote-decision'
     | '/api/route-estimate'
     | '/auth/confirm'
     | '/auth/reset-password'
@@ -395,6 +407,7 @@ export interface RootRouteChildren {
   Char91DotwellKnownChar93OauthProtectedResourceRoute: typeof Char91DotwellKnownChar93OauthProtectedResourceRoute
   ApiAssessVisualDefectRoute: typeof ApiAssessVisualDefectRoute
   ApiHealthRoute: typeof ApiHealthRoute
+  ApiQuoteDecisionRoute: typeof ApiQuoteDecisionRoute
   ApiRouteEstimateRoute: typeof ApiRouteEstimateRoute
   AuthConfirmRoute: typeof AuthConfirmRoute
   AuthResetPasswordRoute: typeof AuthResetPasswordRoute
@@ -514,6 +527,13 @@ declare module '@tanstack/react-router' {
       path: '/api/health'
       fullPath: '/api/health'
       preLoaderRoute: typeof ApiHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/quote-decision': {
+      id: '/api/quote-decision'
+      path: '/api/quote-decision'
+      fullPath: '/api/quote-decision'
+      preLoaderRoute: typeof ApiQuoteDecisionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/route-estimate': {
@@ -684,6 +704,7 @@ const rootRouteChildren: RootRouteChildren = {
     Char91DotwellKnownChar93OauthProtectedResourceRoute,
   ApiAssessVisualDefectRoute: ApiAssessVisualDefectRoute,
   ApiHealthRoute: ApiHealthRoute,
+  ApiQuoteDecisionRoute: ApiQuoteDecisionRoute,
   ApiRouteEstimateRoute: ApiRouteEstimateRoute,
   AuthConfirmRoute: AuthConfirmRoute,
   AuthResetPasswordRoute: AuthResetPasswordRoute,

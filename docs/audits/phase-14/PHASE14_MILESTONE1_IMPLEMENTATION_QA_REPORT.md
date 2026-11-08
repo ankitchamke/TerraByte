@@ -382,7 +382,7 @@ In alignment with user approval and the Phase 13 local PostgreSQL verification p
 
 Automated test suite: [tests/phase-14-live-postgres.test.mjs](file:///d:/Projects/TerraByte/tests/phase-14-live-postgres.test.mjs)  
 Target container: `terrabyte_phase14_m1_test` (PostgreSQL 17.6 on `127.0.0.1:54332`)  
-Total tests: **19 / 19 PASS** (0 failures, 0 regressions)
+Total tests: **22 tests (1 parent suite test + 21 integration subtests LIVE-01 to LIVE-21): 22 / 22 PASS** (0 failures, 0 regressions)
 
 | Test ID | Description / Verification Scenario | Result |
 | :--- | :--- | :---: |
@@ -480,6 +480,6 @@ On 2026-11-08, following independent technical review of the live PostgreSQL int
 - **Forward Migration**: `supabase/migrations/20261108100000_phase14_smart_dispatch_and_dropoff.sql`
 - **TypeScript Types**: `src/integrations/supabase/types.ts`
 - **Static Invariant Tests**: `tests/phase-14-db-invariants.test.mjs` (33/33 PASS)
-- **Live PostgreSQL Tests**: `tests/phase-14-live-postgres.test.mjs` (21/21 subtests + suite = 22 PASS)
+- **Live PostgreSQL Tests**: `tests/phase-14-live-postgres.test.mjs` (22 tests: 1 parent suite test + 21 integration subtests LIVE-01 to LIVE-21: 22 / 22 PASS)
 - **Reservation Extension Cap**: Intentionally deferred per approved product policy.
 - **Milestone 2 Status**: Milestone 2 preparation initiated; implementation strictly unstarted awaiting operator plan review.

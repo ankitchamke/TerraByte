@@ -163,6 +163,17 @@ export const en = {
     validationEquipment: "Please select a machine.",
     validationSymptoms: "Please select at least one symptom or describe the issue.",
     validationVillage: "Please enter your village or landmark.",
+    immobileQuestion: "Is the machine completely stopped or inoperable?",
+    immobileWarning:
+      "Immobile machinery cannot be transported. Service is locked to Doorstep / On-Field.",
+    deliveryModeDoorstep: "Doorstep / On-Field Service (Technician visits your farm)",
+    deliveryModeDropOff: "Workshop Drop-Off (Transport machine to approved workshop)",
+    selectWorkshop: "Select an Approved Workshop",
+    machineMobility: "Machine Mobility",
+    deliveryModeTitle: "Service Delivery Mode",
+    noApprovedWorkshops: "No approved workshops currently available for drop-off.",
+    validationWorkshop: "Please select an approved workshop for workshop drop-off.",
+    validationDeliveryMode: "Please select a delivery mode (Doorstep or Workshop Drop-Off).",
   },
   repair: {
     jobHeader: "Repair Job",

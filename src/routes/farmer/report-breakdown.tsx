@@ -1,9 +1,11 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
+  AlertTriangle,
   ArrowLeft,
   ArrowRight,
   Camera,
   CheckCircle2,
+  Clock,
   CloudOff,
   Loader2,
   MapPin,
@@ -11,6 +13,7 @@ import {
   Plus,
   Sparkles,
   Tractor,
+  Wrench,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -28,6 +31,10 @@ import { ago } from "@/lib/tb-store";
 import { fileToSmallDataUrl } from "@/lib/image";
 import { getFarmerEquipment, type EquipmentRow } from "@/lib/services/equipment";
 import { createRepairRequest } from "@/lib/services/repair-requests";
+import {
+  getDropOffApprovedFacilities,
+  type DropOffFacilityOption,
+} from "@/lib/services/facilities";
 import type { Json } from "@/integrations/supabase/types";
 import { meta } from "@/lib/seo";
 import { cn } from "@/lib/utils";
@@ -51,6 +58,9 @@ type Draft = {
   village: string;
   tahsil: string;
   aiConsent?: boolean;
+  isImmobile?: boolean;
+  deliveryMode?: "DOORSTEP" | "WORKSHOP_DROPOFF";
+  facilityId?: string;
 };
 
 function Report() {
@@ -64,6 +74,28 @@ function Report() {
   const [loadingEquipment, setLoadingEquipment] = useState(true);
   const [equipmentError, setEquipmentError] = useState<string | null>(null);
 
+  const [workshops, setWorkshops] = useState<DropOffFacilityOption[]>([]);
+  const [loadingWorkshops, setLoadingWorkshops] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    setLoadingWorkshops(true);
+    getDropOffApprovedFacilities()
+      .then((data) => {
+        if (!mounted) return;
+        setWorkshops(data);
+      })
+      .catch((err) => {
+        console.warn("[TerraByte] Could not load drop-off facilities:", err);
+      })
+      .finally(() => {
+        if (mounted) setLoadingWorkshops(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const [d, setD] = useState<Draft>({
     step: pre ? 2 : 1,
     equipmentId: pre ?? "",
@@ -73,11 +105,22 @@ function Report() {
     village: "",
     tahsil: "",
     aiConsent: true,
+    isImmobile: false,
+    deliveryMode: "DOORSTEP",
+    facilityId: "",
   });
   const [restored, setRestored] = useState(false);
   const [listening, setListening] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const recRef = useRef<{ stop: () => void } | null>(null);
+
+  const toggleMobility = (immobile: boolean) => {
+    if (immobile) {
+      up({ isImmobile: true, deliveryMode: "DOORSTEP", facilityId: "" });
+    } else {
+      up({ isImmobile: false, deliveryMode: undefined, facilityId: "" });
+    }
+  };
 
   // In-memory one-time GPS capture (Never persisted to localStorage)
   interface CapturedGps {
@@ -169,10 +212,11 @@ function Report() {
           }
         }
       })
-      .catch((err: any) => {
+      .catch((err: unknown) => {
         if (!mounted) return;
         console.error("Failed to load equipment:", err);
-        setEquipmentError(err?.message || "Failed to load equipment");
+        const msg = err instanceof Error ? err.message : "Failed to load equipment";
+        setEquipmentError(msg);
       })
       .finally(() => {
         if (mounted) setLoadingEquipment(false);
@@ -192,8 +236,11 @@ function Report() {
           (Array.isArray(x.symptoms) && x.symptoms.length > 0) ||
           x.village ||
           x.tahsil ||
-          x.description
+          x.description ||
+          x.isImmobile !== undefined ||
+          x.deliveryMode !== undefined
         ) {
+          const isImmobile = typeof x.isImmobile === "boolean" ? x.isImmobile : false;
           setD((prev) => ({
             ...prev,
             step: typeof x.step === "number" ? x.step : prev.step,
@@ -203,6 +250,13 @@ function Report() {
             photos: Array.isArray(x.photos) ? x.photos : prev.photos,
             village: typeof x.village === "string" ? x.village : prev.village,
             tahsil: typeof x.tahsil === "string" ? x.tahsil : prev.tahsil,
+            isImmobile,
+            deliveryMode: isImmobile
+              ? "DOORSTEP"
+              : x.deliveryMode === "WORKSHOP_DROPOFF"
+                ? "WORKSHOP_DROPOFF"
+                : "DOORSTEP",
+            facilityId: typeof x.facilityId === "string" ? x.facilityId : "",
           }));
           setRestored(true);
         }
@@ -263,9 +317,17 @@ function Report() {
     });
 
   const voice = () => {
+    interface SpeechRecognitionInstance {
+      lang: string;
+      interimResults: boolean;
+      onresult: (e: { results: { 0: { 0: { transcript: string } } } }) => void;
+      onend: () => void;
+      start: () => void;
+      stop: () => void;
+    }
     const W = window as unknown as {
-      SpeechRecognition?: new () => any;
-      webkitSpeechRecognition?: new () => any;
+      SpeechRecognition?: new () => SpeechRecognitionInstance;
+      webkitSpeechRecognition?: new () => SpeechRecognitionInstance;
     };
     const SR = W.SpeechRecognition ?? W.webkitSpeechRecognition;
     if (!SR) {
@@ -279,7 +341,7 @@ function Report() {
     const rec = new SR();
     rec.lang = language === "mr" ? "mr-IN" : language === "hi" ? "hi-IN" : "en-IN";
     rec.interimResults = false;
-    rec.onresult = (e: any) =>
+    rec.onresult = (e: { results: { 0: { 0: { transcript: string } } } }) =>
       up({ description: (d.description + " " + e.results[0][0].transcript).trim() });
     rec.onend = () => setListening(false);
     recRef.current = rec;
@@ -315,6 +377,25 @@ function Report() {
       return;
     }
 
+    if (!d.isImmobile && !d.deliveryMode) {
+      toast.error(t("breakdown.validationDeliveryMode"));
+      up({ step: 3 });
+      return;
+    }
+
+    if (d.deliveryMode === "WORKSHOP_DROPOFF") {
+      if (d.isImmobile) {
+        toast.error(t("breakdown.immobileWarning"));
+        up({ deliveryMode: "DOORSTEP", step: 3 });
+        return;
+      }
+      if (!d.facilityId) {
+        toast.error(t("breakdown.validationWorkshop"));
+        up({ step: 3 });
+        return;
+      }
+    }
+
     setSubmitting(true);
     try {
       const assessment = assess(d.symptoms, d.description.trim());
@@ -328,6 +409,9 @@ function Report() {
           profile?.village?.trim() ||
           "On-site / Field",
         assessment: assessment as unknown as Json,
+        delivery_mode: d.isImmobile ? "DOORSTEP" : d.deliveryMode,
+        is_immobile: Boolean(d.isImmobile),
+        facility_id: !d.isImmobile && d.deliveryMode === "WORKSHOP_DROPOFF" ? d.facilityId : null,
         ...(gps
           ? {
               gpsLocation: {
@@ -347,17 +431,25 @@ function Report() {
         to: "/farmer/repair/$id",
         params: { id: repair.job_number || repair.id },
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to create repair request:", err);
-      toast.error(err?.message || "Failed to create repair request. Please try again.");
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(msg || "Failed to create repair request. Please try again.");
     } finally {
       setSubmitting(false);
     }
   };
 
+  const selectedWorkshop = workshops.find((w) => w.id === d.facilityId);
+
   const canNext = [
     Boolean(d.equipmentId && !busy.has(d.equipmentId)),
     d.symptoms.length > 0,
+    d.isImmobile
+      ? true
+      : d.deliveryMode === "WORKSHOP_DROPOFF"
+        ? Boolean(d.facilityId)
+        : d.deliveryMode === "DOORSTEP",
     true,
     true,
   ][d.step - 1];
@@ -382,7 +474,7 @@ function Report() {
             if (d.step > 1) {
               up({ step: d.step - 1 });
             } else if (pre) {
-              nav({ to: `/farmer/equipment/${pre}` as any });
+              nav({ to: "/farmer/equipment/$id", params: { id: pre } });
             } else {
               nav({ to: "/farmer" });
             }
@@ -514,9 +606,7 @@ function Report() {
               <MapPin className="h-5 w-5 text-primary" />
               <h2 className="text-base font-bold text-foreground">{t("breakdown.step4Title")}</h2>
             </div>
-            <p className="text-xs text-muted-foreground">
-              {t("breakdown.step4Desc")}
-            </p>
+            <p className="text-xs text-muted-foreground">{t("breakdown.step4Desc")}</p>
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <Label>{t("breakdown.step4VillageLabel")}</Label>
@@ -574,7 +664,8 @@ function Report() {
                 <div className="rounded-xl bg-success/10 border border-success/30 p-3 text-sm flex items-start justify-between gap-3">
                   <div className="space-y-0.5">
                     <p className="font-semibold text-success flex items-center gap-1.5">
-                      <CheckCircle2 className="h-4 w-4 shrink-0" /> {t("breakdown.step4GpsAcquired")}
+                      <CheckCircle2 className="h-4 w-4 shrink-0" />{" "}
+                      {t("breakdown.step4GpsAcquired")}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {formatGpsAccuracy(gps.accuracy)
@@ -622,6 +713,196 @@ function Report() {
             </div>
           </div>
 
+          {/* Machine Mobility Assessment & Service Delivery Mode */}
+          <div className="space-y-4 rounded-2xl border-2 border-border bg-card p-4">
+            <div className="flex items-center gap-2">
+              <Wrench className="h-5 w-5 text-primary" />
+              <h2 className="text-base font-bold text-foreground">
+                {t("breakdown.deliveryModeTitle")}
+              </h2>
+            </div>
+
+            {/* Mobility Question */}
+            <div className="space-y-2 rounded-xl border border-border/80 bg-background/50 p-3.5">
+              <Label className="text-sm font-semibold text-foreground">
+                {t("breakdown.immobileQuestion")}
+              </Label>
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => toggleMobility(false)}
+                  className={cn(
+                    "rounded-xl border-2 p-3 text-center text-sm font-semibold transition-colors",
+                    !d.isImmobile
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border bg-card text-muted-foreground hover:border-border/80",
+                  )}
+                >
+                  No — Operable / Towable
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleMobility(true)}
+                  className={cn(
+                    "rounded-xl border-2 p-3 text-center text-sm font-semibold transition-colors",
+                    d.isImmobile
+                      ? "border-destructive bg-destructive/10 text-destructive"
+                      : "border-border bg-card text-muted-foreground hover:border-border/80",
+                  )}
+                >
+                  Yes — Inoperable / Stopped
+                </button>
+              </div>
+
+              {/* Immobile Warning Advisory */}
+              {d.isImmobile && (
+                <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-warning/40 bg-warning/10 p-3 text-xs text-warning-foreground">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-warning mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="font-semibold">{t("breakdown.immobileWarning")}</p>
+                    <p className="text-[11px] opacity-90">
+                      Do not attempt hazardous road towing of broken down or immobile agricultural
+                      machinery.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Delivery Mode Selection */}
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">
+                Delivery Mode
+              </Label>
+              <div className="grid gap-2.5 sm:grid-cols-2">
+                {/* Doorstep Service Option */}
+                <button
+                  type="button"
+                  onClick={() => up({ deliveryMode: "DOORSTEP" })}
+                  className={cn(
+                    "flex flex-col gap-1.5 rounded-xl border-2 p-3.5 text-left transition-colors",
+                    d.deliveryMode === "DOORSTEP"
+                      ? "border-primary bg-primary/10 text-foreground"
+                      : "border-border bg-card text-muted-foreground hover:border-border/80",
+                  )}
+                >
+                  <span className="flex items-center justify-between text-sm font-bold">
+                    <span>Doorstep / On-Field</span>
+                    {d.deliveryMode === "DOORSTEP" && (
+                      <CheckCircle2 className="h-4 w-4 text-primary" />
+                    )}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {t("breakdown.deliveryModeDoorstep")}
+                  </span>
+                </button>
+
+                {/* Workshop Drop-Off Option */}
+                <button
+                  type="button"
+                  disabled={d.isImmobile}
+                  onClick={() => {
+                    if (!d.isImmobile) {
+                      up({ deliveryMode: "WORKSHOP_DROPOFF" });
+                    }
+                  }}
+                  className={cn(
+                    "flex flex-col gap-1.5 rounded-xl border-2 p-3.5 text-left transition-colors",
+                    d.isImmobile
+                      ? "cursor-not-allowed opacity-40 border-dashed border-border bg-muted/30"
+                      : d.deliveryMode === "WORKSHOP_DROPOFF"
+                        ? "border-primary bg-primary/10 text-foreground"
+                        : "border-border bg-card text-muted-foreground hover:border-border/80",
+                  )}
+                >
+                  <span className="flex items-center justify-between text-sm font-bold">
+                    <span>Workshop Drop-Off</span>
+                    {d.isImmobile ? (
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-destructive bg-destructive/15 px-1.5 py-0.5 rounded">
+                        Disabled (Immobile)
+                      </span>
+                    ) : d.deliveryMode === "WORKSHOP_DROPOFF" ? (
+                      <CheckCircle2 className="h-4 w-4 text-primary" />
+                    ) : null}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {t("breakdown.deliveryModeDropOff")}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {/* Workshop Drop-Off Selector (Active when Drop-Off is selected and machine is mobile) */}
+            {!d.isImmobile && d.deliveryMode === "WORKSHOP_DROPOFF" && (
+              <div className="space-y-3 pt-2 border-t border-border/60">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-bold text-foreground">
+                    {t("breakdown.selectWorkshop")}
+                  </Label>
+                  <span className="text-xs text-muted-foreground">
+                    {workshops.filter((w) => w.drop_off_approved && w.is_active).length} approved
+                  </span>
+                </div>
+
+                {loadingWorkshops ? (
+                  <div className="py-6 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                    <span>Loading workshops…</span>
+                  </div>
+                ) : workshops.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+                    {t("breakdown.noApprovedWorkshops")}
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                    {workshops.map((ws) => {
+                      const isSelected = d.facilityId === ws.id;
+
+                      return (
+                        <button
+                          key={ws.id}
+                          type="button"
+                          onClick={() => up({ facilityId: ws.id })}
+                          className={cn(
+                            "w-full rounded-xl border-2 p-3 text-left transition-all",
+                            isSelected
+                              ? "border-primary bg-primary/10 shadow-sm"
+                              : "border-border bg-card hover:border-border/90",
+                          )}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="space-y-0.5">
+                              <p className="text-sm font-bold text-foreground">{ws.name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {[ws.village, ws.tahsil].filter(Boolean).join(", ")}
+                                {ws.address ? ` · ${ws.address}` : ""}
+                              </p>
+                              {ws.operating_hours &&
+                                typeof ws.operating_hours === "object" &&
+                                "open" in ws.operating_hours && (
+                                  <p className="text-[11px] text-muted-foreground/80 flex items-center gap-1 mt-1">
+                                    <Clock className="h-3 w-3" />
+                                    {`${(ws.operating_hours as Record<string, unknown>).open} – ${(ws.operating_hours as Record<string, unknown>).close}`}
+                                  </p>
+                                )}
+                            </div>
+                            <div className="shrink-0 text-right">
+                              {isSelected ? (
+                                <span className="inline-flex items-center gap-1 rounded-md bg-primary/15 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                                  <CheckCircle2 className="h-3 w-3" /> Selected
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           <div className="space-y-2">
             <Label>{t("breakdown.step2VoiceTitle")}</Label>
             <textarea
@@ -636,9 +917,7 @@ function Report() {
               <Mic className="h-5 w-5" />
               {listening ? t("breakdown.step2VoiceStop") : t("breakdown.step2VoiceRecordBtn")}
             </button>
-            <p className="text-sm text-muted-foreground">
-              {t("breakdown.step2VoiceDesc")}
-            </p>
+            <p className="text-sm text-muted-foreground">{t("breakdown.step2VoiceDesc")}</p>
           </div>
         </div>
       )}
@@ -648,9 +927,7 @@ function Report() {
           <label className="flex h-40 cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-border bg-card text-center">
             <Camera className="h-10 w-10 text-muted-foreground" />
             <span className="font-semibold">{t("breakdown.step3TakePhoto")}</span>
-            <span className="text-xs text-muted-foreground">
-              {t("breakdown.step3Desc")}
-            </span>
+            <span className="text-xs text-muted-foreground">{t("breakdown.step3Desc")}</span>
             <input
               type="file"
               accept="image/jpeg,image/png,image/webp"
@@ -708,13 +985,44 @@ function Report() {
             {selectedEquipment ? `${selectedEquipment.make} ${selectedEquipment.model}` : "—"}
           </p>
           <p>
-            <b>{t("breakdown.step2Title")}:</b> {d.symptoms.map((s) => t(`symptoms.${s}`, s)).join(", ")}
+            <b>{t("breakdown.machineMobility")}:</b>{" "}
+            {d.isImmobile ? (
+              <span className="text-destructive font-semibold">
+                Inoperable / Stopped (Doorstep Locked)
+              </span>
+            ) : (
+              <span>Operable / Towable</span>
+            )}
           </p>
           <p>
-            <b>{t("breakdown.step4Title")}:</b> {formatCoarseLocation(d.village, d.tahsil) || "On-site / Field"}
+            <b>{t("breakdown.deliveryModeTitle")}:</b>{" "}
+            {d.deliveryMode === "WORKSHOP_DROPOFF" ? (
+              <span className="font-semibold text-primary">
+                {t("breakdown.deliveryModeDropOff")}
+                {selectedWorkshop ? ` — ${selectedWorkshop.name}` : ""}
+              </span>
+            ) : (
+              <span>{t("breakdown.deliveryModeDoorstep")}</span>
+            )}
+          </p>
+          {d.deliveryMode === "WORKSHOP_DROPOFF" && selectedWorkshop && (
+            <p className="text-xs text-muted-foreground pl-2 border-l-2 border-primary/30">
+              <b>Workshop:</b> {selectedWorkshop.name} ({selectedWorkshop.village},{" "}
+              {selectedWorkshop.tahsil})
+              {selectedWorkshop.address ? ` · ${selectedWorkshop.address}` : ""}
+            </p>
+          )}
+          <p>
+            <b>{t("breakdown.step2Title")}:</b>{" "}
+            {d.symptoms.map((s) => t(`symptoms.${s}`, s)).join(", ")}
+          </p>
+          <p>
+            <b>{t("breakdown.step4Title")}:</b>{" "}
+            {formatCoarseLocation(d.village, d.tahsil) || "On-site / Field"}
             {gps ? (
               <span className="ml-2 inline-flex items-center gap-1 rounded-md bg-success/15 px-2 py-0.5 text-xs font-semibold text-success">
-                <MapPin className="h-3 w-3" /> {t("breakdown.step4GpsAcquired")} ({formatGpsAccuracy(gps.accuracy)})
+                <MapPin className="h-3 w-3" /> {t("breakdown.step4GpsAcquired")} (
+                {formatGpsAccuracy(gps.accuracy)})
               </span>
             ) : null}
           </p>

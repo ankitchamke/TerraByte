@@ -1,4 +1,85 @@
 import { isValidGpsCoordinate } from "../location.ts";
+import type { TechnicianRoutingStatus } from "../tb-store.ts";
+
+export type { TechnicianRoutingStatus };
+
+export const RURAL_TRAFFIC_DISCLAIMER =
+  "Estimated standard driving duration. Real-time rural road and weather conditions may vary.";
+
+export interface ScoredTechnicianMatchLike {
+  technician: {
+    id?: string;
+    profile_id?: string;
+    is_available?: boolean;
+    is_verified?: boolean;
+    kyc_verified?: boolean;
+    rating?: number | null;
+    jobs_completed?: number;
+    profile?: {
+      id?: string;
+      full_name?: string | null;
+      phone?: string | null;
+      village?: string | null;
+    } | null;
+  };
+  score: number;
+  brandMatch: boolean;
+  skillMatch: boolean;
+  reasons: string[];
+  distanceKm?: number | null;
+  etaMin?: number | null;
+  routingStatus?: TechnicianRoutingStatus;
+  workshopName?: string;
+  isExtendedTravel?: boolean;
+}
+
+/**
+ * Authoritative deterministic sorting comparator for Option C default technician ranking.
+ * 1. qualificationScore descending (0-90)
+ * 2. kyc_verified descending (true before false)
+ * 3. rating descending (numerical review rating, null ratings ordered last)
+ * 4. jobs_completed descending (numerical)
+ * 5. profile.full_name ascending (locale-sensitive alphabetical string comparison)
+ * 6. id ascending (UUID string comparison for absolute determinism)
+ */
+export function compareTechnicianMatchesDefault(
+  a: ScoredTechnicianMatchLike,
+  b: ScoredTechnicianMatchLike,
+): number {
+  if (b.score !== a.score) {
+    return b.score - a.score;
+  }
+  const aKyc = Boolean(a.technician.kyc_verified);
+  const bKyc = Boolean(b.technician.kyc_verified);
+  if (aKyc !== bKyc) {
+    return bKyc ? 1 : -1;
+  }
+  const aRating = typeof a.technician.rating === "number" ? a.technician.rating : null;
+  const bRating = typeof b.technician.rating === "number" ? b.technician.rating : null;
+  if (aRating !== null && bRating !== null) {
+    if (bRating !== aRating) {
+      return bRating - aRating;
+    }
+  } else if (aRating !== null) {
+    return -1;
+  } else if (bRating !== null) {
+    return 1;
+  }
+  const aJobs = a.technician.jobs_completed ?? 0;
+  const bJobs = b.technician.jobs_completed ?? 0;
+  if (bJobs !== aJobs) {
+    return bJobs - aJobs;
+  }
+  const aName = a.technician.profile?.full_name?.trim() || "";
+  const bName = b.technician.profile?.full_name?.trim() || "";
+  const nameCmp = aName.localeCompare(bName);
+  if (nameCmp !== 0) {
+    return nameCmp;
+  }
+  const aId = a.technician.id || "";
+  const bId = b.technician.id || "";
+  return aId.localeCompare(bId);
+}
 
 export interface GpsPoint {
   latitude: number;

@@ -42,14 +42,13 @@ export function formatCoarseLocation(village?: string | null, tahsil?: string | 
 /**
  * Validates GPS latitude and longitude ranges.
  * Latitude must be within [-90, 90], Longitude within [-180, 180].
- * Rejects (0, 0) as Null Island.
+ * Geographically valid zero coordinates (Equator / Prime Meridian) are accepted.
  */
 export function isValidGpsCoordinate(latitude: unknown, longitude: unknown): boolean {
   if (typeof latitude !== "number" || typeof longitude !== "number") return false;
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return false;
   if (latitude < -90 || latitude > 90) return false;
   if (longitude < -180 || longitude > 180) return false;
-  if (latitude === 0 && longitude === 0) return false;
   return true;
 }
 

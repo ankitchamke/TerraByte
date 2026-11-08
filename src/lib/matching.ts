@@ -13,8 +13,16 @@ export function matchTechnicians(techs: Technician[], eq: Equipment, repair: Rep
       if (brandMatch) reasons.push(`${eq.make} specialist`);
       if (skillMatch) reasons.push(`${repair.assessment.skill} expert`);
       if (t.available) reasons.push("Available now");
-      const score = (brandMatch ? 40 : 0) + (skillMatch ? 30 : 0) + (t.available ? 20 : 0) + Math.max(0, 10 - t.etaMin / 10);
+      const score = (brandMatch ? 40 : 0) + (skillMatch ? 30 : 0) + (t.available ? 20 : 0);
       return { tech: t, score: Math.round(score), brandMatch, skillMatch, reasons };
     })
-    .sort((a, b) => b.score - a.score);
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (b.tech.verified !== a.tech.verified) return b.tech.verified ? 1 : -1;
+      const bRating = b.tech.rating ?? -1;
+      const aRating = a.tech.rating ?? -1;
+      if (bRating !== aRating) return bRating - aRating;
+      if (b.tech.jobsDone !== a.tech.jobsDone) return b.tech.jobsDone - a.tech.jobsDone;
+      return a.tech.name.localeCompare(b.tech.name);
+    });
 }

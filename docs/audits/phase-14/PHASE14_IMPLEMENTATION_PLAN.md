@@ -635,6 +635,8 @@ All tests in `tests/phase-14-db-invariants.test.mjs` pass.
 
 ### Milestone 2: Workshop-Origin OSRM Routing & Matching Integration
 
+> **Milestone Status**: FORMALLY SIGNED OFF BY USER APPROVAL (Automated tests 100% verified across 36 tests; 3 blocked live staging checks remain deferred per Section 6 of manual checklist; 4 deferred QA items remain active)
+
 #### 1. Objective
 Remediate the technician card routing defect (`0 km · ~45 min`), establish one authoritative routing result shared between matching and technician cards, integrate OSRM road distance and duration matching from registered workshop origin coordinates, eliminate Haversine calculations, enforce graceful outage fallback without stale data, and render the approved traffic disclaimer.
 
@@ -658,7 +660,11 @@ Milestone 1, Phase 8 routing service.
 #### 5. Implementation Sequence
 1. Update `Technician` interface in `src/lib/tb-store.ts`:
    ```typescript
-   export type TechnicianRoutingStatus = 'AVAILABLE' | 'EXTENDED' | 'UNAVAILABLE' | 'CALCULATING';
+   export type TechnicianRoutingStatus =
+     | "AVAILABLE"       // Road route computed (<= 50 km)
+     | "EXTENDED"        // Road route computed (> 50 km; informational tag)
+     | "OUTAGE"          // OSRM network error, timeout, 5xx, or NoRoute -> "Road Distance Temporarily Unavailable"
+     | "NO_COORDINATES"; // Missing/invalid workshop or breakdown GPS -> "Distance Unavailable"
 
    export interface Technician {
      id: string;
@@ -677,18 +683,52 @@ Milestone 1, Phase 8 routing service.
    }
    ```
 2. In `src/lib/services/technicians.ts`, update `getEligibleTechnicians`:
-   - Join `primary_facility_id` -> `repair_facilities(latitude, longitude)`.
-   - Retrieve destination GPS from `repair_dispatch_locations` or coarse `tahsil` coordinates.
-   - For each verified technician, compute road route via `computeOsrmRoute`.
-   - Calculate proximity score based on actual driving duration.
-   - Flag `isExtendedTravel = true` and `routingStatus = 'EXTENDED'` if `distanceKm > 50` (informational only; candidates not disqualified; no surcharges).
-   - On OSRM outage/timeout, set `distanceKm = null`, `etaMin = null`, `routingStatus = 'UNAVAILABLE'`.
-   - Explicitly nullify routing values on failure; never display stale or previously cached values.
-   - Strict zero Haversine math.
+   - **Authoritative Workshop Origin**: Resolve registered workshop exclusively via `technician_profiles.primary_facility_id` -> `repair_facilities(latitude, longitude)`. Do not fall back to arbitrary memberships or browser geolocation.
+   - **Missing Coordinates Gate**: Validate workshop GPS and breakdown GPS via `isValidGpsCoordinate`. If either is missing or invalid:
+     - Set `distanceKm = null`, `etaMin = null`, `routingStatus = 'NO_COORDINATES'`.
+     - Zero OSRM network calls made.
+   - **OSRM Calculation**: For technicians with valid workshop GPS and breakdown GPS, call `computeOsrmRoute(origin, destination)`.
+   - **Outage Handling**: On OSRM timeout, network error, 5xx, or `NoRoute`:
+     - Set `distanceKm = null`, `etaMin = null`, `routingStatus = 'OUTAGE'`.
+     - Zero stale data: previously computed distance/ETA values are explicitly nullified.
+     - Never disqualify the technician.
+   - **Ranking Architecture: Option C — Qualification-First Ranking with Routing as Decision Support (APPROVED & ADOPTED)**:
+     - **Core Architectural Principle**: Technician domain qualification and route availability are strictly independent. The default ranking must not shift merely because an external network call to OSRM succeeds for one candidate and fails/times out for another. OSRM remains authoritative for real road distance and driving duration, but routing metrics do not influence the default qualification score.
+     - **Default Qualification Score (0–90 points)**:
+       $$\text{Qualification Score} = \text{Brand Match (40)} + \text{Skill Match (30)} + \text{Availability (20)}$$
+       - Maximum qualification score is 90 points.
+       - Proximity points are **never** added to this score.
+     - **Deterministic Default Ranking Hierarchy**:
+       1. `qualificationScore` descending (numerical, 0–90)
+       2. `kyc_verified` descending (`true` before `false` — Phase 13 physical in-person verification)
+       3. `rating` descending (numerical review rating, `null` ratings ordered last)
+       4. `jobs_completed` descending (numerical experience)
+       5. `profile.full_name` ascending (locale-sensitive alphabetical string comparison)
+       6. `id` ascending (UUID string comparison for absolute determinism)
+       - *Transitivity & Invariance*: The comparator is 100% deterministic and transitive. Default ranking is completely unaffected by OSRM outages, network timeouts, or missing coordinates.
+     - **OSRM as Decision-Support Information**:
+       - Origin: `technician_profiles.primary_facility_id` -> `repair_facilities(latitude, longitude)`.
+       - Destination: farmer breakdown coordinates from `repair_dispatch_locations`.
+       - Public OSRM driving route computed when coordinates are valid. Zero continuous live GPS, zero Haversine, zero paid APIs.
+       - Display verified road distance and ETA on candidate cards as operational decision support.
+       - Failure handling contracts:
+         - Missing coordinates $\implies$ `NO_COORDINATES`, null metrics, `<MapPin /> Distance Unavailable`, zero OSRM network requests.
+         - OSRM outage/timeout/5xx/NoRoute $\implies$ `OUTAGE`, null metrics, `<MapPin /> Road Distance Temporarily Unavailable`.
+         - Routing failures never disqualify otherwise eligible candidates; zero stale or invented metrics.
+     - **Extended Travel Tag**: If `distanceKm > 50`, set `routingStatus = 'EXTENDED'` (informational only; candidate remains eligible, no surcharge, zero effect on qualification score).
+     - **Optional Explicit ETA Sorting (User-Triggered — DEFERRED AS FUTURE ENHANCEMENT PER APPROVED SCOPE ADJUSTMENT)**:
+       - *Scope Adjustment Note*: The user-facing segmented toggle ("Best Match" vs "Nearest Drive Time") is intentionally deferred from Milestone 2 to maintain strict focus on core OSRM routing reliability, failure recovery, and qualification-first default ranking.
+       - *Deferred Partitioned Architecture*: In future iterations, candidates will be partitioned into Group 1 (Verified ETA Available, sorted by `etaMin` ascending) and Group 2 (Unavailable, displayed in separate section via default qualification ranking). Zero intransitive comparator cycles.
+     - **Haversine Ban**: Strict zero Haversine formula usage.
 3. In `src/components/repair-parts.tsx`, update `TechCard`:
-   - Replace static distance rendering with conditional status handler:
+   - Replace static distance rendering with status-aware handler distinguishing missing coordinates from service outages:
      ```tsx
-     {t.routingStatus === "UNAVAILABLE" || (t.distanceKm == null && t.etaMin == null) ? (
+     {t.routingStatus === "NO_COORDINATES" ? (
+       <span className="flex items-center gap-1 text-xs text-muted-foreground">
+         <MapPin className="h-4 w-4" />
+         Distance Unavailable
+       </span>
+     ) : t.routingStatus === "OUTAGE" || (t.distanceKm == null && t.etaMin == null) ? (
        <span className="flex items-center gap-1 text-xs text-muted-foreground">
          <MapPin className="h-4 w-4" />
          Road Distance Temporarily Unavailable
@@ -713,37 +753,47 @@ Milestone 1, Phase 8 routing service.
 
 #### 6. Security Considerations
 - Zero continuous live GPS tracking of technicians.
-- Technician origin is public registered workshop coordinates only.
-- Destination farmer GPS protected by existing RLS.
+- Technician origin is public registered workshop coordinates only (`primary_facility_id`).
+- Destination farmer GPS protected by existing RLS on `repair_dispatch_locations`.
 
 #### 7. Automated Tests
 `tests/phase-14-routing-and-matching.test.mjs`:
 - `TEST-14-R01`: Technician card displays actual OSRM road distance and duration.
-- `TEST-14-R02`: Routing origin is verified registered workshop location (`repair_facilities`).
+- `TEST-14-R02`: Routing origin is verified registered workshop location (`primary_facility_id` -> `repair_facilities`).
 - `TEST-14-R03`: Hardcoded `0 km · ~45 min` default completely eliminated.
-- `TEST-14-R04`: Missing coordinates render `"Distance Unavailable"`.
-- `TEST-14-R05`: OSRM outage renders `"Road Distance Temporarily Unavailable"` without candidate disqualification.
-- `TEST-14-R06`: Stale ETA or distance is cleared on routing failure.
+- `TEST-14-R04`: Missing or invalid workshop/breakdown coordinates render `"Distance Unavailable"` with ZERO OSRM network requests.
+- `TEST-14-R05`: OSRM outage, timeout, or `NoRoute` renders `"Road Distance Temporarily Unavailable"` without candidate disqualification.
+- `TEST-14-R06`: Stale ETA or distance is cleared on routing failure (zero stale data survives).
 - `TEST-14-R07`: Haversine formula strictly banned from code and matching.
 - `TEST-14-R08`: Road distance $> 50\text{ km}$ flagged as *Extended Travel* (informational only; technician remains eligible).
-- `TEST-14-R09`: Traffic disclaimer rendered on route estimate cards.
+- `TEST-14-R09`: Traffic disclaimer rendered on route estimate cards: *"Estimated standard driving duration. Real-time rural road and weather conditions may vary."*
+- `TEST-14-R10`: Qualification score remains strictly independent of OSRM routing; default ranking is immune to OSRM outages and missing coordinates.
+- `TEST-14-R11`: Deterministic 6-tier tie-breaking and mathematical transitivity (qualificationScore -> kyc_verified -> rating -> jobs_completed -> name -> id).
 
 #### 8. Acceptance Criteria
 - **AC-14-M2-01**: Technician card renders real OSRM road distance and ETA.
 - **AC-14-M2-02**: Matching and technician card share identical authoritative routing result.
-- **AC-14-M2-03**: Proximity scoring uses actual road driving duration.
-- **AC-14-M2-04**: Outage renders `"Road Distance Temporarily Unavailable"` with zero stale data.
+- **AC-14-M2-03**: Default technician ranking is determined by qualification factors (Brand 40, Skill 30, Availability 20, KYC, Rating) and remains immune to routing status; OSRM road distance and ETA serve as decision support.
+- **AC-14-M2-04**: Missing coordinates render `"Distance Unavailable"` without network fetch; service outage renders `"Road Distance Temporarily Unavailable"` with zero stale data.
 - **AC-14-M2-05**: Candidates $> 50\text{ km}$ flagged as *Extended Travel* without disqualification.
 
 #### 9. Completion Evidence
-All tests in `tests/phase-14-routing-and-matching.test.mjs` pass.
+- Automated test suite `tests/phase-14-routing-and-matching.test.mjs`: **15 / 15 PASS** (0 failures, 0 regressions; including coordinate boundary tests for (0,0) and invalid inputs, and exact rural disclaimer assertion).
+- Route estimate test suite `tests/route-estimate.test.mjs`: **21 / 21 PASS**.
+- Full workspace test suite: **369 / 369 PASS** across 20 suites.
+- Production build: clean (`✓ built in 1.32s SSR / 3.35s client`).
+- Live Read-Only Manual Staging QA (2026-11-08): All 3 authorized live checks resulted in BLOCKED due to absence of active repairs/jobs on staging; zero staging writes performed. All items logged in Deferred QA Register (`Deferred M2-QA-01` through `M2-QA-04`) in `docs/audits/phase-14/PHASE14_MILESTONE2_MANUAL_TESTING_CHECKLIST.md`.
+- Milestone 3 Start Gate: M3 implementation cannot start until explicit user sign-off of M2.
+- Production Migration Timing: Production database migration and data replacement occur strictly in Phase 17 (after Phase 14 M3–M5 and Phase 16).
 
 #### 10. Commit Checkpoint
-`feat(phase-14): resolve technician card routing defect and integrate workshop osrm matching`
+`feat(phase-14): complete M2 workshop osrm routing and qualification first matching`
 
 ---
 
 ### Milestone 3: Farmer Intake Wizard Dual Delivery & Immobile Machinery Lock
+
+> **Milestone Status**: AUTHORIZED TO IMPLEMENT — IN PROGRESS (Formally unblocked and authorized following M2 user approval; implementation in progress; completion and sign-off pending separate user review)
 
 #### 1. Objective
 Update the Farmer breakdown reporting wizard (`/farmer/report-breakdown`) to incorporate machine mobility assessment (`is_immobile`), dual delivery mode selection (Doorstep vs Workshop Drop-Off), immobile machinery locking, capacity-aware workshop dropdown, reservation booking with configurable expiry, and trilingual localization parity.
@@ -1041,5 +1091,14 @@ All open architectural questions have been formally resolved and confirmed:
 ## 11. Summary & Sign-Off Gate
 
 This implementation plan establishes the complete, refined technical specification for **Phase 14: Smart Dispatch & Emergency Response**.
+
+### Current Milestone & Roadmap Synchronization:
+1. **Milestone 1 (Database Foundation & Domain Invariants)**: **FORMALLY SIGNED OFF** (22 live PostgreSQL integration tests verified).
+2. **Milestone 2 (Workshop-Origin OSRM Routing & Matching Integration)**: **FORMALLY SIGNED OFF BY USER APPROVAL** (15/15 unit/contract tests, 21/21 route estimate tests, 369/369 full workspace tests, clean production build; user sign-off granted). Authorized read-only staging manual QA checks resulted in **BLOCKED** due to absence of active staging repairs/jobs (zero staging writes performed), with all four follow-up checks remaining active and tracked in the **Deferred QA Register** (`Deferred M2-QA-01` through `M2-QA-04`) in `PHASE14_MILESTONE2_MANUAL_TESTING_CHECKLIST.md`.
+3. **Milestone 3 (Farmer Intake Wizard Dual Delivery & Immobile Machinery Lock)**: **AUTHORIZED TO IMPLEMENT — IN PROGRESS** (Formally authorized by user following M2 approval; implementation underway; not yet completed or signed off).
+4. **Milestone 4 (Workshop Drop-Off & Bay Capacity Desk)**: **NOT STARTED**.
+5. **Milestone 5 (Multi-Role Integration & QA Verification)**: **NOT STARTED**.
+6. **Phase 16 (Frontend UI/UX Improvement & Product Polish)**: **PLANNED**.
+7. **Phase 17 (Master System QA, Production Migration & Release Gate)**: **PLANNED RELEASE GATE** (Air-gapped production migration and demo data replacement occur strictly in Phase 17).
 
 Execution will commence in disciplined Ralph Loop iterations strictly following the milestone order upon explicit user review and sign-off.

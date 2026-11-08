@@ -113,16 +113,23 @@ function toQuoteView(q: QuoteDetail): Quote {
   };
 }
 
-function formatTechCardData(t: VerifiedTechnicianWithProfile): Technician {
+function formatTechCardData(
+  t: VerifiedTechnicianWithProfile,
+  match?: Partial<ScoredTechnicianMatch>,
+): Technician {
+  const routingStatus =
+    match?.routingStatus ??
+    (t.distance_km == null ? "NO_COORDINATES" : "AVAILABLE");
   return {
     id: t.profile_id,
     name: t.profile?.full_name || "Technician",
-    workshop: t.workshop_name || "Authorized Service Centre",
+    workshop: match?.workshopName || t.workshop_name || "Authorized Service Centre",
     brands: t.brands || [],
     skills: t.skills || [],
     verified: Boolean(t.is_verified),
-    distanceKm: t.distance_km ?? 0,
-    etaMin: t.eta_minutes ?? 45,
+    distanceKm: match?.distanceKm !== undefined ? match.distanceKm : (t.distance_km ?? null),
+    etaMin: match?.etaMin !== undefined ? match.etaMin : (t.eta_minutes ?? null),
+    routingStatus,
     available: Boolean(t.is_available),
     rating: t.rating != null ? Number(t.rating) : null,
     jobsDone: t.jobs_completed ?? 0,
@@ -346,8 +353,9 @@ function RepairHub() {
           brands: [],
           skills: [],
           verified: true,
-          distanceKm: 0,
-          etaMin: 45,
+          distanceKm: null,
+          etaMin: null,
+          routingStatus: "NO_COORDINATES",
           available: true,
           rating: null,
           jobsDone: 0,
@@ -824,7 +832,7 @@ function RepairHub() {
           {eligibleTechs.map((m, i) => (
             <TechCard
               key={m.technician.id}
-              t={formatTechCardData(m.technician)}
+              t={formatTechCardData(m.technician, m)}
               reasons={m.reasons}
             >
               <div className="mt-4 flex gap-2">

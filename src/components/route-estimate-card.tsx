@@ -3,6 +3,7 @@ import { Car, Clock, Info, Loader2, Navigation, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { isValidGpsCoordinate } from "@/lib/location";
 import type { RouteEstimateResult } from "@/lib/services/routing";
+import { RURAL_TRAFFIC_DISCLAIMER } from "@/lib/services/routing";
 
 interface RouteEstimateCardProps {
   repairId: string;
@@ -189,7 +190,7 @@ export function RouteEstimateCard({ repairId, hasGpsLocation, className }: Route
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
             <span className="flex items-center gap-1 text-[11px]">
               <Info className="h-3 w-3 shrink-0 text-muted-foreground" />
-              Standard estimate (traffic not factored).{" "}
+              {RURAL_TRAFFIC_DISCLAIMER}{" "}
               {formattedCalculatedAt ? `Calculated at ${formattedCalculatedAt}.` : ""}
             </span>
             <button

@@ -517,6 +517,11 @@ export type Database = {
           handover_notes: string | null;
           farmer_collection_confirmed: boolean;
           farmer_collection_confirmed_at: string | null;
+          delivery_mode: "DOORSTEP" | "WORKSHOP_DROPOFF";
+          is_immobile: boolean;
+          drop_off_receipt_number: string | null;
+          dropped_off_at: string | null;
+          dropped_off_by: string | null;
         };
         Insert: {
           assessment?: Json;
@@ -562,6 +567,11 @@ export type Database = {
           handover_notes?: string | null;
           farmer_collection_confirmed?: boolean;
           farmer_collection_confirmed_at?: string | null;
+          delivery_mode?: "DOORSTEP" | "WORKSHOP_DROPOFF";
+          is_immobile?: boolean;
+          drop_off_receipt_number?: string | null;
+          dropped_off_at?: string | null;
+          dropped_off_by?: string | null;
         };
         Update: {
           assessment?: Json;
@@ -607,6 +617,11 @@ export type Database = {
           handover_notes?: string | null;
           farmer_collection_confirmed?: boolean;
           farmer_collection_confirmed_at?: string | null;
+          delivery_mode?: "DOORSTEP" | "WORKSHOP_DROPOFF";
+          is_immobile?: boolean;
+          drop_off_receipt_number?: string | null;
+          dropped_off_at?: string | null;
+          dropped_off_by?: string | null;
         };
         Relationships: [
           {
@@ -959,6 +974,88 @@ export type Database = {
             columns: ["technician_profile_id"];
             isOneToOne: false;
             referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      facility_bay_reservations: {
+        Row: {
+          id: string;
+          facility_id: string;
+          repair_request_id: string;
+          farmer_profile_id: string;
+          status: "RESERVED" | "CLAIMED" | "EXPIRED" | "RELEASED" | "CANCELLED";
+          reserved_at: string;
+          expires_at: string;
+          renewal_count: number;
+          renewed_at: string | null;
+          renewed_by: string | null;
+          renewal_notes: string | null;
+          claimed_at: string | null;
+          released_at: string | null;
+          priority_original_reserved_at: string;
+          notes?: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          facility_id: string;
+          repair_request_id: string;
+          farmer_profile_id: string;
+          status?: "RESERVED" | "CLAIMED" | "EXPIRED" | "RELEASED" | "CANCELLED";
+          reserved_at?: string;
+          expires_at: string;
+          renewal_count?: number;
+          renewed_at?: string | null;
+          renewed_by?: string | null;
+          renewal_notes?: string | null;
+          claimed_at?: string | null;
+          released_at?: string | null;
+          priority_original_reserved_at?: string;
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          facility_id?: string;
+          repair_request_id?: string;
+          farmer_profile_id?: string;
+          status?: "RESERVED" | "CLAIMED" | "EXPIRED" | "RELEASED" | "CANCELLED";
+          reserved_at?: string;
+          expires_at?: string;
+          renewal_count?: number;
+          renewed_at?: string | null;
+          renewed_by?: string | null;
+          renewal_notes?: string | null;
+          claimed_at?: string | null;
+          released_at?: string | null;
+          priority_original_reserved_at?: string;
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "facility_bay_reservations_facility_id_fkey";
+            columns: ["facility_id"];
+            isOneToOne: false;
+            referencedRelation: "repair_facilities";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "facility_bay_reservations_farmer_profile_id_fkey";
+            columns: ["farmer_profile_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "facility_bay_reservations_repair_request_id_fkey";
+            columns: ["repair_request_id"];
+            isOneToOne: false;
+            referencedRelation: "repair_requests";
             referencedColumns: ["id"];
           },
         ];
@@ -1631,6 +1728,49 @@ export type Database = {
       confirm_farmer_equipment_collection: {
         Args: {
           p_repair_request_id: string;
+        };
+        Returns: Json;
+      };
+      get_facility_capacity_breakdown: {
+        Args: {
+          p_facility_id: string;
+        };
+        Returns: Json;
+      };
+      reserve_workshop_bay: {
+        Args: {
+          p_repair_request_id: string;
+          p_facility_id: string;
+          p_expiry_interval?: string;
+        };
+        Returns: Json;
+      };
+      renew_workshop_bay_reservation: {
+        Args: {
+          p_reservation_id: string;
+          p_extension_interval?: string;
+          p_notes?: string | null;
+        };
+        Returns: Json;
+      };
+      release_workshop_bay_reservation: {
+        Args: {
+          p_repair_request_id: string;
+          p_reason?: string;
+        };
+        Returns: Json;
+      };
+      execute_workshop_dropoff_checkin: {
+        Args: {
+          p_repair_request_id: string;
+          p_notes?: string | null;
+        };
+        Returns: Json;
+      };
+      release_cancelled_workshop_equipment: {
+        Args: {
+          p_repair_request_id: string;
+          p_notes?: string | null;
         };
         Returns: Json;
       };

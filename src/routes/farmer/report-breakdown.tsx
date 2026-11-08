@@ -31,6 +31,7 @@ import { ago } from "@/lib/tb-store";
 import { fileToSmallDataUrl } from "@/lib/image";
 import { getFarmerEquipment, type EquipmentRow } from "@/lib/services/equipment";
 import { createRepairRequest } from "@/lib/services/repair-requests";
+import { submitWorkshopDropoffRepair } from "@/lib/services/facility-capacity";
 import {
   getDropOffApprovedFacilities,
   type DropOffFacilityOption,
@@ -399,37 +400,68 @@ function Report() {
     setSubmitting(true);
     try {
       const assessment = assess(d.symptoms, d.description.trim());
-      const repair = await createRepairRequest({
-        equipment_id: machine.id,
-        symptoms: d.symptoms,
-        description: d.description.trim().slice(0, 1000),
-        photos: d.photos.filter(Boolean),
-        location:
-          formatCoarseLocation(d.village, d.tahsil) ||
-          profile?.village?.trim() ||
-          "On-site / Field",
-        assessment: assessment as unknown as Json,
-        delivery_mode: d.isImmobile ? "DOORSTEP" : d.deliveryMode,
-        is_immobile: Boolean(d.isImmobile),
-        facility_id: !d.isImmobile && d.deliveryMode === "WORKSHOP_DROPOFF" ? d.facilityId : null,
-        ...(gps
-          ? {
-              gpsLocation: {
-                latitude: gps.latitude,
-                longitude: gps.longitude,
-                accuracy: gps.accuracy,
-                captured_at: gps.capturedAt,
-              },
-            }
-          : {}),
-      });
+      const effectiveMode = d.isImmobile ? "DOORSTEP" : d.deliveryMode;
+      const effectiveFacilityId =
+        !d.isImmobile && effectiveMode === "WORKSHOP_DROPOFF" ? d.facilityId : null;
+      const coarseLoc =
+        formatCoarseLocation(d.village, d.tahsil) || profile?.village?.trim() || "On-site / Field";
+
+      let createdTicket: { id: string; job_number?: string };
+
+      if (effectiveMode === "WORKSHOP_DROPOFF" && effectiveFacilityId) {
+        // Atomic M4 Workshop Drop-Off & Bay Reservation Transaction
+        const res = await submitWorkshopDropoffRepair({
+          equipment_id: machine.id,
+          facility_id: effectiveFacilityId,
+          symptoms: d.symptoms,
+          description: d.description.trim().slice(0, 1000),
+          location: coarseLoc,
+          photos: d.photos.filter(Boolean),
+          assessment,
+          ...(gps
+            ? {
+                gpsLocation: {
+                  latitude: gps.latitude,
+                  longitude: gps.longitude,
+                  accuracy: gps.accuracy,
+                },
+              }
+            : {}),
+        });
+        createdTicket = { id: res.id, job_number: res.job_number };
+      } else {
+        // Standard M3 Doorstep Workflow
+        createdTicket = await createRepairRequest({
+          equipment_id: machine.id,
+          symptoms: d.symptoms,
+          description: d.description.trim().slice(0, 1000),
+          photos: d.photos.filter(Boolean),
+          location: coarseLoc,
+          assessment: assessment as unknown as Json,
+          delivery_mode: "DOORSTEP",
+          is_immobile: Boolean(d.isImmobile),
+          facility_id: null,
+          ...(gps
+            ? {
+                gpsLocation: {
+                  latitude: gps.latitude,
+                  longitude: gps.longitude,
+                  accuracy: gps.accuracy,
+                  captured_at: gps.capturedAt,
+                },
+              }
+            : {}),
+        });
+      }
 
       localStorage.removeItem(DRAFT);
-      toast.success(`${t("breakdown.successToast")} (${repair.job_number || repair.id})`);
+      toast.success(
+        `${t("breakdown.successToast")} (${createdTicket.job_number || createdTicket.id})`,
+      );
 
       nav({
         to: "/farmer/repair/$id",
-        params: { id: repair.job_number || repair.id },
+        params: { id: createdTicket.job_number || createdTicket.id },
       });
     } catch (err: unknown) {
       console.error("Failed to create repair request:", err);

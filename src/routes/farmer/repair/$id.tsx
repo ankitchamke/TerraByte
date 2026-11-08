@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   AlertTriangle,
+  Building2,
   CheckCircle2,
   Clock,
   MapPin,
@@ -33,6 +34,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { supabase } from "@/integrations/supabase/client";
+import { renewWorkshopBayReservation } from "@/lib/services/facility-capacity";
+import {
+  CustodyReceiptModal,
+  type CustodyReceiptData,
+} from "@/components/facilities/custody-receipt-modal";
 import {
   cancelRepairRequest,
   requestCancellation,
@@ -118,8 +127,7 @@ function formatTechCardData(
   match?: Partial<ScoredTechnicianMatch>,
 ): Technician {
   const routingStatus =
-    match?.routingStatus ??
-    (t.distance_km == null ? "NO_COORDINATES" : "AVAILABLE");
+    match?.routingStatus ?? (t.distance_km == null ? "NO_COORDINATES" : "AVAILABLE");
   return {
     id: t.profile_id,
     name: t.profile?.full_name || "Technician",
@@ -170,6 +178,43 @@ function RepairHub() {
   const [cancellationError, setCancellationError] = useState<string | null>(null);
   const [assigningTechId, setAssigningTechId] = useState<string | null>(null);
   const [dispatchLocation, setDispatchLocation] = useState<RepairDispatchLocation | null>(null);
+
+  // Workshop drop-off state (Phase 14 M4)
+  const [facilityDetail, setFacilityDetail] = useState<{
+    id: string;
+    name: string;
+    village: string;
+    tahsil: string;
+    phone?: string | null;
+    owner_name?: string | null;
+  } | null>(null);
+  const [reservationDetail, setReservationDetail] = useState<{
+    id: string;
+    status: string;
+    expires_at: string;
+    renewal_count: number;
+  } | null>(null);
+  const [renewing, setRenewing] = useState(false);
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+
+  const handleFarmerRenewReservation = async () => {
+    if (!reservationDetail || renewing) return;
+    setRenewing(true);
+    try {
+      const res = await renewWorkshopBayReservation(reservationDetail.id, "24 hours");
+      if (!res.success) {
+        toast.error(res.message || "Could not extend reservation.");
+        return;
+      }
+      toast.success(t("breakdown.reservationRenewed"));
+      await loadData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to renew reservation";
+      toast.error(msg);
+    } finally {
+      setRenewing(false);
+    }
+  };
 
   const loadData = useCallback(async () => {
     try {
@@ -284,6 +329,34 @@ function RepairHub() {
       setAssignedTech(assignedTechData);
       setEligibleTechs(eligibleTechsData);
       setDispatchLocation(dispatchLocData);
+
+      // Fetch workshop drop-off facility and bay reservation details
+      if (repairData.delivery_mode === "WORKSHOP_DROPOFF" && repairData.facility_id) {
+        const [facRes, resRes] = await Promise.all([
+          supabase
+            .from("repair_facilities")
+            .select("id, name, village, tahsil, phone, owner_name")
+            .eq("id", repairData.facility_id)
+            .maybeSingle()
+            .then((x) => x.data)
+            .catch(() => null),
+          supabase
+            .from("facility_bay_reservations")
+            .select("id, status, expires_at, renewal_count")
+            .eq("repair_request_id", repairData.id)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle()
+            .then((x) => x.data)
+            .catch(() => null),
+        ]);
+        setFacilityDetail(facRes);
+        setReservationDetail(resRes);
+      } else {
+        setFacilityDetail(null);
+        setReservationDetail(null);
+      }
+
       hasLoadedRef.current = true;
     } catch (err: any) {
       console.error("[TerraByte] Failed to load repair details:", err);
@@ -724,6 +797,232 @@ function RepairHub() {
             )}
           </div>
         </section>
+      )}
+
+      {/* Workshop Drop-Off Cancelled In Bay Notice (Phase 14 M4) */}
+      {r.delivery_mode === "WORKSHOP_DROPOFF" &&
+        r.status === "CANCELLED" &&
+        r.dropped_off_at &&
+        r.handover_status !== "RELEASED" && (
+          <section className="overflow-hidden rounded-2xl border-2 border-warning bg-card shadow-sm">
+            <div className="flex items-center gap-2 bg-warning px-5 py-3 font-display text-lg font-bold text-warning-foreground">
+              <AlertTriangle className="h-5 w-5" />
+              <span>{t("breakdown.equipmentInBayCancelled")}</span>
+            </div>
+            <div className="space-y-4 p-5">
+              <p className="text-sm text-foreground">
+                Your machinery was dropped off at{" "}
+                <strong>{facilityDetail?.name || "the workshop"}</strong> and is currently parked in
+                a workshop bay (Receipt:{" "}
+                <code className="font-mono font-bold">{r.drop_off_receipt_number || "RCP-TB"}</code>
+                ).
+              </p>
+              <div className="rounded-xl border border-warning/30 bg-warning/10 p-3.5 text-xs text-foreground space-y-1">
+                <p className="font-semibold text-warning">Pickup Instructions:</p>
+                <p>
+                  Please arrange to collect your equipment from the workshop during operating hours.
+                  Workshop staff will record physical release when you pick up your machine.
+                </p>
+                {facilityDetail?.phone && (
+                  <p className="pt-1">
+                    Workshop Phone:{" "}
+                    <a href={`tel:${facilityDetail.phone}`} className="font-bold underline">
+                      {facilityDetail.phone}
+                    </a>
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs gap-1.5"
+                  onClick={() => setShowReceiptModal(true)}
+                >
+                  <ShieldCheck className="h-4 w-4" />
+                  {t("breakdown.viewReceipt")}
+                </Button>
+              </div>
+            </div>
+          </section>
+        )}
+
+      {/* Workshop Drop-Off Active Lifecycle Card (Phase 14 M4) */}
+      {r.delivery_mode === "WORKSHOP_DROPOFF" && r.status !== "CANCELLED" && (
+        <>
+          {r.dropped_off_at ? (
+            <Card className="p-5 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/50 pb-3">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5 text-success" />
+                  <h3 className="text-base font-bold text-success">
+                    {t("breakdown.dropOffConfirmed")}
+                  </h3>
+                </div>
+                <Badge
+                  variant="outline"
+                  className="font-mono text-xs text-primary bg-primary/5 border-primary/30"
+                >
+                  {r.drop_off_receipt_number}
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div className="rounded-xl border border-border/60 bg-muted/20 p-2.5 space-y-0.5">
+                  <span className="text-muted-foreground uppercase text-[10px] font-semibold">
+                    Drop-Off Facility
+                  </span>
+                  <p className="font-semibold text-foreground">
+                    {facilityDetail?.name || "Workshop"}
+                  </p>
+                  <p className="text-muted-foreground text-[11px]">
+                    {facilityDetail?.village}, {facilityDetail?.tahsil}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-border/60 bg-muted/20 p-2.5 space-y-0.5">
+                  <span className="text-muted-foreground uppercase text-[10px] font-semibold">
+                    Intake Time
+                  </span>
+                  <p className="font-semibold text-foreground">
+                    {new Date(r.dropped_off_at).toLocaleString("en-IN", {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    })}
+                  </p>
+                  <p className="text-muted-foreground text-[11px]">
+                    Custody: {r.handover_status || "RECEIVED"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end pt-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs gap-1.5"
+                  onClick={() => setShowReceiptModal(true)}
+                >
+                  <ShieldCheck className="h-4 w-4" />
+                  {t("breakdown.viewReceipt")}
+                </Button>
+              </div>
+            </Card>
+          ) : (
+            <Card className="p-5 space-y-4">
+              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/50 pb-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Building2 className="h-5 w-5 text-primary" />
+                    <h3 className="text-base font-bold">Workshop Drop-Off Location & Details</h3>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Transport your machine to the approved workshop below.
+                  </p>
+                </div>
+                <Badge
+                  variant="outline"
+                  className="text-xs border-primary/30 text-primary bg-primary/5"
+                >
+                  Workshop Drop-Off
+                </Badge>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div className="rounded-xl border border-border/60 bg-muted/20 p-3 space-y-1">
+                  <span className="text-muted-foreground uppercase text-[10px] font-semibold">
+                    Workshop Facility
+                  </span>
+                  <p className="text-sm font-bold text-foreground">
+                    {facilityDetail?.name || "Workshop"}
+                  </p>
+                  <p className="text-muted-foreground text-[11px]">
+                    {facilityDetail?.village}, {facilityDetail?.tahsil}
+                  </p>
+                  {facilityDetail?.phone && (
+                    <p className="text-[11px] pt-1">
+                      Contact:{" "}
+                      <a href={`tel:${facilityDetail.phone}`} className="font-semibold underline">
+                        {facilityDetail.phone}
+                      </a>
+                    </p>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-border/60 bg-muted/20 p-3 space-y-1">
+                  <span className="text-muted-foreground uppercase text-[10px] font-semibold">
+                    Bay Reservation
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <Badge
+                      variant="outline"
+                      className={
+                        reservationDetail?.status === "EXPIRED"
+                          ? "text-[10px] border-destructive/40 text-destructive bg-destructive/5"
+                          : "text-[10px] border-amber-600/40 text-amber-600 bg-amber-600/5"
+                      }
+                    >
+                      {reservationDetail?.status === "EXPIRED"
+                        ? "Expired (Standby)"
+                        : "Bay Reserved"}
+                    </Badge>
+                    {reservationDetail && reservationDetail.renewal_count > 0 && (
+                      <span className="text-[10px] text-muted-foreground">
+                        (Extended {reservationDetail.renewal_count}x)
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-muted-foreground text-[11px] pt-1">
+                    {reservationDetail?.status === "EXPIRED"
+                      ? t("breakdown.reservationExpiredNotice")
+                      : `${t("breakdown.reservationExpiresIn")} ${
+                          reservationDetail?.expires_at
+                            ? new Date(reservationDetail.expires_at).toLocaleString("en-IN", {
+                                dateStyle: "short",
+                                timeStyle: "short",
+                              })
+                            : "24h"
+                        }`}
+                  </p>
+                </div>
+              </div>
+
+              {/* Farmer Self-Renewal or Limit Message */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-border/40">
+                <div className="text-xs text-muted-foreground">
+                  {reservationDetail && reservationDetail.renewal_count >= 1 ? (
+                    <span className="text-muted-foreground italic text-[11px]">
+                      Self-renewal limit reached (1x). Contact workshop staff if extra time is
+                      needed.
+                    </span>
+                  ) : (
+                    <span className="text-[11px]">
+                      Need more time to transport? You can extend your bay reservation once.
+                    </span>
+                  )}
+                </div>
+
+                {reservationDetail &&
+                  reservationDetail.renewal_count < 1 &&
+                  reservationDetail.status !== "EXPIRED" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={renewing}
+                      onClick={() => void handleFarmerRenewReservation()}
+                      className="text-xs gap-1.5"
+                    >
+                      {renewing ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Clock className="h-3.5 w-3.5" />
+                      )}
+                      {t("breakdown.renewReservation")}
+                    </Button>
+                  )}
+              </div>
+            </Card>
+          )}
+        </>
       )}
 
       {r.status === "WAITING_FOR_PARTS" && (
@@ -1418,6 +1717,28 @@ function RepairHub() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Custody Receipt Modal (Phase 14 M4) */}
+      {showReceiptModal && r.drop_off_receipt_number && (
+        <CustodyReceiptModal
+          open={showReceiptModal}
+          onOpenChange={setShowReceiptModal}
+          data={{
+            receiptNumber: r.drop_off_receipt_number,
+            droppedOffAt: r.dropped_off_at || new Date().toISOString(),
+            jobNumber: r.job_number || r.id,
+            equipmentMake: e?.make || "Equipment",
+            equipmentModel: e?.model || "",
+            equipmentType: e ? undefined : undefined,
+            farmerName: profile?.full_name || "Farmer",
+            farmerPhone: profile?.phone || undefined,
+            facilityName: facilityDetail?.name || "Workshop",
+            facilityAddress: facilityDetail
+              ? `${facilityDetail.village}, ${facilityDetail.tahsil}`
+              : undefined,
+          }}
+        />
+      )}
     </div>
   );
 }

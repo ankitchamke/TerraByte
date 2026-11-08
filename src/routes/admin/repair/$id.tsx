@@ -2,6 +2,8 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   AlertOctagon,
   AlertTriangle,
+  ArrowRightLeft,
+  Building2,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
@@ -11,6 +13,7 @@ import {
   MapPin,
   Package,
   PackageSearch,
+  Wrench,
   XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -86,6 +89,19 @@ import {
   type QuoteVersionDetail,
 } from "@/lib/services/quotes";
 import { AdminHandoverCard } from "@/components/handover/admin-handover-card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { supabase } from "@/integrations/supabase/client";
+import { WorkshopCheckinDialog } from "@/components/facilities/workshop-checkin-dialog";
+import {
+  CustodyReceiptModal,
+  type CustodyReceiptData,
+} from "@/components/facilities/custody-receipt-modal";
+import {
+  ExtendReservationDialog,
+  RerouteWorkshopDialog,
+  ReleaseEquipmentDialog,
+} from "@/components/facilities/workshop-admin-dialogs";
 
 export const Route = createFileRoute("/admin/repair/$id")({
   head: () => meta("Repair detail", "Inspect, dispatch and unblock a repair."),
@@ -257,6 +273,29 @@ function AdminRepair() {
   const [sourcingNewEta, setSourcingNewEta] = useState("");
   const [updatingSourcingEta, setUpdatingSourcingEta] = useState(false);
 
+  // Workshop drop-off state (Phase 14 M4)
+  const [facilityDetail, setFacilityDetail] = useState<{
+    id: string;
+    name: string;
+    village: string;
+    tahsil: string;
+    phone?: string | null;
+    owner_name?: string | null;
+  } | null>(null);
+  const [reservationDetail, setReservationDetail] = useState<{
+    id: string;
+    status: string;
+    expires_at: string;
+    renewal_count: number;
+  } | null>(null);
+
+  // Workshop dialog triggers
+  const [showCheckinDialog, setShowCheckinDialog] = useState(false);
+  const [showExtendDialog, setShowExtendDialog] = useState(false);
+  const [showRerouteDialog, setShowRerouteDialog] = useState(false);
+  const [showReleaseDialog, setShowReleaseDialog] = useState(false);
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+
   const hasLoadedRef = useRef(false);
 
   const loadData = useCallback(async () => {
@@ -297,6 +336,34 @@ function AdminRepair() {
         setServiceRecord(shData);
         setDispatchLocation(dispatchLocData);
         setPartRequests(reqsData);
+
+        // Fetch Workshop Drop-off facility & bay reservation details
+        if (realRepair.delivery_mode === "WORKSHOP_DROPOFF" && realRepair.facility_id) {
+          const [facRes, resRes] = await Promise.all([
+            supabase
+              .from("repair_facilities")
+              .select("id, name, village, tahsil, phone, owner_name")
+              .eq("id", realRepair.facility_id)
+              .maybeSingle()
+              .then((x) => x.data)
+              .catch(() => null),
+            supabase
+              .from("facility_bay_reservations")
+              .select("id, status, expires_at, renewal_count")
+              .eq("repair_request_id", realRepair.id)
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle()
+              .then((x) => x.data)
+              .catch(() => null),
+          ]);
+          setFacilityDetail(facRes);
+          setReservationDetail(resRes);
+        } else {
+          setFacilityDetail(null);
+          setReservationDetail(null);
+        }
+
         hasLoadedRef.current = true;
         return;
       }
@@ -900,6 +967,193 @@ function AdminRepair() {
         </section>
       )}
 
+      {/* Workshop Drop-Off Cancelled In Bay Banner (Phase 14 M4) */}
+      {isReal &&
+        r.delivery_mode === "WORKSHOP_DROPOFF" &&
+        status === "CANCELLED" &&
+        r.dropped_off_at &&
+        r.handover_status !== "RELEASED" && (
+          <section className="overflow-hidden rounded-2xl border-2 border-warning bg-card shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-warning px-5 py-3.5 font-display text-lg font-bold text-warning-foreground">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 shrink-0" />
+                <span>Cancelled Equipment Physically Occupying Bay</span>
+              </div>
+              <Badge className="bg-warning-foreground text-warning text-xs font-mono font-semibold">
+                Bay Occupancy Held
+              </Badge>
+            </div>
+            <div className="space-y-4 p-5">
+              <p className="text-sm text-foreground">
+                This repair ticket was cancelled, but the machinery is physically in the workshop
+                bay at <strong>{facilityDetail?.name || "the workshop"}</strong> (Receipt:{" "}
+                <code className="font-mono font-bold">{r.drop_off_receipt_number || "RCP-TB"}</code>
+                ). Physical bay occupancy remains committed until staff records customer pickup and
+                release.
+              </p>
+              <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-border/40">
+                {r.drop_off_receipt_number && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs gap-1.5"
+                    onClick={() => setShowReceiptModal(true)}
+                  >
+                    View Custody Receipt
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  className="text-xs gap-1.5 bg-warning text-warning-foreground hover:bg-warning/90"
+                  onClick={() => setShowReleaseDialog(true)}
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  Record Equipment Physical Release
+                </Button>
+              </div>
+            </div>
+          </section>
+        )}
+
+      {/* Workshop Drop-Off & Bay Capacity Card (Phase 14 M4) */}
+      {isReal && r.delivery_mode === "WORKSHOP_DROPOFF" && (
+        <Card className="p-5 space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border/50 pb-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <Building2 className="h-5 w-5 text-primary" />
+                <h3 className="text-base font-bold">Workshop Drop-Off & Bay Capacity</h3>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Assigned Facility: <strong>{facilityDetail?.name || "Workshop"}</strong> (
+                {facilityDetail?.village}, {facilityDetail?.tahsil})
+              </p>
+            </div>
+            {r.dropped_off_at ? (
+              <Badge className="bg-success text-success-foreground text-xs gap-1">
+                <CheckCircle2 className="h-3.5 w-3.5" /> In Workshop Bay (
+                {r.handover_status || "RECEIVED"})
+              </Badge>
+            ) : (
+              <Badge
+                variant="outline"
+                className="text-xs text-amber-600 border-amber-600/40 bg-amber-600/5 gap-1"
+              >
+                <Clock className="h-3.5 w-3.5" /> Awaiting Physical Drop-Off
+              </Badge>
+            )}
+          </div>
+
+          {r.dropped_off_at ? (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+                <div className="rounded-xl border border-border/60 bg-muted/20 p-2.5 space-y-0.5">
+                  <span className="text-muted-foreground uppercase text-[10px] font-semibold">
+                    Receipt Number
+                  </span>
+                  <p className="font-mono font-bold text-foreground">
+                    {r.drop_off_receipt_number || "—"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-border/60 bg-muted/20 p-2.5 space-y-0.5">
+                  <span className="text-muted-foreground uppercase text-[10px] font-semibold">
+                    Drop-Off Time
+                  </span>
+                  <p className="font-semibold text-foreground">
+                    {new Date(r.dropped_off_at).toLocaleString("en-IN", {
+                      dateStyle: "short",
+                      timeStyle: "short",
+                    })}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-border/60 bg-muted/20 p-2.5 space-y-0.5">
+                  <span className="text-muted-foreground uppercase text-[10px] font-semibold">
+                    Custody Status
+                  </span>
+                  <p className="font-semibold text-foreground">{r.handover_status || "RECEIVED"}</p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs gap-1.5"
+                  onClick={() => setShowReceiptModal(true)}
+                >
+                  View / Print Custody Receipt
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                <div className="rounded-xl border border-border/60 bg-muted/20 p-2.5 space-y-0.5">
+                  <span className="text-muted-foreground uppercase text-[10px] font-semibold">
+                    Reservation Status
+                  </span>
+                  <p className="font-semibold text-foreground">
+                    {reservationDetail?.status || "RESERVED"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-border/60 bg-muted/20 p-2.5 space-y-0.5">
+                  <span className="text-muted-foreground uppercase text-[10px] font-semibold">
+                    Expires At
+                  </span>
+                  <p className="font-semibold text-amber-600">
+                    {reservationDetail?.expires_at
+                      ? new Date(reservationDetail.expires_at).toLocaleString("en-IN", {
+                          dateStyle: "short",
+                          timeStyle: "short",
+                        })
+                      : "24 hours from report"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-border/60 bg-muted/20 p-2.5 space-y-0.5">
+                  <span className="text-muted-foreground uppercase text-[10px] font-semibold">
+                    Renewals
+                  </span>
+                  <p className="font-semibold text-foreground">
+                    {reservationDetail?.renewal_count || 0} times renewed
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-end gap-2 pt-2 border-t border-border/40">
+                {reservationDetail && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs gap-1.5"
+                    onClick={() => setShowExtendDialog(true)}
+                  >
+                    <Clock className="h-3.5 w-3.5" />
+                    Admin Extend Reservation
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-xs gap-1.5"
+                  onClick={() => setShowRerouteDialog(true)}
+                >
+                  <ArrowRightLeft className="h-3.5 w-3.5" />
+                  Reroute to Different Workshop
+                </Button>
+                <Button
+                  size="sm"
+                  className="text-xs gap-1.5"
+                  onClick={() => setShowCheckinDialog(true)}
+                >
+                  <Wrench className="h-3.5 w-3.5" />
+                  Check In Equipment
+                </Button>
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
+
       {status === "COMPLETED" && (
         <section className="overflow-hidden rounded-2xl border-2 border-success bg-card shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2 bg-success px-5 py-3.5 font-display text-lg font-bold text-success-foreground">
@@ -1119,7 +1373,8 @@ function AdminRepair() {
                             ) : (
                               <span>
                                 {m.distanceKm} km · ~{m.etaMin} min
-                                {m.routingStatus === "EXTENDED" || (m.distanceKm != null && m.distanceKm > 50) ? (
+                                {m.routingStatus === "EXTENDED" ||
+                                (m.distanceKm != null && m.distanceKm > 50) ? (
                                   <span className="ml-1 text-warning-foreground font-semibold">
                                     (Extended Travel)
                                   </span>
@@ -1972,6 +2227,78 @@ function AdminRepair() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* WORKSHOP DROP-OFF DIALOGS (Phase 14 M4) */}
+      {showCheckinDialog && isReal && (
+        <WorkshopCheckinDialog
+          open={showCheckinDialog}
+          onOpenChange={setShowCheckinDialog}
+          repair={{
+            id: r.id,
+            job_number: jobNumber,
+            equipment_make: equipmentMake,
+            equipment_model: equipmentModel,
+            farmer_name: farmerName,
+            farmer_phone: farmerPhone,
+            facility_id: r.facility_id,
+          }}
+          facilityName={facilityDetail?.name || "Workshop"}
+          onSuccess={() => void loadData()}
+        />
+      )}
+
+      {showReceiptModal && isReal && r.drop_off_receipt_number && (
+        <CustodyReceiptModal
+          open={showReceiptModal}
+          onOpenChange={setShowReceiptModal}
+          data={{
+            receiptNumber: r.drop_off_receipt_number,
+            droppedOffAt: r.dropped_off_at || new Date().toISOString(),
+            jobNumber: jobNumber,
+            equipmentMake: equipmentMake,
+            equipmentModel: equipmentModel,
+            farmerName: farmerName,
+            farmerPhone: farmerPhone,
+            facilityName: facilityDetail?.name || "Workshop",
+            facilityAddress: facilityDetail
+              ? `${facilityDetail.village}, ${facilityDetail.tahsil}`
+              : undefined,
+          }}
+        />
+      )}
+
+      {showExtendDialog && isReal && reservationDetail && (
+        <ExtendReservationDialog
+          open={showExtendDialog}
+          onOpenChange={setShowExtendDialog}
+          reservationId={reservationDetail.id}
+          jobNumber={jobNumber}
+          onSuccess={() => void loadData()}
+        />
+      )}
+
+      {showRerouteDialog && isReal && (
+        <RerouteWorkshopDialog
+          open={showRerouteDialog}
+          onOpenChange={setShowRerouteDialog}
+          repairRequestId={r.id}
+          currentFacilityId={r.facility_id}
+          jobNumber={jobNumber}
+          onSuccess={() => void loadData()}
+        />
+      )}
+
+      {showReleaseDialog && isReal && (
+        <ReleaseEquipmentDialog
+          open={showReleaseDialog}
+          onOpenChange={setShowReleaseDialog}
+          repairRequestId={r.id}
+          jobNumber={jobNumber}
+          equipmentSummary={`${equipmentMake} ${equipmentModel}`}
+          farmerName={farmerName}
+          onSuccess={() => void loadData()}
+        />
+      )}
     </div>
   );
 }

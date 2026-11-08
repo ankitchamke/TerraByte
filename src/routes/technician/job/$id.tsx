@@ -1,7 +1,10 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   AlertCircle,
+  AlertTriangle,
+  Building2,
   Camera,
+  CheckCircle2,
   Clock,
   Loader2,
   Lock,
@@ -108,7 +111,9 @@ export const Route = createFileRoute("/technician/job/$id")({
         <ContextualBack to="/technician" label="Jobs" />
         <Card className="border-destructive text-destructive space-y-2">
           <p className="font-bold text-lg">Failed to load technician job</p>
-          <p className="text-sm">{err?.message || "An unexpected error occurred while loading this job."}</p>
+          <p className="text-sm">
+            {err?.message || "An unexpected error occurred while loading this job."}
+          </p>
           {err?.stack && (
             <pre className="text-xs bg-muted/60 p-3 rounded-lg overflow-x-auto text-foreground font-mono">
               {err.stack}
@@ -322,13 +327,10 @@ function Job() {
 
   const isAssignedToMe = r.technician_id === profile?.id;
   const isUnassignedIncoming = !r.technician_id && r.status === "REQUESTED";
-  const isStaffAuthorized = profile?.role === "service_centre" || isAssignedToMe || isUnassignedIncoming;
+  const isStaffAuthorized =
+    profile?.role === "service_centre" || isAssignedToMe || isUnassignedIncoming;
 
-  if (
-    !isStaffAuthorized &&
-    r.status !== "COMPLETED" &&
-    r.status !== "CANCELLED"
-  ) {
+  if (!isStaffAuthorized && r.status !== "COMPLETED" && r.status !== "CANCELLED") {
     return (
       <div className="space-y-5">
         <ContextualBack to="/technician" label="Jobs" />
@@ -351,9 +353,7 @@ function Job() {
 
   const demoRepair = tb.repairs.find(
     (x) =>
-      x.id === id ||
-      (x as any).jobNumber === id ||
-      (r && (x.id === r.job_number || x.id === r.id))
+      x.id === id || (x as any).jobNumber === id || (r && (x.id === r.job_number || x.id === r.id)),
   );
 
   const pendingQuote = quotes.find(
@@ -422,7 +422,9 @@ function Job() {
             since:
               typeof (r.parts_hold as any).since === "number" && !isNaN((r.parts_hold as any).since)
                 ? (r.parts_hold as any).since
-                : new Date((r.parts_hold as any).since || r.status_since || safeCreatedAtMs).getTime() || safeCreatedAtMs,
+                : new Date(
+                    (r.parts_hold as any).since || r.status_since || safeCreatedAtMs,
+                  ).getTime() || safeCreatedAtMs,
           },
         }
       : {}),
@@ -467,6 +469,45 @@ function Job() {
         </div>
         <StatusPill r={{ status: r.status, testing: r.is_testing }} audience="staff" />
       </div>
+
+      {/* Workshop Drop-Off Delivery Badge & Custody Status (Phase 14 M4) */}
+      {r.delivery_mode === "WORKSHOP_DROPOFF" && (
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+            <Building2 className="h-3.5 w-3.5" />
+            Workshop Drop-Off
+          </span>
+          {r.dropped_off_at ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-success/30 bg-success/10 px-3 py-1 text-xs font-semibold text-success">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              In Workshop Custody · Receipt: {r.drop_off_receipt_number || "RCP-TB"}
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-600/30 bg-amber-600/10 px-3 py-1 text-xs font-semibold text-amber-600">
+              <Clock className="h-3.5 w-3.5" />
+              Awaiting Drop-Off Arrival
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Workshop Drop-Off Cancelled In Bay Banner (Phase 14 M4) */}
+      {r.delivery_mode === "WORKSHOP_DROPOFF" &&
+        r.status === "CANCELLED" &&
+        r.dropped_off_at &&
+        r.handover_status !== "RELEASED" && (
+          <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-xs text-amber-800 dark:text-amber-200 space-y-1">
+            <p className="font-bold flex items-center gap-1.5 text-sm text-amber-700 dark:text-amber-300">
+              <AlertTriangle className="h-4 w-4" /> Cancelled Equipment In Workshop Bay
+            </p>
+            <p>
+              This ticket was cancelled, but the equipment is physically present in the workshop bay
+              (Receipt:{" "}
+              <code className="font-mono font-bold">{r.drop_off_receipt_number || "RCP-TB"}</code>).
+              Do not release equipment to owner without Service Centre authorization.
+            </p>
+          </div>
+        )}
 
       {/* Prominent Cancellation Work-Hold Banner (CANCELLATION_REQUESTED) */}
       {r.status === "CANCELLATION_REQUESTED" && (
@@ -792,15 +833,21 @@ function Job() {
             </span>
           </div>
           <p className="text-xs text-muted-foreground mb-3">
-            This quotation has been submitted to the farmer. Repair work is locked until the farmer approves or requests changes.
+            This quotation has been submitted to the farmer. Repair work is locked until the farmer
+            approves or requests changes.
           </p>
           <QuoteTable q={toQuoteView(pendingQuote)} />
           <div className="mt-4 pt-3 border-t border-border/60 text-xs text-muted-foreground space-y-1">
             <p className="font-semibold text-foreground">Next Available Actions:</p>
             <ul className="list-disc list-inside space-y-0.5">
               <li>Wait for the farmer to review and approve the quote.</li>
-              <li>If the farmer requests clarification or changes, status will advance to <b>Changes Requested</b> and you can submit a revised quote.</li>
-              <li>Use the ticket chat below to discuss details or answer questions with the farmer.</li>
+              <li>
+                If the farmer requests clarification or changes, status will advance to{" "}
+                <b>Changes Requested</b> and you can submit a revised quote.
+              </li>
+              <li>
+                Use the ticket chat below to discuss details or answer questions with the farmer.
+              </li>
             </ul>
           </div>
         </Card>
@@ -814,7 +861,7 @@ function Job() {
           partRequests={partRequests}
           onDone={loadData}
         />
-      ) : (r.status === "WAITING_FOR_PARTS" && !approvedQuote) ? (
+      ) : r.status === "WAITING_FOR_PARTS" && !approvedQuote ? (
         <QuoteBuilder
           repairId={r.id}
           status={r.status}
@@ -876,7 +923,7 @@ function Job() {
               ? partRequests.some((pr) => pr.status === "PENDING")
               : Boolean(
                   (r.parts_hold as any)?.items?.some((it: any) => it.status === "PENDING") ||
-                  (adaptedRepair.parts as any)?.items?.some((it: any) => it.status === "PENDING")
+                  (adaptedRepair.parts as any)?.items?.some((it: any) => it.status === "PENDING"),
                 )
           }
         />
@@ -893,26 +940,26 @@ function Job() {
         />
       )}
 
-      {["IN_PROGRESS", "WAITING_FOR_PARTS", "ACCEPTED", "QUOTE_REVISED", "QUOTE_PENDING"].includes(r.status) && (
+      {["IN_PROGRESS", "WAITING_FOR_PARTS", "ACCEPTED", "QUOTE_REVISED", "QUOTE_PENDING"].includes(
+        r.status,
+      ) && (
         <PartsPickupCard
           repairId={r.id}
           repairStatus={r.status}
           isAssigned={r.technician_id === profile?.id}
           partRequests={partRequests}
-          sourcingHolds={
-            (((r.parts_hold as any)?.items || demoRepair?.parts?.items || []) as any[]).filter(
-              (item: any) => {
-                const isDepot = partRequests.some(
-                  (req) =>
-                    req.id === item.id ||
-                    req.id.toLowerCase() === (item.id || "").toLowerCase() ||
-                    (item.partId && req.part_id === item.partId) ||
-                    req.part?.name?.toLowerCase() === (item.part || "").toLowerCase(),
-                );
-                return !isDepot && (item.status === "PENDING" || !item.status);
-              },
-            )
-          }
+          sourcingHolds={(
+            ((r.parts_hold as any)?.items || demoRepair?.parts?.items || []) as any[]
+          ).filter((item: any) => {
+            const isDepot = partRequests.some(
+              (req) =>
+                req.id === item.id ||
+                req.id.toLowerCase() === (item.id || "").toLowerCase() ||
+                (item.partId && req.part_id === item.partId) ||
+                req.part?.name?.toLowerCase() === (item.part || "").toLowerCase(),
+            );
+            return !isDepot && (item.status === "PENDING" || !item.status);
+          })}
           onUpdate={loadData}
         />
       )}
@@ -956,26 +1003,30 @@ function Job() {
         <summary className="cursor-pointer font-semibold">Status timeline</summary>
         <div className="mt-4">
           <ol className="space-y-3 text-sm">
-            {(Array.isArray(r.repair_timeline) ? r.repair_timeline : []).slice().reverse().map((e, i) => (
-              <li key={i} className="flex gap-3">
-                <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
-                <div className="min-w-0">
-                  <p>
-                    <b className="font-mono text-xs">{e.status}</b>{" "}
-                    <span className="text-muted-foreground">
-                      ·{" "}
-                      {e.created_by_role === "technician"
-                        ? "Technician"
-                        : e.created_by_role === "admin"
-                          ? "Service Centre"
-                          : "Farmer"}{" "}
-                      · {fmtTime(e.created_at ? new Date(e.created_at).getTime() : safeCreatedAtMs)}
-                    </span>
-                  </p>
-                  {e.note && <p className="text-muted-foreground">{e.note}</p>}
-                </div>
-              </li>
-            ))}
+            {(Array.isArray(r.repair_timeline) ? r.repair_timeline : [])
+              .slice()
+              .reverse()
+              .map((e, i) => (
+                <li key={i} className="flex gap-3">
+                  <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
+                  <div className="min-w-0">
+                    <p>
+                      <b className="font-mono text-xs">{e.status}</b>{" "}
+                      <span className="text-muted-foreground">
+                        ·{" "}
+                        {e.created_by_role === "technician"
+                          ? "Technician"
+                          : e.created_by_role === "admin"
+                            ? "Service Centre"
+                            : "Farmer"}{" "}
+                        ·{" "}
+                        {fmtTime(e.created_at ? new Date(e.created_at).getTime() : safeCreatedAtMs)}
+                      </span>
+                    </p>
+                    {e.note && <p className="text-muted-foreground">{e.note}</p>}
+                  </div>
+                </li>
+              ))}
           </ol>
         </div>
       </details>
@@ -1085,11 +1136,13 @@ function QuoteBuilder({
   const [technicianExplanation, setTechnicianExplanation] = useState("");
   const [catalogParts, setCatalogParts] = useState<ServiceCentrePart[]>([]);
   const hasPreviousQuote = Boolean(
-    previousQuote && (previousQuote.version > 0 || isUuid(previousQuote.id))
+    previousQuote && (previousQuote.version > 0 || isUuid(previousQuote.id)),
   );
 
   useEffect(() => {
-    void getServiceCentreParts().then(setCatalogParts).catch(() => {});
+    void getServiceCentreParts()
+      .then(setCatalogParts)
+      .catch(() => {});
   }, []);
 
   // Automatically sync technician part requests into quote parts
@@ -1207,7 +1260,7 @@ function QuoteBuilder({
     for (const p of activeParts) {
       if (p.catalogPartId && (!p.price || Number(p.price) <= 0 || isNaN(Number(p.price)))) {
         toast.error(
-          `Catalog part "${p.name}" does not have a valid customer-facing selling price. Please contact Service Centre staff to verify catalog pricing.`
+          `Catalog part "${p.name}" does not have a valid customer-facing selling price. Please contact Service Centre staff to verify catalog pricing.`,
         );
         return;
       }
@@ -1237,7 +1290,7 @@ function QuoteBuilder({
         tb.repairs.some((x) => x.id === repairId || (x as any).jobNumber === repairId);
 
       const hasPreviousQuote = Boolean(
-        previousQuote && (previousQuote.version > 0 || isUuid(previousQuote.id))
+        previousQuote && (previousQuote.version > 0 || isUuid(previousQuote.id)),
       );
 
       if (isDemo) {
@@ -1264,9 +1317,7 @@ function QuoteBuilder({
             // Non-fatal remote sync in demo mode
           }
         }
-        toast.success(
-          hasPreviousQuote ? "Revised quote sent to farmer" : "Quote sent to farmer"
-        );
+        toast.success(hasPreviousQuote ? "Revised quote sent to farmer" : "Quote sent to farmer");
       } else if (hasPreviousQuote && previousQuote) {
         await reviseQuote({
           ...payload,
@@ -1393,9 +1444,12 @@ function QuoteBuilder({
       )}
       {q.parts.length === 0 && (
         <div className="rounded-xl border border-dashed border-primary/40 bg-primary/5 p-4 text-center space-y-1">
-          <p className="text-sm font-semibold text-foreground">Labour & Inspection Quote (No parts added)</p>
+          <p className="text-sm font-semibold text-foreground">
+            Labour & Inspection Quote (No parts added)
+          </p>
           <p className="text-xs text-muted-foreground">
-            You can send a labour-only quote without parts, or click "Add part" below to include spare components.
+            You can send a labour-only quote without parts, or click "Add part" below to include
+            spare components.
           </p>
         </div>
       )}
@@ -1478,7 +1532,8 @@ function QuoteBuilder({
               <input
                 className={cn(
                   input,
-                  Boolean(p.catalogPartId) && "bg-muted cursor-not-allowed opacity-90 font-medium select-none"
+                  Boolean(p.catalogPartId) &&
+                    "bg-muted cursor-not-allowed opacity-90 font-medium select-none",
                 )}
                 inputMode="numeric"
                 value={p.price}
@@ -1635,7 +1690,7 @@ function InProgress({
         setP((prev) => {
           if (!prev.catalogPartId && prev.part) {
             const match = parts.find(
-              (cp) => cp.name.trim().toLowerCase() === prev.part.trim().toLowerCase()
+              (cp) => cp.name.trim().toLowerCase() === prev.part.trim().toLowerCase(),
             );
             if (match) {
               return { ...prev, catalogPartId: match.id };
@@ -1694,8 +1749,7 @@ function InProgress({
     try {
       const effectiveCatalogPartId =
         p.catalogPartId ||
-        catalogParts.find((cp) => cp.name.trim().toLowerCase() === p.part.trim().toLowerCase())
-          ?.id;
+        catalogParts.find((cp) => cp.name.trim().toLowerCase() === p.part.trim().toLowerCase())?.id;
 
       if (effectiveCatalogPartId) {
         await requestServiceCentrePart({
@@ -1721,7 +1775,7 @@ function InProgress({
       toast.success(
         effectiveCatalogPartId
           ? `Part requisition created for ${p.part.trim()}. Repair paused for parts.`
-          : "Repair paused. Farmer notified of the delay."
+          : "Repair paused. Farmer notified of the delay.",
       );
       await onUpdate();
     } catch (err: any) {
@@ -1950,7 +2004,7 @@ function InProgress({
                   aria-label="Select from Depot Catalog"
                   className={cn(
                     input,
-                    "h-10 min-h-[2.5rem] py-1.5 px-3 text-xs leading-normal cursor-pointer font-medium"
+                    "h-10 min-h-[2.5rem] py-1.5 px-3 text-xs leading-normal cursor-pointer font-medium",
                   )}
                   value={p.catalogPartId || ""}
                   onChange={(e) => {
@@ -1959,7 +2013,9 @@ function InProgress({
                       setP({ ...p, catalogPartId: "", part: "" });
                       return;
                     }
-                    const found = catalogParts.find((cp) => cp.id === val || cp.part_number === val);
+                    const found = catalogParts.find(
+                      (cp) => cp.id === val || cp.part_number === val,
+                    );
                     if (found) {
                       setP({
                         ...p,
@@ -1974,7 +2030,8 @@ function InProgress({
                     const inStock = cp.stock_quantity > 0;
                     return (
                       <option key={cp.id} value={cp.id}>
-                        {cp.name} ({cp.part_number}) — ₹{cp.unit_price} [{inStock ? `${cp.stock_quantity} in stock` : "Out of stock"}]
+                        {cp.name} ({cp.part_number}) — ₹{cp.unit_price} [
+                        {inStock ? `${cp.stock_quantity} in stock` : "Out of stock"}]
                       </option>
                     );
                   })}
@@ -1990,7 +2047,7 @@ function InProgress({
                   onChange={(e) => {
                     const newName = e.target.value;
                     const matched = catalogParts.find(
-                      (cp) => cp.name.trim().toLowerCase() === newName.trim().toLowerCase()
+                      (cp) => cp.name.trim().toLowerCase() === newName.trim().toLowerCase(),
                     );
                     setP({
                       ...p,
@@ -2192,9 +2249,7 @@ function Waiting({
         await resumeRepair(repairId);
       }
       toast.success(
-        hasPendingQuote
-          ? "Parts hold cleared. Awaiting farmer approval on quote."
-          : "Work resumed",
+        hasPendingQuote ? "Parts hold cleared. Awaiting farmer approval on quote." : "Work resumed",
       );
       await onUpdate();
     } catch (err: any) {
@@ -2206,7 +2261,8 @@ function Waiting({
   };
 
   const partsItems: BlockerPartItem[] = Array.isArray(parts.items) ? parts.items : [];
-  const hasPendingItems = partsItems.length > 0 ? partsItems.some((it) => it.status === "PENDING") : true;
+  const hasPendingItems =
+    partsItems.length > 0 ? partsItems.some((it) => it.status === "PENDING") : true;
   const allArrived = Boolean(parts.allPartsArrived) || (partsItems.length > 0 && !hasPendingItems);
 
   return (
@@ -2230,7 +2286,8 @@ function Waiting({
                   pr.part?.name?.trim().toLowerCase() === item.part.trim().toLowerCase(),
               );
               const isDepotReq = Boolean(matchingReq);
-              const isOutOfStock = matchingReq && matchingReq.part && matchingReq.part.stock_quantity === 0;
+              const isOutOfStock =
+                matchingReq && matchingReq.part && matchingReq.part.stock_quantity === 0;
               const isInsufficient =
                 matchingReq &&
                 matchingReq.part &&
@@ -2248,7 +2305,9 @@ function Waiting({
                     </p>
                     <p className="text-[11px] text-muted-foreground">{item.reason}</p>
                     <span className="text-[10px] text-muted-foreground font-mono">
-                      {isDepotReq ? "Service Centre Depot Requisition" : "Field / External Sourcing Hold"}
+                      {isDepotReq
+                        ? "Service Centre Depot Requisition"
+                        : "Field / External Sourcing Hold"}
                     </span>
                   </div>
                   <div className="text-right space-y-1">

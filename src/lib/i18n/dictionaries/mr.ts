@@ -175,6 +175,17 @@ export const mr: TranslationDictionary = {
     noApprovedWorkshops: "ड्रॉप-ऑफसाठी सध्या कोणतीही मंजूर कार्यशाळा उपलब्ध नाही.",
     validationWorkshop: "कृपया कार्यशाळा ड्रॉप-ऑफसाठी मंजूर कार्यशाळा निवडा.",
     validationDeliveryMode: "कृपया सेवा वितरण पद्धत निवडा (डोरस्टेप किंवा कार्यशाळा ड्रॉप-ऑफ).",
+    dropOffReceipt: "डिपॉझिट पावती",
+    dropOffConfirmed: "उपकरण कार्यशाळेच्या ताब्यात",
+    renewReservation: "बे आरक्षण वाढवा",
+    reservationRenewed: "आरक्षण यशस्वीरित्या वाढवले",
+    reservationExpiresIn: "बे आरक्षण समाप्त होईल",
+    reservationExpiredNotice: "आरक्षण समाप्त झाले. बे उपलब्धतेनुसार स्टँडबाय चेक-इन.",
+    equipmentInBayCancelled:
+      "दुरुस्ती रद्द — उपकरण कार्यशाळेच्या बे मध्ये आहे. कृपया कार्यशाळेतून उचलण्याची व्यवस्था करा.",
+    viewReceipt: "ताब्यात पावती पहा",
+    baysAvailable: "बे उपलब्ध आहेत",
+    workshopAtCapacity: "कार्यशाळा पूर्ण क्षमतेवर",
   },
   repair: {
     jobHeader: "दुरुस्ती काम",

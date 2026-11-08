@@ -174,6 +174,17 @@ export const en = {
     noApprovedWorkshops: "No approved workshops currently available for drop-off.",
     validationWorkshop: "Please select an approved workshop for workshop drop-off.",
     validationDeliveryMode: "Please select a delivery mode (Doorstep or Workshop Drop-Off).",
+    dropOffReceipt: "Drop-Off Receipt",
+    dropOffConfirmed: "Equipment in Workshop Custody",
+    renewReservation: "Extend Bay Reservation",
+    reservationRenewed: "Reservation extended successfully",
+    reservationExpiresIn: "Bay reservation expires in",
+    reservationExpiredNotice: "Reservation expired. Standby check-in subject to bay availability.",
+    equipmentInBayCancelled:
+      "Repair Cancelled — Equipment in Workshop Bay. Please arrange pickup at workshop.",
+    viewReceipt: "View Custody Receipt",
+    baysAvailable: "bays available",
+    workshopAtCapacity: "Workshop At Capacity",
   },
   repair: {
     jobHeader: "Repair Job",

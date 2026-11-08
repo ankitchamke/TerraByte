@@ -753,7 +753,21 @@ const PHASE_14_M3_KEYS = [
   "breakdown.validationWorkshop",
 ];
 
-test("Trilingual Parity: Explicit Phase 13 (250 Keys) & Phase 14 M3 (10 Keys) Preservation", () => {
+// Explicit list of the 10 Phase 14 Milestone 4 enumerable breakdown keys
+const PHASE_14_M4_KEYS = [
+  "breakdown.baysAvailable",
+  "breakdown.dropOffConfirmed",
+  "breakdown.dropOffReceipt",
+  "breakdown.equipmentInBayCancelled",
+  "breakdown.renewReservation",
+  "breakdown.reservationExpiresIn",
+  "breakdown.reservationExpiredNotice",
+  "breakdown.reservationRenewed",
+  "breakdown.viewReceipt",
+  "breakdown.workshopAtCapacity",
+];
+
+test("Trilingual Parity: Explicit Phase 13 (250 Keys) & Phase 14 M3/M4 Preservation", () => {
   function getAllKeys(obj, prefix = "") {
     let keys = [];
     for (const [key, value] of Object.entries(obj)) {
@@ -821,8 +835,33 @@ test("Trilingual Parity: Explicit Phase 13 (250 Keys) & Phase 14 M3 (10 Keys) Pr
     );
   }
 
+  // 2b. Explicit Phase 14 M4 Keys & Ordinary Enumerability Verification
+  assert.equal(PHASE_14_M4_KEYS.length, 10, "Phase 14 M4 must define exactly 10 new keys");
+  for (const key of PHASE_14_M4_KEYS) {
+    assert.ok(enKeys.includes(key), `Phase 14 M4 key ${key} must exist in EN`);
+    assert.ok(hiKeys.includes(key), `Phase 14 M4 key ${key} must exist in HI`);
+    assert.ok(mrKeys.includes(key), `Phase 14 M4 key ${key} must exist in MR`);
+    const prop = key.replace("breakdown.", "");
+    assert.equal(
+      Object.prototype.propertyIsEnumerable.call(en.breakdown, prop),
+      true,
+      `Phase 14 key breakdown.${prop} must be an ordinary enumerable property in EN (no Object.defineProperties workaround)`,
+    );
+    assert.equal(
+      Object.prototype.propertyIsEnumerable.call(hi.breakdown, prop),
+      true,
+      `Phase 14 key breakdown.${prop} must be an ordinary enumerable property in HI (no Object.defineProperties workaround)`,
+    );
+    assert.equal(
+      Object.prototype.propertyIsEnumerable.call(mr.breakdown, prop),
+      true,
+      `Phase 14 key breakdown.${prop} must be an ordinary enumerable property in MR (no Object.defineProperties workaround)`,
+    );
+  }
+
   // 3. Exact Total Count & Parity
-  const expectedTotalKeys = PHASE_13_BASELINE_KEYS.length + PHASE_14_M3_KEYS.length;
+  const expectedTotalKeys =
+    PHASE_13_BASELINE_KEYS.length + PHASE_14_M3_KEYS.length + PHASE_14_M4_KEYS.length;
   assert.equal(
     enKeys.length,
     expectedTotalKeys,

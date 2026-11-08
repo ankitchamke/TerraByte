@@ -20,6 +20,7 @@ import { ContextualBack, DemoTag } from "@/components/tb";
 import { useAuth } from "@/lib/auth";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -33,12 +34,13 @@ import {
   toggleDropOffApproval,
   VIDARBHA_TAHSILS,
 } from "@/lib/services/facilities";
+import { WorkshopOperationsDesk } from "@/components/facilities/workshop-operations-desk";
 
 export const Route = createFileRoute("/admin/facilities")({
   head: () =>
     meta(
       "Workshop & Facility Governance",
-      "Manage registered field workshops and public drop-off points across Vidarbha."
+      "Manage registered field workshops and public drop-off points across Vidarbha.",
     ),
   component: FacilitiesManagement,
 });
@@ -53,6 +55,7 @@ function FacilitiesManagement() {
   const [search, setSearch] = useState("");
   const [selectedTahsil, setSelectedTahsil] = useState<string>("ALL");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [selectedDeskFacility, setSelectedDeskFacility] = useState<AdminFacilityItem | null>(null);
 
   const loadFacilities = useCallback(async () => {
     try {
@@ -60,9 +63,9 @@ function FacilitiesManagement() {
       setError(null);
       const data = await getAllFacilitiesAdmin();
       setFacilities(data);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("[TerraByte] Error loading facilities for admin:", err);
-      setError(err?.message || "Failed to load facilities.");
+      setError(err instanceof Error ? err.message : "Failed to load facilities.");
     } finally {
       setLoading(false);
     }
@@ -79,14 +82,14 @@ function FacilitiesManagement() {
       toast.success(
         nextVal
           ? `Public drop-off approved for ${fac.name}. Farmers can now route drop-offs here.`
-          : `Drop-off status set to Private Field Base for ${fac.name}.`
+          : `Drop-off status set to Private Field Base for ${fac.name}.`,
       );
       // Optimistic update in local list
       setFacilities((prev) =>
-        prev.map((f) => (f.id === fac.id ? { ...f, drop_off_approved: nextVal } : f))
+        prev.map((f) => (f.id === fac.id ? { ...f, drop_off_approved: nextVal } : f)),
       );
-    } catch (err: any) {
-      toast.error(err?.message || "Failed to update drop-off approval.");
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to update drop-off approval.");
       void loadFacilities();
     } finally {
       setUpdatingId(null);
@@ -111,7 +114,12 @@ function FacilitiesManagement() {
   const totalBays = facilities.reduce((acc, f) => acc + (f.max_equipment_capacity || 4), 0);
   const uniqueTahsils = new Set(facilities.map((f) => f.tahsil)).size;
 
-  if (!authLoading && profile && profile.role !== "admin" && (profile as any).role !== "service_centre") {
+  if (
+    !authLoading &&
+    profile &&
+    profile.role !== "admin" &&
+    (profile as any).role !== "service_centre"
+  ) {
     return (
       <div className="space-y-6">
         <ContextualBack to="/admin" label="Repair operations" />
@@ -119,8 +127,8 @@ function FacilitiesManagement() {
           <ShieldAlert className="mx-auto h-10 w-10 text-destructive" />
           <h2 className="text-xl font-bold text-destructive">Access Restricted</h2>
           <p className="max-w-md mx-auto text-sm text-muted-foreground">
-            Only Nagpur Service Centre administrators have permission to manage workshop facilities and
-            grant public drop-off authorizations.
+            Only Nagpur Service Centre administrators have permission to manage workshop facilities
+            and grant public drop-off authorizations.
           </p>
           <div className="pt-2">
             <Link
@@ -218,20 +226,22 @@ function FacilitiesManagement() {
         <div className="rounded-2xl border border-dashed border-border bg-card p-12 text-center text-muted-foreground space-y-2">
           <Building2 className="mx-auto h-8 w-8 text-muted-foreground/60" />
           <p className="font-semibold">No workshop facilities match your criteria</p>
-          <p className="text-xs">Adjust search query or tahsil filter to see registered workshops.</p>
+          <p className="text-xs">
+            Adjust search query or tahsil filter to see registered workshops.
+          </p>
         </div>
       ) : (
         <div className="space-y-3">
           {filtered.map((fac) => {
             const isUpdating = updatingId === fac.id;
-            const hours = (fac.operating_hours as any) || {};
+            const hours = (fac.operating_hours as Record<string, unknown> | null) || {};
 
             return (
               <div
                 key={fac.id}
                 className={cn(
                   "rounded-2xl border bg-card p-5 transition-colors space-y-4",
-                  fac.drop_off_approved ? "border-success/40" : "border-border"
+                  fac.drop_off_approved ? "border-success/40" : "border-border",
                 )}
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -258,7 +268,9 @@ function FacilitiesManagement() {
                     <div className="text-right">
                       <p className="text-xs font-semibold leading-none">Public Drop-Off</p>
                       <p className="text-[11px] text-muted-foreground">
-                        {fac.drop_off_approved ? "Approved & routing enabled" : "Disabled (Field only)"}
+                        {fac.drop_off_approved
+                          ? "Approved & routing enabled"
+                          : "Disabled (Field only)"}
                       </p>
                     </div>
                     <Switch
@@ -275,7 +287,9 @@ function FacilitiesManagement() {
                   <div className="rounded-xl border border-border/60 bg-muted/20 p-2.5 space-y-0.5">
                     <span className="text-muted-foreground">Current Owner</span>
                     <p className="font-semibold text-foreground truncate">{fac.owner_name}</p>
-                    <p className="text-[11px] text-muted-foreground">{fac.owner_phone || "No phone"}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {fac.owner_phone || "No phone"}
+                    </p>
                   </div>
 
                   <div className="rounded-xl border border-border/60 bg-muted/20 p-2.5 space-y-0.5">
@@ -284,7 +298,8 @@ function FacilitiesManagement() {
                       {fac.max_equipment_capacity || 4} Machine Bays
                     </p>
                     <p className="text-[11px] text-muted-foreground">
-                      {fac.active_members_count} active technician{fac.active_members_count === 1 ? "" : "s"}
+                      {fac.active_members_count} active technician
+                      {fac.active_members_count === 1 ? "" : "s"}
                     </p>
                   </div>
 
@@ -304,14 +319,54 @@ function FacilitiesManagement() {
                       {fac.drop_off_approved ? "Publicly Accessible" : "Private Operational Base"}
                     </p>
                     <p className="text-[11px] text-muted-foreground">
-                      {fac.drop_off_approved ? "Coordinates visible for ticket drop-off" : "Hidden from public discovery"}
+                      {fac.drop_off_approved
+                        ? "Coordinates visible for ticket drop-off"
+                        : "Hidden from public discovery"}
                     </p>
                   </div>
+                </div>
+
+                {/* Operations Desk Action Footer */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-border/40">
+                  <span className="text-xs text-muted-foreground">
+                    {fac.drop_off_approved
+                      ? "Public drop-off routing active for this workshop."
+                      : "Private operational base only."}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs gap-1.5"
+                    onClick={() => setSelectedDeskFacility(fac)}
+                  >
+                    <Wrench className="h-3.5 w-3.5 text-primary" />
+                    Workshop Operations Desk
+                  </Button>
                 </div>
               </div>
             );
           })}
         </div>
+      )}
+
+      {selectedDeskFacility && (
+        <WorkshopOperationsDesk
+          open={Boolean(selectedDeskFacility)}
+          onOpenChange={(next) => {
+            if (!next) setSelectedDeskFacility(null);
+          }}
+          facility={{
+            id: selectedDeskFacility.id,
+            name: selectedDeskFacility.name,
+            village: selectedDeskFacility.village,
+            tahsil: selectedDeskFacility.tahsil,
+            owner_name: selectedDeskFacility.owner_name,
+            owner_phone: selectedDeskFacility.owner_phone,
+            max_equipment_capacity: selectedDeskFacility.max_equipment_capacity,
+            drop_off_approved: selectedDeskFacility.drop_off_approved,
+          }}
+          onFacilityUpdated={() => void loadFacilities()}
+        />
       )}
     </div>
   );
